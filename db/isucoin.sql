@@ -1,0 +1,39 @@
+CREATE TABLE user (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    bank_id VARBINARY(191) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    password VARBINARY(191) NOT NULL,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
+
+CREATE TABLE sell_request (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    user_id VARBINARY(191) NOT NULL,
+    amount BIGINT NOT NULL,
+    price BIGINT NOT NULL,
+    closed_at DATETIME,
+    trade_id BIGINT,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
+
+CREATE TABLE buy_request (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    user_id VARBINARY(191) NOT NULL,
+    amount BIGINT NOT NULL,
+    price BIGINT NOT NULL,
+    closed_at DATETIME,
+    trade_id BIGINT,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
+
+CREATE TABLE trade (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    amount BIGINT NOT NULL,
+    price BIGINT NOT NULL,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
