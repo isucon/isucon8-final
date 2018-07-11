@@ -1,5 +1,13 @@
 ## webapp
 
+### 初期化
+
+#### `POST /initialize`
+
+- request: application/form-url-encoded
+    - bank_host : bankAPIのエンドポイントを指定
+    - log_host
+
 ### 登録
 
 #### `GET /signup`
@@ -11,7 +19,7 @@
 
 - request: application/form-url-encoded
     - name
-    - user_id
+    - bank_id : ISUBANKのid
     - password 
 
 - response
@@ -19,7 +27,7 @@
 - log
     - tag:signup
         - name: $name
-        - user_id: $user_id
+        - bank_id: $bank_id
         - time: $current_time
 
 ### ログイン
@@ -32,7 +40,7 @@
 #### `POST /signin`
 
 - request: application/form-url-encoded
-    - user_id
+    - bank_id : ISUBANKのid
     - password 
 
 - response
@@ -143,13 +151,32 @@
 
 ユーザーには公開しないAPI
 
+### `POST /register`
+
+登録
+
+- request: application/json
+    - bank_id 
+- response: application/json
+    - status: ok
+
+### `POST /add_credit`
+
+creditの追加
+
+- request: application/json
+    - bank_id 
+    - price
+- response: application/json
+    - status: ok
+
 ### `POST /check_credit`
 
 与信API
 
 - request: application/json
     - app_id
-    - user_id
+    - bank_id
     - price
 - response: application/json
     - status: ok
@@ -161,7 +188,7 @@
 
 - request: application/json
     - app_id
-    - user_id
+    - bank_id
     - price
 - response: application/json
     - status: ok
@@ -173,7 +200,7 @@
 
 - request: application/json
     - app_id
-    - user_id
+    - bank_id
     - price
 - response: application/json
     - status: ok
