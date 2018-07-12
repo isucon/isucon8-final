@@ -1,0 +1,25 @@
+version: '2'
+services:
+  app:
+    image: golang:1.10
+    command: bash -c "go get ./... && go run main.go -port=5516 -dbhost=mysql -dbuser=root -dbpass=root"
+    ports:
+      - "5516:5516"
+    links:
+      - mysql
+    working_dir: /go/src/logger
+    volumes:
+      - gopath:/go
+      - .:/go/src/logger
+  mysql:
+    image: mysql:5.6.35
+    environment:
+      - "TZ=Asia/Tokyo"
+      - "MYSQL_ROOT_PASSWORD=root"
+    volumes:
+      - mysql:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d
+
+volumes:
+  gopath:
+  mysql:
