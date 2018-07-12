@@ -212,7 +212,7 @@ reserve APIで予約した決済を確定します
 
 - request: application/json
     - app_id
-    - reserve_id
+    - reserve_ids
 - response: application/json
     - status: ok
     - error: ...
@@ -225,7 +225,7 @@ reserve APIで予約した決済を取り消します
 
 - request: application/json
     - app_id
-    - reserve_id
+    - reserve_ids
 - response: application/json
     - status: ok
     - error: ...
