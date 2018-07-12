@@ -5,8 +5,9 @@
 #### `POST /initialize`
 
 - request: application/form-url-encoded
-    - bank_host : bankAPIのエンドポイントを指定
-    - log_host
+    - bank_endpoint : bankAPIのエンドポイントを指定
+    - bank_appid    : bankAPIで利用するappid
+    - log_endpoint  : logAPIのエンドポイント
 
 ### 登録
 
@@ -153,7 +154,7 @@
 
 ### `POST /register`
 
-登録
+登録 (本来は非公開API)
 
 - request: application/json
     - bank_id 
@@ -162,7 +163,7 @@
 
 ### `POST /add_credit`
 
-creditの追加
+creditの追加 (本来は非公開API)
 
 - request: application/json
     - bank_id 
@@ -170,21 +171,11 @@ creditの追加
 - response: application/json
     - status: ok
 
-### `POST /check_credit`
+### `POST /check`
 
 与信API
 
-- request: application/json
-    - app_id
-    - bank_id
-    - price
-- response: application/json
-    - status: ok
-    - error: ...
-
-### `POST /send_credit`
-
-振込API
+指定したpriceを支払い可能の場合 status:ok
 
 - request: application/json
     - app_id
@@ -194,9 +185,15 @@ creditの追加
     - status: ok
     - error: ...
 
-### `POST /pull_credit`
+### `POST /reserve`
 
-引き落としAPI
+決済予約API
+
+`price>0` : 振込
+`price<0` : 引き落とし
+
+reserveの有効期限は1分間
+1分以内のcommitは保証されます
 
 - request: application/json
     - app_id
@@ -204,8 +201,34 @@ creditの追加
     - price
 - response: application/json
     - status: ok
+    - reserve_id: bigint
     - error: ...
 
+### `POST /commit`
+
+決済確定API
+
+reserve APIで予約した決済を確定します
+
+- request: application/json
+    - app_id
+    - reserve_id
+- response: application/json
+    - status: ok
+    - error: ...
+
+### `POST /cancel`
+
+決済取り消しAPI
+
+reserve APIで予約した決済を取り消します
+
+- request: application/json
+    - app_id
+    - reserve_id
+- response: application/json
+    - status: ok
+    - error: ...
 
 ## ロガー
 

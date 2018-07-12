@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
@@ -37,6 +39,7 @@ func main() {
 	}
 	server := NewServer(db)
 
+	log.Printf("[INFO] start server %s", addr)
 	log.Fatal(http.ListenAndServe(addr, server))
 }
 
@@ -45,11 +48,12 @@ func NewServer(db *sql.DB) *http.ServeMux {
 
 	h := &Handler{db}
 
-	h.HandleFunc("/register", c.Register)
-	h.HandleFunc("/add_credit", c.AddCredit)
-	h.HandleFunc("/check_credit", c.CheckCredit)
-	h.HandleFunc("/send_credit", c.SendCredit)
-	h.HandleFunc("/pull_credit", c.PullCredit)
+	server.HandleFunc("/register", h.Register)
+	server.HandleFunc("/add_credit", h.AddCredit)
+	server.HandleFunc("/check", h.Check)
+	server.HandleFunc("/reserve", h.Reserve)
+	server.HandleFunc("/commit", h.Commit)
+	server.HandleFunc("/cancel", h.Cancel)
 
 	// default 404
 	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +64,16 @@ func NewServer(db *sql.DB) *http.ServeMux {
 }
 
 const (
-	ResOK    = `{"status":"ok"}`
-	ResError = `{"status":"ng","error":"%s"}`
+	ResOK         = `{"status":"ok"}`
+	ResError      = `{"status":"ng","error":"%s"}`
+	MySQLDatetime = "2006-01-02 15:04:05"
+	LocationName  = "Asia/Tokyo"
+)
+
+var (
+	CreditIsInsufficient     = errors.New("credit is insufficient")
+	ReserveIsExpires         = errors.New("reserve is already expired")
+	ReserveIsAlreadyCommited = errors.New("reserve is already commited")
 )
 
 func Error(w http.ResponseWriter, err string, code int) {
@@ -76,22 +88,21 @@ func Success(w http.ResponseWriter) {
 	fmt.Fprintln(w, ResOK)
 }
 
-type ReqPram struct {
-	AppID  string `json:"app_id"`
-	BankID string `json:"bank_id"`
-	Price  int64  `json:"price"`
-}
-
 type Handler struct {
 	db *sql.DB
 }
 
+// Register は POST /register を処理
+// ユーザーを作成します。本来はきっととても複雑な処理なのでしょうが誰でも簡単に一瞬で作れるのが特徴です
 func (s *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	req := &ReqPram{}
+	type ReqParam struct {
+		BankID string `json:"bank_id"`
+	}
+	req := &ReqParam{}
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		Error(w, "can't parse body", http.StatusBadRequest)
 		return
@@ -109,106 +120,410 @@ func (s *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Printf("[WARN] insert user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 	Success(w)
 }
 
+// AddCredit は POST /add_credit を処理
+// とても簡単に残高を増やすことができます。本当の銀行ならこんなAPIは無いと思いますが...
 func (s *Handler) AddCredit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	type ReqPram struct {
+		BankID string `json:"bank_id"`
+		Price  int64  `json:"price"`
+	}
 	req := &ReqPram{}
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		Error(w, "can't parse body", http.StatusBadRequest)
-		return
-	}
-	if req.BankID == "" {
-		Error(w, "bank_id is required", http.StatusBadRequest)
 		return
 	}
 	if req.Price <= 0 {
 		Error(w, "price must be upper than 0", http.StatusBadRequest)
 		return
 	}
-	userID, _, err := s.getUserID(req.BankID)
-	switch {
-	case err == sql.ErrNoRows:
-		Error(w, "user not found", http.StatusNotFound)
+	userID := s.filterBankID(w, req.BankID)
+	if userID <= 0 {
 		return
-	case err != nil:
-		log.Printf("[WARN] get user failed. err: %s", err)
-		Error(w, "internal server error", http.StatusInternalServerError)
 	}
-
-	if err = s.modifyPrice(userID, req.Price, "by add credit API"); err != nil {
-		log.Printf("[WARN] modifyPrice failed. err: %s", err)
+	err := s.txScorp(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
+			return errors.Wrap(err, "select lock failed")
+		}
+		return s.modyfyCredit(tx, userID, req.Price, "by add credit API")
+	})
+	if err != nil {
+		log.Printf("[WARN] addCredit failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 	Success(w)
 }
 
-func (s *Handler) CheckCredit(w http.ResponseWriter, r *http.Request) {
+// Check は POST /check を処理
+// 確定済み要求金額を保有しているかどうかを確認します
+func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	type ReqPram struct {
+		AppID  string `json:"app_id"`
+		BankID string `json:"bank_id"`
+		Price  int64  `json:"price"`
+	}
 	req := &ReqPram{}
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		Error(w, "can't parse body", http.StatusBadRequest)
-		return
-	}
-	if req.BankID == "" {
-		Error(w, "bank_id is required", http.StatusBadRequest)
 		return
 	}
 	if req.Price <= 0 {
 		Error(w, "price must be upper than 0", http.StatusBadRequest)
 		return
 	}
-	userID, credit, err := s.getUserID(req.BankID)
+	userID := s.filterBankID(w, req.BankID)
+	if userID <= 0 {
+		return
+	}
+	err := s.txScorp(func(tx *sql.Tx) error {
+		var credit int64
+		if err := tx.QueryRow(`SELECT credit FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID).Scan(&credit); err != nil {
+			return errors.Wrap(err, "select credit failed")
+		}
+		if credit < req.Price {
+			return CreditIsInsufficient
+		}
+		return nil
+	})
+	// TODO sleepを入れる
+	switch {
+	case err == CreditIsInsufficient:
+		Error(w, "credit is insufficient", http.StatusOK)
+	case err != nil:
+		log.Printf("[WARN] check failed. err: %s", err)
+		Error(w, "internal server error", http.StatusInternalServerError)
+	default:
+		Success(w)
+	}
+}
+
+// Reserve は POST /reserve を処理
+// 複数の取引をまとめるために1分間以内のCommitを保証します
+func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	type ReqPram struct {
+		AppID  string `json:"app_id"`
+		BankID string `json:"bank_id"`
+		Price  int64  `json:"price"`
+	}
+	req := &ReqPram{}
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		Error(w, "can't parse body", http.StatusBadRequest)
+		return
+	}
+	if req.Price == 0 {
+		Error(w, "price is 0", http.StatusBadRequest)
+		return
+	}
+	userID := s.filterBankID(w, req.BankID)
+	if userID <= 0 {
+		return
+	}
+	// TODO sleepを入れる
+	var rsvID int64
+	price := req.Price
+	memo := fmt.Sprintf("app:%s, price:%d", req.AppID, req.Price)
+	err := s.txScorp(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
+			return errors.Wrap(err, "select lock failed")
+		}
+		now := time.Now()
+		expire := now.Add(time.Minute)
+		isMinus := price < 0
+		if isMinus {
+			var fixed, reserved int64
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM credit WHERE user_id = ?`, userID).Scan(&fixed); err != nil {
+				return errors.Wrap(err, "calc credit failed")
+			}
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire.Format(MySQLDatetime)).Scan(&reserved); err != nil {
+				return errors.Wrap(err, "calc reserve failed")
+			}
+			if fixed+reserved+price < 0 {
+				return CreditIsInsufficient
+			}
+		}
+		query := `INSERT INTO reserve (user_id, amount, note, is_minus, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)`
+		sr, err := tx.Exec(query, userID, price, memo, isMinus, now.Format(MySQLDatetime), expire.Format(MySQLDatetime))
+		if err != nil {
+			return errors.Wrap(err, "update user.credit failed")
+		}
+		rsvID, err = sr.LastInsertId()
+		return err
+	})
+
+	switch {
+	case err == CreditIsInsufficient:
+		Error(w, "credit is insufficient", http.StatusOK)
+	case err != nil:
+		log.Printf("[WARN] reserve failed. err: %s", err)
+		Error(w, "internal server error", http.StatusInternalServerError)
+	default:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		fmt.Fprintln(w, fmt.Sprintf(`{"status":"ok","reserve_id":%d}`, rsvID))
+	}
+}
+
+func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	type ReqPram struct {
+		AppID      string  `json:"app_id"`
+		ReserveIDs []int64 `json:"reserve_ids"`
+	}
+	req := &ReqPram{}
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		Error(w, "can't parse body", http.StatusBadRequest)
+		return
+	}
+	if len(req.ReserveIDs) == 0 {
+		Error(w, "reserve_ids is required", http.StatusBadRequest)
+		return
+	}
+	// TODO sleepを入れる
+	err := s.txScorp(func(tx *sql.Tx) error {
+		l := len(req.ReserveIDs)
+		holder := "?" + strings.Repeat(",?", l-1)
+		rids := make([]interface{}, l)
+		for i, v := range req.ReserveIDs {
+			rids[i] = v
+		}
+		// 空振りロックを避けるために個数チェック
+		var count int
+		query := fmt.Sprintf(`SELECT COUNT(id) FROM reserve WHERE id IN (%s) AND expire_at >= NOW()`, holder)
+		if err := tx.QueryRow(query, rids...).Scan(&count); err != nil {
+			return errors.Wrap(err, "count reserve failed")
+		}
+		if count < l {
+			return ReserveIsExpires
+		}
+
+		// reserveの取得(for update)
+		type Reserve struct {
+			ID     int64
+			UserID int64
+			Amount int64
+			Note   string
+		}
+		reserves := make([]Reserve, 0, l)
+		query = fmt.Sprintf(`SELECT id, user_id, amount, note FROM reserve WHERE id IN (%s) FOR UPDATE`, holder)
+		rows, err := tx.Query(query, rids...)
+		if err != nil {
+			return errors.Wrap(err, "select reserves failed")
+		}
+		defer rows.Close()
+		for rows.Next() {
+			reserve := Reserve{}
+			if err := rows.Scan(&reserve.ID, &reserve.UserID, &reserve.Amount, &reserve.Note); err != nil {
+				return errors.Wrap(err, "select reserves failed")
+			}
+			reserves = append(reserves, reserve)
+		}
+		if err = rows.Err(); err != nil {
+			return errors.Wrap(err, "select reserves failed")
+		}
+		if len(reserves) != l {
+			return ReserveIsAlreadyCommited
+		}
+
+		// userのlock
+		userids := make([]interface{}, l)
+		for i, rsv := range reserves {
+			userids[i] = rsv.UserID
+		}
+		query = fmt.Sprintf(`SELECT id FROM user WHERE id IN (%s)  LIMIT 1 FOR UPDATE`, holder)
+		if _, err := tx.Exec(query, userids...); err != nil {
+			return errors.Wrap(err, "select lock failed")
+		}
+
+		// 予約のcreditへの適用
+		for _, rsv := range reserves {
+			if err := s.modyfyCredit(tx, rsv.UserID, rsv.Amount, rsv.Note); err != nil {
+				return errors.Wrapf(err, "modyfyCredit failed %#v", rsv)
+			}
+		}
+
+		// reserveの削除
+		query = fmt.Sprintf(`DELETE FROM reserve WHERE id IN (%s)`, holder)
+		if _, err := tx.Exec(query, rids...); err != nil {
+			return errors.Wrap(err, "delete reserve failed")
+		}
+		return nil
+	})
+	if err != nil {
+		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
+			Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			log.Printf("[WARN] commit credit failed. err: %s", err)
+			Error(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+	Success(w)
+}
+
+func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	type ReqPram struct {
+		AppID      string  `json:"app_id"`
+		ReserveIDs []int64 `json:"reserve_ids"`
+	}
+	req := &ReqPram{}
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		Error(w, "can't parse body", http.StatusBadRequest)
+		return
+	}
+	if len(req.ReserveIDs) == 0 {
+		Error(w, "reserve_ids is required", http.StatusBadRequest)
+		return
+	}
+	// TODO sleepを入れる
+	err := s.txScorp(func(tx *sql.Tx) error {
+		l := len(req.ReserveIDs)
+		holder := "?" + strings.Repeat(",?", l-1)
+		rids := make([]interface{}, l)
+		for i, v := range req.ReserveIDs {
+			rids[i] = v
+		}
+		// 空振りロックを避けるために個数チェック
+		var count int
+		query := fmt.Sprintf(`SELECT COUNT(id) FROM reserve WHERE id IN (%s)`, holder)
+		if err := tx.QueryRow(query, rids...).Scan(&count); err != nil {
+			return errors.Wrap(err, "count reserve failed")
+		}
+		if count < l {
+			return ReserveIsAlreadyCommited
+		}
+
+		// reserveの取得(for update)
+		type Reserve struct {
+			ID     int64
+			UserID int64
+		}
+		reserves := make([]Reserve, 0, l)
+		query = fmt.Sprintf(`SELECT id, user_id FROM reserve WHERE id IN (%s) FOR UPDATE`, holder)
+		rows, err := tx.Query(query, rids...)
+		if err != nil {
+			return errors.Wrap(err, "select reserves failed")
+		}
+		defer rows.Close()
+		for rows.Next() {
+			reserve := Reserve{}
+			if err := rows.Scan(&reserve.ID, &reserve.UserID); err != nil {
+				return errors.Wrap(err, "select reserves failed")
+			}
+			reserves = append(reserves, reserve)
+		}
+		if err = rows.Err(); err != nil {
+			return errors.Wrap(err, "select reserves failed")
+		}
+		if len(reserves) != l {
+			return ReserveIsAlreadyCommited
+		}
+
+		// userのlock
+		userids := make([]interface{}, l)
+		for i, rsv := range reserves {
+			userids[i] = rsv.UserID
+		}
+		query = fmt.Sprintf(`SELECT id FROM user WHERE id IN (%s)  LIMIT 1 FOR UPDATE`, holder)
+		if _, err := tx.Exec(query, userids...); err != nil {
+			return errors.Wrap(err, "select lock failed")
+		}
+
+		// reserveの削除
+		query = fmt.Sprintf(`DELETE FROM reserve WHERE id IN (%s)`, holder)
+		if _, err := tx.Exec(query, rids...); err != nil {
+			return errors.Wrap(err, "delete reserve failed")
+		}
+		return nil
+	})
+	if err != nil {
+		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
+			Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			log.Printf("[WARN] cancel credit failed. err: %s", err)
+			Error(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+	Success(w)
+}
+
+func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) {
+	if bankID == "" {
+		Error(w, "bank_id is required", http.StatusBadRequest)
+		return
+	}
+	err := s.db.QueryRow(`SELECT id FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id)
 	switch {
 	case err == sql.ErrNoRows:
 		Error(w, "user not found", http.StatusNotFound)
-		return
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
 	}
-	if credit >= req.Price {
-		Success(w)
-	} else {
-		Error(w, "credit is shorten", http.StatusOK)
-	}
-}
-
-func (s *Handler) SendCredit(w http.ResponseWriter, r *http.Request) {
-	Success(w)
-}
-
-func (s *Handler) PullCredit(w http.ResponseWriter, r *http.Request) {
-	Success(w)
-}
-
-func (s *Handler) getUserID(bankID string) (id, credit int64, err error) {
-	err = s.db.QueryRow(`SELECT id, credit FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id, &credit)
 	return
 }
 
-func (s *Handler) modifyPrice(userID, price int64, memo string) error {
+func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return errors.Wrap(err, "begin transaction failed")
 	}
-	if _, err = tx.Exec(`INSERT INTO jpyen (user_id, amount, note, created_at) VALUES (?, NOW())`, userID, price, memo); err != nil {
-		return errors.Wrap(err, "insert jpyen failed")
+	defer func() {
+		if e := recover(); e != nil {
+			tx.Rollback()
+			err = errors.Errorf("panic in transaction: %s", e)
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+	err = f(tx)
+	return
+}
+
+func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) error {
+	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW())`, userID, price, memo); err != nil {
+		return errors.Wrap(err, "insert credit failed")
 	}
-	var price int64
-	if err = tx.QueryRow(`SELECT SUM(amount) FROM jpyen WHERE user_id = ?`, userID).Scan(&price); err != nil {
-		return errors.Wrap(err, "calc jpyen failed")
+	var credit int64
+	if err := tx.QueryRow(`SELECT IFNULL(SUM(amount),0) FROM credit WHERE user_id = ?`, userID).Scan(&credit); err != nil {
+		return errors.Wrap(err, "calc credit failed")
 	}
-	if _, err = tx.Exec(`UPDATE user SET credit = ? WHERE user_id = ?`, price, bankID); err != nil {
+	if _, err := tx.Exec(`UPDATE user SET credit = ? WHERE id = ?`, credit, userID); err != nil {
 		return errors.Wrap(err, "update user.credit failed")
 	}
-	return tx.Commit()
+	return nil
+}
+
+func init() {
+	var err error
+	loc, err := time.LoadLocation(LocationName)
+	if err != nil {
+		log.Panicln(err)
+	}
+	time.Local = loc
 }
