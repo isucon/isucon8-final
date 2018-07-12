@@ -8,6 +8,7 @@
     - bank_endpoint : bankAPIのエンドポイントを指定
     - bank_appid    : bankAPIで利用するappid
     - log_endpoint  : logAPIのエンドポイント
+    - log_appid     : logAPIのエンドポイントで利用するappid
 
 ### 登録
 
@@ -29,7 +30,7 @@
     - tag:signup
         - name: $name
         - bank_id: $bank_id
-        - time: $current_time
+        - user_id: $user_id
 
 ### ログイン
 
@@ -50,7 +51,6 @@
 - log
     - tag:signin
         - user_id: $user_id
-        - time: $current_time
 
 ### マイページ
 
@@ -86,7 +86,6 @@
         - sell_id: $sell_id
         - amount: $amount
         - price: $price
-        - time: $current_time
 - memo
     - 処理後に買い注文とのマッチングをする
 
@@ -107,13 +106,11 @@
         - buy_id: $buy_id
         - amount: $amount
         - price: $price
-        - time: $current_time
-    - tag:credit.error (与信API失敗時)
+    - tag:buy.error (与信API失敗時)
         - user_id: $user_id
-        - error_code: $error_code
+        - error: $error
         - amount: $amount
         - price: $price
-        - time: $current_time
 - memo
     - 処理前に与信APIを叩く(これを叩かないとエラー)
     - 処理後に売り注文とのマッチングをする
@@ -131,21 +128,18 @@
         - trade_id: $trade_id
         - amount: $amount
         - price: $price
-        - time: $current_time
     - tag:sell.close
         - trade_id: $trade_id
         - user_id: $user_id
         - sell_id: $sell_id
         - amount: $amount
         - price: $price
-        - time: $current_time
     - tag:buy.close
         - trade_id: $trade_id
         - user_id: $user_id
         - buy_id: $buy_id
         - amount: $amount
         - price: $price
-        - time: $current_time
 
 
 ## 銀行API
@@ -237,7 +231,8 @@ reserve APIで予約した決済を取り消します
 - request: application/json
     - app_id
     - tag
-    - praams
+    - time
+    - data 
 
 ### `POST /send_bulk`
 
@@ -246,4 +241,5 @@ reserve APIで予約した決済を取り消します
     - app_id
     - logs
         - tag
-        - params
+        - time
+        - data
