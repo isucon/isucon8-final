@@ -78,12 +78,17 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 			h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
 			return
 		}
-		// bankIDの検証
 		isubank, err := h.newIsubank()
 		if err != nil {
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
+		logger, err := h.newLogger()
+		if err != nil {
+			h.handleError(w, err, http.StatusInternalServerError)
+			return
+		}
+		// bankIDの検証
 		if err = isubank.Check(bankID, 1); err != nil {
 			h.handleError(w, err, http.StatusBadRequest)
 			return
@@ -93,7 +98,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
-		if _, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ? NOW())`, bankID, name, pass); err != nil {
+		if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ? NOW())`, bankID, name, pass); err != nil {
 			if mysqlError, ok := err.(*mysql.MySQLError); ok {
 				if mysqlError.Number == 1062 {
 					h.handleError(w, errors.New("bank_id already exists"), http.StatusBadRequest)
@@ -102,6 +107,13 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 			}
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
+		} else {
+			userID, _ := res.LastInsertId()
+			logger.Send("signup", LogDataSignup{
+				BankID: bankID,
+				UserID: userID,
+				Name:   name,
+			})
 		}
 		http.Redirect(w, r, "/signin", http.StatusFound)
 	} else {
@@ -119,6 +131,11 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 		password := r.FormValue("password")
 		if bankID == "" || password == "" {
 			h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
+			return
+		}
+		logger, err := h.newLogger()
+		if err != nil {
+			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
 
@@ -150,6 +167,9 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
+		logger.Send("signin", LogDataSignin{
+			UserID: userID,
+		})
 		http.Redirect(w, r, "/mypage", http.StatusFound)
 	} else {
 		// TODO Signin form or error
@@ -256,4 +276,16 @@ func (h *Handler) newIsubank() (*Isubank, error) {
 		return nil, err
 	}
 	return NewIsubank(ep, id)
+}
+
+func (h *Handler) newLogger() (*Logger, error) {
+	ep, err := h.getSetting(LogEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	id, err := h.getSetting(LogAppid)
+	if err != nil {
+		return nil, err
+	}
+	return NewLogger(ep, id)
 }
