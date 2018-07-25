@@ -207,11 +207,15 @@ func (h *Handler) MyPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type User struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	BankID    string    `json:"-"`
+	CreatedAt time.Time `json:"-"`
 }
 
 type Sell struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"-"`
 	User      User       `json:"user"`
 	Amount    int64      `json:"amount"`
 	Price     int64      `json:"price"`
@@ -221,6 +225,8 @@ type Sell struct {
 }
 
 type Buy struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"-"`
 	User      User       `json:"user"`
 	Amount    int64      `json:"amount"`
 	Price     int64      `json:"price"`
@@ -246,7 +252,7 @@ func (h *Handler) SellRequests(w http.ResponseWriter, r *http.Request) {
 			OK: true,
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
-			if err := h.lockUser(tx, s.UserID); err != nil {
+			if _, err := h.lockUser(tx, s.UserID); err != nil {
 				return err
 			}
 			logger, err := h.newLogger()
@@ -305,7 +311,7 @@ func (h *Handler) BuyRequests(w http.ResponseWriter, r *http.Request) {
 			OK: true,
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
-			if err := h.lockUser(tx, s.UserID); err != nil {
+			if _, err := h.lockUser(tx, s.UserID); err != nil {
 				return err
 			}
 			logger, err := h.newLogger()
@@ -324,7 +330,8 @@ func (h *Handler) BuyRequests(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			if err = isubank.Check(s.BankID, price); err != nil {
+			totalPrice := price * amount
+			if err = isubank.Check(s.BankID, totalPrice); err != nil {
 				logger.Send("buy.error", LogDataBuyError{
 					Error:  err.Error(),
 					UserID: s.UserID,
@@ -379,7 +386,79 @@ func (h *Handler) Trades(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) runTrade() {
+	isubank, err := h.newIsubank()
+	if err != nil {
+		log.Printf("[WARN] isubank init failed. err:%s", err)
+		return
+	}
+	logger, err := h.newLogger()
+	if err != nil {
+		log.Printf("[WARN] logger init failed. err:%s", err)
+		return
+	}
+	_, _ = isubank, logger
+	errNoItem := errors.New("no item")
 	// TODO Trade
+	err = h.txScorp(func(tx *sql.Tx) error {
+		// 一番安い売り注文
+		sell := Sell{}
+		q := `SELECT id FROM sell_request WHERE closed_at IS NULL ORDER BY price ASC LIMIT 1`
+		err := tx.QueryRow(q).Scan(&sell.ID)
+		switch {
+		case err == sql.ErrNoRows:
+			return errNoItem
+		case err != nil:
+			return err
+		}
+		q = `SELECT id, user_id, amount, price FROM sell_request WHERE id = ? FOR UPDATE`
+		if err = tx.QueryRow(q, sell.ID).Scan(&sell.ID, &sell.UserID, &sell.Amount, &sell.Price, &sell.ClosedAt); err != nil {
+			return err
+		}
+		if sell.ClosedAt != nil && !sell.ClosedAt.IsZero() {
+			// 成約済み
+			return nil
+		}
+		seller, err := h.lockUser(tx, sell.UserID)
+		if err != nil {
+			return nil
+		}
+		_ = seller
+		restAmount := sell.Amount
+		// 買い注文
+		q = `SELECT id, user_id, amount, price FROM buy_request WHERE closed_at IS NULL AND price >= ? ORDER BY price DESC`
+		rows, err := tx.Query(q, sell.Price)
+		if err != nil {
+			return err
+		}
+		buys := []Buy{}
+		defer rows.Close()
+		for rows.Next() {
+			buy := Buy{}
+			if err = rows.Scan(&buy.ID, &buy.UserID, &buy.Amount, &buy.Price); err != nil {
+				return err
+			}
+			q = `SELECT id, closed_at FROM buy_request WHERE id = ? FOR UPDATE`
+			if err = tx.QueryRow(q, buy.ID).Scan(&buy.ID, &buy.ClosedAt); err != nil {
+				return err
+			}
+			if buy.ClosedAt != nil && !buy.ClosedAt.IsZero() {
+				// 成約済み
+				continue
+			}
+			if buy.Amount > restAmount {
+				// TODO 本当はその場合次の売り注文を見たい
+				continue
+			}
+			buys = append(buys, buy)
+		}
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("[WARN] runTrade failed. err: %s", err)
+	}
 }
 
 func (h *Handler) common(f http.Handler) http.Handler {
@@ -449,9 +528,13 @@ func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	return
 }
 
-func (h *Handler) lockUser(tx *sql.Tx, userID int64) error {
-	_, err := tx.Exec(`SELECT * FROM user WHERE id = ? FOR UPDATE`, userID)
-	return err
+func (h *Handler) lockUser(tx *sql.Tx, userID int64) (*User, error) {
+	user := User{}
+	err := tx.QueryRow(`SELECT id, name, bank_id, created_at FROM user WHERE id = ? FOR UPDATE`, userID).Scan(&user.ID, &user.Name, &user.BankID, &user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (h *Handler) newIsubank() (*Isubank, error) {
