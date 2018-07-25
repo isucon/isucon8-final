@@ -21,13 +21,6 @@ func init() {
 }
 
 func main() {
-	getEnv := func(key, def string) (v string) {
-		var ok bool
-		if v, ok = os.LookupEnv("ISU_" + key); !ok {
-			v = def
-		}
-		return
-	}
 	var (
 		port   = getEnv("APP_PORT", "5000")
 		dbhost = getEnv("DB_HOST", "127.0.0.1")
@@ -42,7 +35,7 @@ func main() {
 		dbusrpass += ":" + dbpass
 	}
 
-	dsn := fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&loc=Local&charset=utf8mb4", dbusrpass, dbhost, dbport, dbname)
+	dsn := fmt.Sprintf(`%s@tcp(%s:%s)/%s?parseTime=true&loc=Local&charset=utf8mb4`, dbusrpass, dbhost, dbport, dbname)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatalf("mysql connect failed. err: %s", err)
@@ -53,4 +46,11 @@ func main() {
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
 	log.Fatal(http.ListenAndServe(addr, server))
+}
+
+func getEnv(key, def string) string {
+	if v, ok := os.LookupEnv("ISU_" + key); ok {
+		return v
+	}
+	return def
 }
