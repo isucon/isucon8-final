@@ -58,7 +58,7 @@ func (b *Isubank) Check(bankID string, price int64) error {
 		if res.Error == "credit is insufficient" {
 			return ErrCreditInsufficient
 		}
-		return errors.Errorf("check failed", res.Error)
+		return errors.Errorf("check failed. err:%s", res.Error)
 	}
 	return nil
 }
@@ -76,7 +76,7 @@ func (b *Isubank) Reserve(bankID string, price int64) (int64, error) {
 		if res.Error == "credit is insufficient" {
 			return 0, ErrCreditInsufficient
 		}
-		return 0, errors.Errorf("reserve failed", res.Error)
+		return 0, errors.Errorf("reserve failed. err:%s", res.Error)
 	}
 	return res.ReserveID, nil
 }
@@ -94,7 +94,7 @@ func (b *Isubank) Commit(bankID string, reserveIDs ...int64) error {
 		if res.Error == "credit is insufficient" {
 			return ErrCreditInsufficient
 		}
-		return errors.Errorf("commit failed", res.Error)
+		return errors.Errorf("commit failed. err:%s", res.Error)
 	}
 	return nil
 }
@@ -109,7 +109,7 @@ func (b *Isubank) Cancel(bankID string, reserveIDs ...int64) error {
 		return errors.Wrap(err, "cancel failed")
 	}
 	if !res.Success() {
-		return errors.Errorf("cancel failed", res.Error)
+		return errors.Errorf("cancel failed. err:%s", res.Error)
 	}
 	return nil
 }
