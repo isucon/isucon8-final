@@ -81,10 +81,9 @@ func (b *Isubank) Reserve(bankID string, price int64) (int64, error) {
 	return res.ReserveID, nil
 }
 
-func (b *Isubank) Commit(bankID string, reserveIDs ...int64) error {
+func (b *Isubank) Commit(reserveIDs []int64) error {
 	res := &IsubankBasicResponse{}
 	v := map[string]interface{}{
-		"bank_id":     bankID,
 		"reserve_ids": reserveIDs,
 	}
 	if err := b.request("/commit", v, res); err != nil {
@@ -99,10 +98,9 @@ func (b *Isubank) Commit(bankID string, reserveIDs ...int64) error {
 	return nil
 }
 
-func (b *Isubank) Cancel(bankID string, reserveIDs ...int64) error {
+func (b *Isubank) Cancel(reserveIDs []int64) error {
 	res := &IsubankBasicResponse{}
 	v := map[string]interface{}{
-		"bank_id":     bankID,
 		"reserve_ids": reserveIDs,
 	}
 	if err := b.request("/cancel", v, res); err != nil {
