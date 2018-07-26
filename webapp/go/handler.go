@@ -396,7 +396,6 @@ func (h *Handler) runTrade() {
 		log.Printf("[WARN] logger init failed. err:%s", err)
 		return
 	}
-	_, _ = isubank, logger
 	errNoItem := errors.New("no item")
 	// TODO Trade
 	err = h.txScorp(func(tx *sql.Tx) error {
@@ -494,19 +493,33 @@ func (h *Handler) runTrade() {
 		if err != nil {
 			return err
 		}
-		upbuy, err := tx.Prepare(`UPDATE buy_request SET trade_id = ? AND closed_at = ? WHERE id = ?`)
-		if err != nil {
-			return err
-		}
-		defer upbuy.Close()
+		logger.Send("close", LogDataClose{
+			Price:   sell.Price,
+			Amount:  sell.Amount,
+			TradeID: tradeID,
+		})
 		for _, buy := range buys {
-			if _, err = upbuy.Exec(tradeID, now, buy.ID); err != nil {
+			if _, err = tx.Exec(`UPDATE buy_request SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
 				return err
 			}
+			logger.Send("buy.close", LogDataBuyClose{
+				BuyID:   buy.ID,
+				Price:   sell.Price,
+				Amount:  buy.Amount,
+				UserID:  buy.UserID,
+				TradeID: tradeID,
+			})
 		}
 		if _, err = tx.Exec(`UPDATE sell_request SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
 			return err
 		}
+		logger.Send("sell.close", LogDataSellClose{
+			SellID:  sell.ID,
+			Price:   sell.Price,
+			Amount:  sell.Amount,
+			UserID:  sell.UserID,
+			TradeID: tradeID,
+		})
 		if err = isubank.Commit(reserves); err != nil {
 			return err
 		}
