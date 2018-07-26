@@ -420,7 +420,7 @@ func (h *Handler) runTrade() {
 		}
 		seller, err := h.lockUser(tx, sell.UserID)
 		if err != nil {
-			return nil
+			return err
 		}
 		_ = seller
 		restAmount := sell.Amount
@@ -430,6 +430,7 @@ func (h *Handler) runTrade() {
 		if err != nil {
 			return err
 		}
+		reserves := []int64{}
 		buys := []Buy{}
 		defer rows.Close()
 		for rows.Next() {
@@ -449,9 +450,64 @@ func (h *Handler) runTrade() {
 				// TODO 本当はその場合次の売り注文を見たい
 				continue
 			}
+			buyer, err := h.lockUser(tx, buy.UserID)
+			if err != nil {
+				return err
+			}
+			resID, err := isubank.Reserve(buyer.BankID, -sell.Price*buy.Amount)
+			if err != nil {
+				if err == ErrCreditInsufficient {
+					// 与信確保失敗
+					continue
+				}
+				return err
+			}
+			reserves = append(reserves, resID)
 			buys = append(buys, buy)
+			restAmount -= buy.Amount
+			if restAmount == 0 {
+				break
+			}
 		}
 		if err = rows.Err(); err != nil {
+			return err
+		}
+		if restAmount > 0 {
+			if len(reserves) > 0 {
+				if err = isubank.Cancel(reserves); err != nil {
+					return err
+				}
+			}
+			return errNoItem
+		}
+		resID, err := isubank.Reserve(seller.BankID, sell.Price*sell.Amount)
+		if err != nil {
+			return err
+		}
+		reserves = append(reserves, resID)
+		now := time.Now()
+		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, sell.Amount, sell.Price, now)
+		if err != nil {
+			return err
+		}
+		tradeID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		upbuy, err := tx.Prepare(`UPDATE buy_request SET trade_id = ? AND closed_at = ? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer upbuy.Close()
+		for _, buy := range buys {
+			if _, err = upbuy.Exec(tradeID, now, buy.ID); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.Exec(`UPDATE sell_request SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
+			return err
+		}
+		if err = isubank.Commit(reserves); err != nil {
 			return err
 		}
 		return nil
