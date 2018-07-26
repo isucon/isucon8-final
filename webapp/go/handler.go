@@ -17,8 +17,7 @@ import (
 )
 
 type Session struct {
-	UserID int64
-	BankID string
+	User *User
 }
 
 type OKResp struct {
@@ -251,7 +250,7 @@ func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 			OK: true,
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
-			if _, err := h.lockUser(tx, s.UserID); err != nil {
+			if _, err := h.lockUser(tx, s.User.ID); err != nil {
 				return err
 			}
 			logger, err := h.newLogger()
@@ -266,7 +265,7 @@ func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
+			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
 			if err != nil {
 				return errors.Wrap(err, "insert sell_order failed")
 			}
@@ -276,7 +275,7 @@ func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 			}
 			err = logger.Send("sell.order", LogDataSellOrder{
 				SellID: sellID,
-				UserID: s.UserID,
+				UserID: s.User.ID,
 				Amount: amount,
 				Price:  price,
 			})
@@ -304,13 +303,12 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err, http.StatusUnauthorized)
 		return
 	}
-	_ = s
 	if r.Method == http.MethodPost {
 		res := &OKResp{
 			OK: true,
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
-			if _, err := h.lockUser(tx, s.UserID); err != nil {
+			if _, err := h.lockUser(tx, s.User.ID); err != nil {
 				return err
 			}
 			logger, err := h.newLogger()
@@ -330,10 +328,10 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			totalPrice := price * amount
-			if err = isubank.Check(s.BankID, totalPrice); err != nil {
+			if err = isubank.Check(s.User.BankID, totalPrice); err != nil {
 				logger.Send("buy.error", LogDataBuyError{
 					Error:  err.Error(),
-					UserID: s.UserID,
+					UserID: s.User.ID,
 					Amount: amount,
 					Price:  price,
 				})
@@ -342,7 +340,7 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 				}
 				return errors.Wrap(err, "isubank check failed")
 			}
-			res, err := tx.Exec(`INSERT INTO buy_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
+			res, err := tx.Exec(`INSERT INTO buy_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
 			if err != nil {
 				return errors.Wrap(err, "insert buy_order failed")
 			}
@@ -352,7 +350,7 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 			}
 			err = logger.Send("buy.order", LogDataBuyOrder{
 				BuyID:  buyID,
-				UserID: s.UserID,
+				UserID: s.User.ID,
 				Amount: amount,
 				Price:  price,
 			})
@@ -542,15 +540,16 @@ func (h *Handler) common(f http.Handler) http.Handler {
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
-		if userID, ok := session.Values["user_id"]; ok {
-			s := &Session{}
-			s.UserID = userID.(int64)
+		if _userID, ok := session.Values["user_id"]; ok {
+			userID := _userID.(int64)
+			user := &User{}
 			ctx := r.Context()
-			if err := h.db.QueryRow(`SELECT bank_id FROM user WHERE id = ?`, userID).Scan(&s.BankID); err != nil {
+			q := `SELECT id, bank_id, name, created_at FROM user WHERE id = ?`
+			if err := h.db.QueryRow(q, userID).Scan(&user.ID, &user.BankID, &user.Name, &user.CreatedAt); err != nil {
 				h.handleError(w, err, http.StatusInternalServerError)
 				return
 			}
-			ctx = context.WithValue(ctx, "session", s)
+			ctx = context.WithValue(ctx, "session", &Session{user})
 			f.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			f.ServeHTTP(w, r)
@@ -570,11 +569,6 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 	log.Printf("[WARN] err: %s", err.Error())
 	// TODO Error Message
 	http.Error(w, err.Error(), code)
-}
-
-func (h *Handler) getSetting(k string) (v string, err error) {
-	err = h.db.QueryRow(`SELECT value FROM setting WHERE key = ?`, k).Scan(&v)
-	return
 }
 
 func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
@@ -627,6 +621,11 @@ func (h *Handler) newLogger() (*Logger, error) {
 		return nil, err
 	}
 	return NewLogger(ep, id)
+}
+
+func (h *Handler) getSetting(k string) (v string, err error) {
+	err = h.db.QueryRow(`SELECT value FROM setting WHERE key = ?`, k).Scan(&v)
+	return
 }
 
 func formvalInt64(r *http.Request, key string) (int64, error) {
