@@ -1,6 +1,18 @@
 version: '2'
 services:
-  app:
+  isubank:
+    image: golang:1.10
+    command: bash -c "go get ./... && go run main.go -port=5515 -dbhost=mysql -dbuser=root -dbpass=root"
+    ports:
+      - "5515:5515"
+    links:
+      - mysql
+    working_dir: /go/src/bank
+    volumes:
+      - isubankgopath:/go
+      - ./bank:/go/src/bank
+
+  logger:
     image: golang:1.10
     command: bash -c "go get ./... && go run main.go -port=5516 -dbhost=mysql -dbuser=root -dbpass=root"
     ports:
@@ -9,8 +21,9 @@ services:
       - mysql
     working_dir: /go/src/logger
     volumes:
-      - gopath:/go
-      - .:/go/src/logger
+      - loggergopath:/go
+      - ./logger:/go/src/logger
+
   mysql:
     image: mysql:5.6.35
     environment:
@@ -21,5 +34,6 @@ services:
       - ./sql:/docker-entrypoint-initdb.d
 
 volumes:
-  gopath:
+  isubankgopath:
+  loggergopath:
   mysql:
