@@ -398,8 +398,9 @@ func (h *Handler) runTrade() {
 		return
 	}
 	errNoItem := errors.New("no item")
-	// TODO Trade
-	err = h.txScorp(func(tx *sql.Tx) error {
+	tradeBySell := func(tx *sql.Tx) error {
+		reserves := []int64{}
+		now := time.Now()
 		// 一番安い売り注文
 		var id int64
 		q := `SELECT id FROM sell_order WHERE closed_at IS NULL ORDER BY price ASC LIMIT 1`
@@ -429,7 +430,6 @@ func (h *Handler) runTrade() {
 		if err != nil {
 			return err
 		}
-		reserves := []int64{}
 		buys := []*Order{}
 		defer rows.Close()
 		for rows.Next() {
@@ -446,7 +446,6 @@ func (h *Handler) runTrade() {
 				continue
 			}
 			if buy.Amount > restAmount {
-				// TODO 本当はその場合次の売り注文を見たい
 				continue
 			}
 			buy.User, err = h.getUserByIDWithLock(tx, buy.UserID)
@@ -457,6 +456,9 @@ func (h *Handler) runTrade() {
 			if err != nil {
 				if err == ErrCreditInsufficient {
 					// 与信確保失敗
+					if _, err = tx.Exec(`UPDATE buy_order SET closed_at = ? WHERE id = ?`, now, buy.ID); err != nil {
+						return err
+					}
 					continue
 				}
 				return err
@@ -484,7 +486,6 @@ func (h *Handler) runTrade() {
 			return err
 		}
 		reserves = append(reserves, resID)
-		now := time.Now()
 		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, sell.Amount, sell.Price, now)
 		if err != nil {
 			return err
@@ -524,9 +525,148 @@ func (h *Handler) runTrade() {
 			return err
 		}
 		return nil
-	})
-	if err != nil {
-		log.Printf("[WARN] runTrade failed. err: %s", err)
+	}
+
+	tradeByBuy := func(tx *sql.Tx) error {
+		reserves := []int64{}
+		now := time.Now()
+		// 一番高い買い注文
+		var id int64
+		q := `SELECT id FROM buy_order WHERE closed_at IS NULL ORDER BY price DESC LIMIT 1`
+		err := tx.QueryRow(q).Scan(&id)
+		switch {
+		case err == sql.ErrNoRows:
+			return errNoItem
+		case err != nil:
+			return err
+		}
+		buy, err := h.getOrderByIDWithLock(tx, "buy_order", id)
+		if err != nil {
+			return err
+		}
+		if buy.ClosedAt != nil {
+			return nil
+		}
+		buy.User, err = h.getUserByIDWithLock(tx, buy.UserID)
+		if err != nil {
+			return err
+		}
+		resID, err := isubank.Reserve(buy.User.BankID, -buy.Price*buy.Amount)
+		if err != nil {
+			if err == ErrCreditInsufficient {
+				// 与信確保失敗
+				if _, err = tx.Exec(`UPDATE buy_order SET closed_at = ? WHERE id = ?`, now, buy.ID); err != nil {
+					return err
+				}
+			}
+			return err
+		}
+		reserves = append(reserves, resID)
+		restAmount := buy.Amount
+		// 売り
+		q = `SELECT id FROM buy_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
+		rows, err := tx.Query(q, buy.Price)
+		if err != nil {
+			return err
+		}
+		sells := []*Order{}
+		defer rows.Close()
+		for rows.Next() {
+			var orderID int64
+			if err = rows.Scan(&orderID); err != nil {
+				return err
+			}
+			sell, err := h.getOrderByIDWithLock(tx, "sell_order", orderID)
+			if err != nil {
+				return err
+			}
+			if sell.ClosedAt != nil {
+				continue
+			}
+			if sell.Amount > restAmount {
+				continue
+			}
+			sell.User, err = h.getUserByIDWithLock(tx, sell.UserID)
+			if err != nil {
+				return err
+			}
+			resID, err := isubank.Reserve(sell.User.BankID, buy.Price*sell.Amount)
+			if err != nil {
+				return err
+			}
+			reserves = append(reserves, resID)
+			sells = append(sells, sell)
+			restAmount -= sell.Amount
+			if restAmount == 0 {
+				break
+			}
+		}
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		if restAmount > 0 {
+			if len(reserves) > 0 {
+				if err = isubank.Cancel(reserves); err != nil {
+					return err
+				}
+			}
+			return errNoItem
+		}
+		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, buy.Amount, buy.Price, now)
+		if err != nil {
+			return err
+		}
+		tradeID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		logger.Send("close", LogDataClose{
+			Price:   buy.Price,
+			Amount:  buy.Amount,
+			TradeID: tradeID,
+		})
+		for _, sell := range sells {
+			if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
+				return err
+			}
+			logger.Send("sell.close", LogDataBuyClose{
+				BuyID:   sell.ID,
+				Price:   buy.Price,
+				Amount:  sell.Amount,
+				UserID:  sell.UserID,
+				TradeID: tradeID,
+			})
+		}
+		if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
+			return err
+		}
+		logger.Send("buy.close", LogDataSellClose{
+			SellID:  buy.ID,
+			Price:   buy.Price,
+			Amount:  buy.Amount,
+			UserID:  buy.UserID,
+			TradeID: tradeID,
+		})
+		if err = isubank.Commit(reserves); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	err = nil
+	for err == nil {
+		err = h.txScorp(tradeBySell)
+		if err != nil && err != errNoItem {
+			log.Printf("[WARN] tradeBySell failed. err: %s", err)
+		}
+	}
+
+	err = nil
+	for err == nil {
+		err = h.txScorp(tradeByBuy)
+		if err != nil && err != errNoItem {
+			log.Printf("[WARN] tradeByBuy failed. err: %s", err)
+		}
 	}
 }
 
