@@ -39,8 +39,8 @@ func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	server.HandleFunc("/signin", h.Signin)
 	server.HandleFunc("/signout", h.Signout)
 	server.HandleFunc("/mypage", h.MyPage)
-	server.HandleFunc("/sell_requests", h.SellRequests)
-	server.HandleFunc("/buy_requests", h.BuyRequests)
+	server.HandleFunc("/sell_orders", h.SellOrders)
+	server.HandleFunc("/buy_orders", h.BuyOrders)
 	server.HandleFunc("/trades", h.Trades)
 
 	// default 404
@@ -213,35 +213,34 @@ type User struct {
 	CreatedAt time.Time `json:"-"`
 }
 
-type Sell struct {
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"-"`
-	User      User       `json:"user"`
-	Amount    int64      `json:"amount"`
-	Price     int64      `json:"price"`
-	ClosedAt  *time.Time `json:"closed_at"`
-	TradeID   int64      `json:"trade_id"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-
-type Buy struct {
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"-"`
-	User      User       `json:"user"`
-	Amount    int64      `json:"amount"`
-	Price     int64      `json:"price"`
-	ClosedAt  *time.Time `json:"closed_at"`
-	TradeID   int64      `json:"trade_id"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-
 type Trade struct {
+	ID       int64      `json:"id"`
 	Amount   int64      `json:"amount"`
 	Price    int64      `json:"price"`
 	ClosedAt *time.Time `json:"closed_at"`
 }
 
-func (h *Handler) SellRequests(w http.ResponseWriter, r *http.Request) {
+type Order struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	Amount    int64      `json:"amount"`
+	Price     int64      `json:"price"`
+	ClosedAt  *time.Time `json:"closed_at"`
+	TradeID   int64      `json:"trade_id,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	User      *User      `json:"user,omitempty"`
+	Trade     *Trade     `json:"trade,omitempty"`
+}
+
+type SellOrder struct {
+	Order
+}
+
+type BuyOrder struct {
+	Order
+}
+
+func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 	s, err := h.auth(r)
 	if err != nil {
 		h.handleError(w, err, http.StatusUnauthorized)
@@ -267,15 +266,15 @@ func (h *Handler) SellRequests(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			res, err := tx.Exec(`INSERT INTO sell_request (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
+			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
 			if err != nil {
-				return errors.Wrap(err, "insert sell_request failed")
+				return errors.Wrap(err, "insert sell_order failed")
 			}
 			sellID, err := res.LastInsertId()
 			if err != nil {
 				return errors.Wrap(err, "get sell_id failed")
 			}
-			err = logger.Send("sell.request", LogDataSellRequest{
+			err = logger.Send("sell.order", LogDataSellOrder{
 				SellID: sellID,
 				UserID: s.UserID,
 				Amount: amount,
@@ -299,7 +298,7 @@ func (h *Handler) SellRequests(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) BuyRequests(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 	s, err := h.auth(r)
 	if err != nil {
 		h.handleError(w, err, http.StatusUnauthorized)
@@ -343,15 +342,15 @@ func (h *Handler) BuyRequests(w http.ResponseWriter, r *http.Request) {
 				}
 				return errors.Wrap(err, "isubank check failed")
 			}
-			res, err := tx.Exec(`INSERT INTO buy_request (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
+			res, err := tx.Exec(`INSERT INTO buy_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.UserID, amount, price)
 			if err != nil {
-				return errors.Wrap(err, "insert buy_request failed")
+				return errors.Wrap(err, "insert buy_order failed")
 			}
 			buyID, err := res.LastInsertId()
 			if err != nil {
 				return errors.Wrap(err, "get buy_id failed")
 			}
-			err = logger.Send("buy.request", LogDataBuyRequest{
+			err = logger.Send("buy.order", LogDataBuyOrder{
 				BuyID:  buyID,
 				UserID: s.UserID,
 				Amount: amount,
@@ -400,8 +399,8 @@ func (h *Handler) runTrade() {
 	// TODO Trade
 	err = h.txScorp(func(tx *sql.Tx) error {
 		// 一番安い売り注文
-		sell := Sell{}
-		q := `SELECT id FROM sell_request WHERE closed_at IS NULL ORDER BY price ASC LIMIT 1`
+		sell := SellOrder{}
+		q := `SELECT id FROM sell_order WHERE closed_at IS NULL ORDER BY price ASC LIMIT 1`
 		err := tx.QueryRow(q).Scan(&sell.ID)
 		switch {
 		case err == sql.ErrNoRows:
@@ -409,7 +408,7 @@ func (h *Handler) runTrade() {
 		case err != nil:
 			return err
 		}
-		q = `SELECT id, user_id, amount, price FROM sell_request WHERE id = ? FOR UPDATE`
+		q = `SELECT id, user_id, amount, price FROM sell_order WHERE id = ? FOR UPDATE`
 		if err = tx.QueryRow(q, sell.ID).Scan(&sell.ID, &sell.UserID, &sell.Amount, &sell.Price, &sell.ClosedAt); err != nil {
 			return err
 		}
@@ -424,20 +423,20 @@ func (h *Handler) runTrade() {
 		_ = seller
 		restAmount := sell.Amount
 		// 買い注文
-		q = `SELECT id, user_id, amount, price FROM buy_request WHERE closed_at IS NULL AND price >= ? ORDER BY price DESC`
+		q = `SELECT id, user_id, amount, price FROM buy_order WHERE closed_at IS NULL AND price >= ? ORDER BY price DESC`
 		rows, err := tx.Query(q, sell.Price)
 		if err != nil {
 			return err
 		}
 		reserves := []int64{}
-		buys := []Buy{}
+		buys := []BuyOrder{}
 		defer rows.Close()
 		for rows.Next() {
-			buy := Buy{}
+			buy := BuyOrder{}
 			if err = rows.Scan(&buy.ID, &buy.UserID, &buy.Amount, &buy.Price); err != nil {
 				return err
 			}
-			q = `SELECT id, closed_at FROM buy_request WHERE id = ? FOR UPDATE`
+			q = `SELECT id, closed_at FROM buy_order WHERE id = ? FOR UPDATE`
 			if err = tx.QueryRow(q, buy.ID).Scan(&buy.ID, &buy.ClosedAt); err != nil {
 				return err
 			}
@@ -499,7 +498,7 @@ func (h *Handler) runTrade() {
 			TradeID: tradeID,
 		})
 		for _, buy := range buys {
-			if _, err = tx.Exec(`UPDATE buy_request SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
+			if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
 				return err
 			}
 			logger.Send("buy.close", LogDataBuyClose{
@@ -510,7 +509,7 @@ func (h *Handler) runTrade() {
 				TradeID: tradeID,
 			})
 		}
-		if _, err = tx.Exec(`UPDATE sell_request SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
 			return err
 		}
 		logger.Send("sell.close", LogDataSellClose{

@@ -37,14 +37,14 @@ type LogDataSignin struct {
 	UserID int64 `json:"user_id"`
 }
 
-type LogDataSellRequest struct {
+type LogDataSellOrder struct {
 	UserID int64 `json:"user_id"`
 	SellID int64 `json:"sell_id"`
 	Amount int64 `json:"amount"`
 	Price  int64 `json:"price"`
 }
 
-type LogDataBuyRequest struct {
+type LogDataBuyOrder struct {
 	UserID int64 `json:"user_id"`
 	BuyID  int64 `json:"buy_id"`
 	Amount int64 `json:"amount"`

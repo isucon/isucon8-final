@@ -72,7 +72,7 @@
 
 ### 売り注文
 
-#### `POST /sell_requests`
+#### `POST /sell_orders`
 
 - request: application/form-url-encoded
     - amount: 売りたい脚数
@@ -81,7 +81,7 @@
     - {"ok":true} = 成功
     - {"ok":false,"error":"メッセージ"} = 失敗
 - log
-    - tag:sell.request
+    - tag:sell.order
         - user_id: $user_id
         - sell_id: $sell_id
         - amount: $amount
@@ -92,7 +92,7 @@
 
 ### 買い注文
 
-#### `POST /buy_requests`
+#### `POST /buy_orders`
 
 - request: application/form-url-encoded
     - amount: 買いたい脚数
@@ -101,7 +101,7 @@
     - {"ok":true} = 成功
     - {"ok":false,"error":"メッセージ"} = 失敗
 - log
-    - tag:buy.request
+    - tag:buy.order
         - user_id: $user_id
         - buy_id: $buy_id
         - amount: $amount

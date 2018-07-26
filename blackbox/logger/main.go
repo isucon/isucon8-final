@@ -77,8 +77,8 @@ type TagType int
 const (
 	TagSignup TagType = 1 + iota
 	TagSignin
-	TagSellRequest
-	TagBuyRequest
+	TagSellOrder
+	TagBuyOrder
 	TagBuyError
 	TagClose
 	TagSellClose
@@ -111,14 +111,14 @@ type Signin struct {
 	UserID int64 `json:"user_id"`
 }
 
-type SellRequest struct {
+type SellOrder struct {
 	UserID int64 `json:"user_id"`
 	SellID int64 `json:"sell_id"`
 	Amount int64 `json:"amount"`
 	Price  int64 `json:"price"`
 }
 
-type BuyRequest struct {
+type BuyOrder struct {
 	UserID int64 `json:"user_id"`
 	BuyID  int64 `json:"buy_id"`
 	Amount int64 `json:"amount"`
@@ -243,9 +243,9 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Errorf("%s data.user_id is required", l.Tag)
 		}
 		userID = data.UserID
-	case "sell.request":
-		tag = TagSellRequest
-		data := &SellRequest{}
+	case "sell.order":
+		tag = TagSellOrder
+		data := &SellOrder{}
 		if err := json.Unmarshal(l.Data, data); err != nil {
 			return errors.Wrap(err, "parse data failed")
 		}
@@ -262,9 +262,9 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Errorf("%s data.price is required", l.Tag)
 		}
 		userID = data.UserID
-	case "buy.request":
-		tag = TagBuyRequest
-		data := &BuyRequest{}
+	case "buy.order":
+		tag = TagBuyOrder
+		data := &BuyOrder{}
 		if err := json.Unmarshal(l.Data, data); err != nil {
 			return errors.Wrap(err, "parse data failed")
 		}

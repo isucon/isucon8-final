@@ -14,7 +14,7 @@ CREATE TABLE user (
     UNIQUE KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
-CREATE TABLE sell_request (
+CREATE TABLE sell_order (
     id BIGINT NOT NULL AUTO_INCREMENT,
     user_id VARBINARY(191) NOT NULL,
     amount BIGINT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE sell_request (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
-CREATE TABLE buy_request (
+CREATE TABLE buy_order (
     id BIGINT NOT NULL AUTO_INCREMENT,
     user_id VARBINARY(191) NOT NULL,
     amount BIGINT NOT NULL,
