@@ -9,4 +9,6 @@ const (
 	BankAppid    = "bank_appid"
 	LogEndpoint  = "log_endpoint"
 	LogAppid     = "log_appid"
+
+	ListLimit = 1000
 )
