@@ -1,0 +1,33 @@
+version: '2'
+services:
+  isucoin-go:
+    image: golang:1.10
+    command: bash -c "go get ./... && go run main.go const.go handler.go isubank.go logger.go"
+    ports:
+      - "12510:5000"
+    environment:
+      ISU_APP_PORT:    '5000'
+      ISU_DB_HOST:     'mysql'
+      ISU_DB_PORT:     '3306'
+      ISU_DB_USER:     'root'
+      ISU_DB_PASSWORD: 'root'
+      ISU_DB_NAME:     'isucoin'
+    links:
+      - mysql
+    working_dir: /webapp
+    volumes:
+      - gopath:/go
+      - ./go:/webapp
+
+  mysql:
+    image: mysql:5.6.35
+    environment:
+      - "TZ=Asia/Tokyo"
+      - "MYSQL_ROOT_PASSWORD=root"
+    volumes:
+      - mysql:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d
+
+volumes:
+  gopath:
+  mysql:

@@ -27,7 +27,7 @@ func main() {
 		dbport = getEnv("DB_PORT", "3306")
 		dbuser = getEnv("DB_USER", "root")
 		dbpass = getEnv("DB_PASSWORD", "")
-		dbname = getEnv("DB_NAME", "isudb")
+		dbname = getEnv("DB_NAME", "isucoin")
 	)
 
 	dbusrpass := dbuser
