@@ -2,13 +2,10 @@ package bench
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -141,22 +138,25 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	return res, nil
 }
 
-func (c *Client) post(path string, ctype string, body io.Reader) (*http.Response, error) {
+func (c *Client) post(path string, val url.Values) (*http.Response, error) {
 	u, err := c.base.Parse(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
 	}
-	req, err := http.NewRequest(http.MethodPost, u.String(), body)
+	req, err := http.NewRequest(http.MethodPost, u.String(), strings.NewReader(val.Encode()))
 	if err != nil {
 		return nil, errors.Wrap(err, "new request failed")
 	}
-	req.Header.Set("Content-Type", ctype)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return c.doRequest(req)
 }
 
 func (c *Client) Signup() error {
-	body := strings.NewReader(fmt.Sprintf(`{"name":"%s","bank_id":"%s","password":"%s"}`, c.name, c.bankid.c.pass))
-	res, err := c.post("/signup", "application/json", body)
+	v := url.Values{}
+	v.Set("name", c.name)
+	v.Set("bank_id", c.bankid)
+	v.Set("password", c.pass)
+	res, err := c.post("/signup", v)
 	if err != nil {
 		return errors.Wrap(err, "POST /signup request failed")
 	}
@@ -165,323 +165,163 @@ func (c *Client) Signup() error {
 	if err != nil {
 		return errors.Wrap(err, "POST /signup body read failed")
 	}
-	if res.StatusCode == 200 {
+	if res.StatusCode == http.StatusFound {
 		return nil
 	}
 	return errors.Errorf("POST /signup failed. body: %s", string(b))
 }
 
-func (c *Client) Login() error {
-	body := strings.NewReader(fmt.Sprintf(`{"user_id":"%s","password":"%s"}`, c.user, c.pass))
-	res, err := c.post("/login", "application/json", body)
+func (c *Client) Signin() error {
+	v := url.Values{}
+	v.Set("bank_id", c.bankid)
+	v.Set("password", c.pass)
+	res, err := c.post("/signin", v)
 	if err != nil {
-		return errors.Wrap(err, "POST /login request failed")
-	}
-	defer res.Body.Close()
-	type Lres struct {
-		Code      int    `json:"code"`
-		SessionID string `json:"session_id"`
-		Message   string `json:"message"`
-	}
-	var r Lres
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return errors.Wrap(err, "POST /login body decode failed")
-	}
-	if res.StatusCode == 200 {
-		c.sessionID = r.SessionID
-		return nil
-	}
-	return errors.Errorf("POST /login failed. json: %#v", r)
-}
-
-func (c *Client) AddScore(score int64) error {
-	body := strings.NewReader(fmt.Sprintf(`{"session_id":"%s","score":%d}`, c.sessionID, score))
-	res, err := c.post("/scores", "application/json", body)
-	if err != nil {
-		return errors.Wrap(err, "POST /scores request failed")
+		return errors.Wrap(err, "POST /signin request failed")
 	}
 	defer res.Body.Close()
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "POST /scores body read failed")
+		return errors.Wrap(err, "POST /signin body read failed")
 	}
-	if res.StatusCode == 200 {
-		c.total += score
-		if c.best < score {
-			c.best = score
-		}
-		c.count++
+	if res.StatusCode == http.StatusFound {
 		return nil
 	}
-	return errors.Errorf("POST /signup failed. body: %s", string(b))
+	return errors.Errorf("POST /signin failed. body: %s", string(b))
 }
 
-func (c *Client) Static(path string, esize int64) error {
+func (c *Client) Mypage() error {
+	res, err := c.get("/mypage", url.Values{})
+	if err != nil {
+		return errors.Wrap(err, "GET /mypage request failed")
+	}
+	defer res.Body.Close()
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return errors.Wrap(err, "GET /mypage body read failed")
+	}
+	if res.StatusCode == http.StatusOK {
+		return nil
+	}
+	return errors.Errorf("POST /mypage failed. body: %s", string(b))
+}
+
+func (c *Client) Trades() ([]Trade, error) {
+	path := "/trades"
 	res, err := c.get(path, url.Values{})
 	if err != nil {
-		return errors.Wrapf(err, "GET %s failed", path)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == 304 {
-		return nil
-	}
-	if res.StatusCode != 200 {
-		return errors.Errorf("GET %s status is %d", res.StatusCode)
-	}
-
-	size, err := io.Copy(ioutil.Discard, res.Body)
-	if size < esize {
-		return errors.Errorf("size is too small")
-	}
-	return nil
-}
-
-type Score struct {
-	Rank      int    `json:"rank"`
-	Name      string `json:"name"`
-	Image     int    `json:"image"`
-	Score     int64  `json:"score"`
-	CreatedAt int64  `json:"created_at"`
-}
-
-type ScoreRes struct {
-	Ranking []Score `json:"ranking"`
-	Next    string  `json:"next"`
-}
-
-func (c *Client) Scores(path string, val url.Values) (*ScoreRes, error) {
-	res, err := c.get(path, val)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GET %s failed", path)
+		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return nil, errors.Errorf("GET %s status code is %d", path, res.StatusCode)
-	}
-	r := &ScoreRes{}
-	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
-		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
-	}
-	return r, nil
-}
-
-func (c *Client) ScoresCallback(ctx context.Context, path string, count, pages int, cb func([]Score, int) error) error {
-	statics := make([]string, 0, count)
-	v := url.Values{}
-	v.Set("count", strconv.Itoa(count))
-	for i := 0; i < pages; i++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			res, err := c.Scores(path, v)
-			if err != nil {
-				return err
-			}
-			if len(res.Ranking) == 0 {
-				return nil
-			}
-			images := make(map[int]struct{}, 10)
-			// アイコンを取りに行く
-			for _, rank := range res.Ranking {
-				if _, ok := images[rank.Image]; !ok {
-					statics = append(statics, fmt.Sprintf("/img/%d.jpg", rank.Image))
-					images[rank.Image] = struct{}{}
-				}
-			}
-			if err = c.RunStatics(ctx, statics); err != nil {
-				return err
-			}
-			if err = cb(res.Ranking, i); err != nil {
-				return err
-			}
-			if res.Next == "-1" || res.Next == "" {
-				return nil
-			}
-			v.Set("next", res.Next)
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GET %s body read failed", path)
 		}
+		return nil, errors.Errorf("GET %s status code is %d, body: %s", path, res.StatusCode, string(b))
 	}
-	return nil
+	r := []Trade{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return errors.Wrapf(err, "GET %s body decode failed", path)
+	}
+	if r.OK {
+		return r, nil
+	}
+	return nil, errors.Errorf("POST %s failed. err:%s", path, r.Error)
 }
 
-type UserScore struct {
-	BestScore  int64 `json:"best_score"`
-	BestRank   int64 `json:"best_rank"`
-	TotalScore int64 `json:"total_score"`
-	TotalRank  int64 `json:"total_rank"`
+func (c *Client) AddSellOrder(amount, price int64) error {
+	return c.addOrder("/sell_orders", amount, price)
+}
+
+func (c *Client) AddBuyOrder(amount, price int64) error {
+	return c.addOrder("/buy_orders", amount, price)
+}
+
+func (c *Client) SellOrders() ([]Order, error) {
+	return c.myOrders("/sell_orders")
+}
+
+func (c *Client) BuyOrders() ([]Order, error) {
+	return c.myOrders("/buy_orders")
+}
+
+type StatusRes struct {
+	OK    bool   `jon:"ok"`
+	Error string `jon:"error,omitempty"`
 }
 
 type User struct {
-	ID     int64  `json:"id"`
-	UserID string `json:"user_id"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	BankID    string    `json:"-"`
+	CreatedAt time.Time `json:"-"`
 }
 
-type UserInfoRes struct {
-	Code    int       `json:"code"`
-	Message string    `json:"message"`
-	User    User      `json:"user"`
-	Score   UserScore `json:"score"`
+type Trade struct {
+	ID        int64     `json:"id"`
+	Amount    int64     `json:"amount"`
+	Price     int64     `json:"price"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-func (c *Client) Info() (*UserInfoRes, error) {
-	path := "/user"
-	res, err := c.get(path, url.Values{"session_id": []string{c.sessionID}})
+type Order struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	Amount    int64      `json:"amount"`
+	Price     int64      `json:"price"`
+	ClosedAt  *time.Time `json:"closed_at"`
+	TradeID   int64      `json:"trade_id,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	User      *User      `json:"user,omitempty"`
+	Trade     *Trade     `json:"trade,omitempty"`
+}
+
+func (c *Client) addOrder(path string, amount, price int64) error {
+	v := url.Values{}
+	v.Set("amount", strconv.FormatInt(amount, 10))
+	v.Set("price", strconv.FormatInt(price, 10))
+	res, err := c.post(path, v)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GET %s failed", path)
+		return errors.Wrapf(err, "POST %s request failed", path)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return nil, errors.Errorf("GET %s status code is %d", path, res.StatusCode)
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return errors.Wrapf(err, "POST %s body read failed", path)
+		}
+		return errors.Errorf("POST %s status code is %d, body: %s", path, res.StatusCode, string(b))
 	}
-	r := &UserInfoRes{}
+	r := &StatusRes{}
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
-		return nil, errors.Wrapf(err, "POST %s body decode failed", path)
+		return errors.Wrapf(err, "POST %s body decode failed", path)
 	}
-	return r, nil
-}
-
-func (c *Client) RunStatics(ctx context.Context, paths []string) error {
-	// TODO htmlを読む
-	for _, path := range paths {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if err := c.Static(path, 100); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Client) RunPlayGames(ctx context.Context, games int) error {
-	if c.sessionID == "" {
-		// sessionIDがあれば1度登録しているはず
-		if err := c.Signup(); err != nil {
-			return err
-		}
-	}
-	if err := c.Login(); err != nil {
-		return err
-	}
-
-	for i := 0; i < games; i++ {
-		for _, task := range []func() error{
-			func() error {
-				score := rand.Int63n(10000) + 3000
-				return c.AddScore(score)
-			},
-			func() error {
-				info, err := c.Info()
-				if err != nil {
-					return err
-				}
-				if info.Score.BestScore != c.Best() {
-					return errors.Errorf("best score が正しくありません")
-				}
-				if info.Score.TotalScore != c.Total() {
-					return errors.Errorf("total score が正しくありません")
-				}
-				return nil
-			},
-		} {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				if err := task(); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (c *Client) RunLatestScoresLoop(ctx context.Context, count, pages int) error {
-	var ls *Score
-	err := c.ScoresCallback(ctx, "/latest_scores", count, pages, func(s []Score, page int) error {
-		if len(s) > count {
-			return errors.Errorf("count パラメータが動いていません")
-		}
-		for _, score := range s {
-			if err := ScoreCheck(score); err != nil {
-				return err
-			}
-			if ls != nil && score.CreatedAt < ls.CreatedAt {
-				return errors.Errorf("createdAtの降順に並んでいません")
-			}
-			ls = &score
-		}
+	if r.OK {
 		return nil
-	})
-	return errors.Wrapf(err, "GET /latest_scores のリクエストに失敗")
+	}
+	return errors.Errorf("POST %s failed. err:%s", path, r.Error)
 }
 
-func (c *Client) RunRankingScoresLoop(ctx context.Context, count, pages int) error {
-	ranking := func(path string) error {
-		var ls *Score
-		return c.ScoresCallback(ctx, path, count, pages, func(s []Score, page int) error {
-			if len(s) > count {
-				return errors.Errorf("count パラメータが動いていません")
-			}
-			for i, score := range s {
-				if err := ScoreCheck(score); err != nil {
-					return err
-				}
-				if i > 0 {
-					switch {
-					case score.Score > s[i-1].Score:
-						return errors.Errorf("Scoreの降順に並んでいません %d > %d", score.Score, s[i-1].Score)
-					case score.Score == s[i-1].Score:
-						if score.Rank != s[i-1].Rank {
-							return errors.Errorf("同一スコア同一順位になっていません")
-						}
-					default:
-						if score.Rank <= s[i-1].Rank {
-							return errors.Errorf("Rankが正しくありません")
-						}
-					}
-				} else {
-					if ls != nil && ls.Score != score.Score && score.Rank < page*count+1 {
-						return errors.Errorf("Rankが正しくありません")
-					}
-					if ls == nil && score.Rank != 1 {
-						return errors.Errorf("Rankが正しくありません")
-					}
-				}
-				ls = &score
-			}
-			return nil
-		})
+func (c *Client) myOrders(path string) ([]Order, error) {
+	res, err := c.get(path, url.Values{})
+	if err != nil {
+		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
-	if err := ranking("/best_scores"); err != nil {
-		return errors.Wrapf(err, "GET /best_scores のリクエストに失敗")
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GET %s body read failed", path)
+		}
+		return nil, errors.Errorf("GET %s status code is %d, body: %s", path, res.StatusCode, string(b))
 	}
-	if err := ranking("/total_scores"); err != nil {
-		return errors.Wrapf(err, "GET /total_scores のリクエストに失敗")
+	r := []Order{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	return nil
-}
-
-func ScoreCheck(s Score) error {
-	if s.Score < 1 {
-		return errors.Errorf("score の値が1以下")
+	if r.OK {
+		return r, nil
 	}
-	if s.Image < 1 || 10 < s.Image {
-		return errors.Errorf("image の値が範囲外")
-	}
-	if s.Image < 1 || 10 < s.Image {
-		return errors.Errorf("image の値が範囲外")
-	}
-	if s.Name == "" {
-		return errors.Errorf("Name が未設定")
-	}
-	if s.CreatedAt < 1523458800 || createdAtUpper < s.CreatedAt {
-		return errors.Errorf("CreatedAt の範囲が不正")
-	}
-	return nil
+	return nil, errors.Errorf("POST %s failed. err:%s", path, r.Error)
 }
