@@ -41,3 +41,39 @@ func (t *ExecTask) Run(ctx context.Context) error {
 	}
 	return nil
 }
+
+type ListTask struct {
+	*taskBase
+	runners []func(context.Context) error
+}
+
+func NewListTask(cap int) *ListTask {
+	return &ExecTask{
+		taskBase: &taskBase{score: 0},
+		runners:  make([]func(context.Context) error, 0, cap),
+	}
+}
+
+func (t *ListTask) Add(f func(context.Context) error, score int64) error {
+	t.runners = append(t.runners, func(ctx context.Context) error {
+		if err := f(ctx); err != nil {
+			return err
+		}
+		t.score += score
+		return nil
+	})
+}
+
+func (t *ListTask) Run(ctx context.Context) error {
+	for _, run := range t.runners {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if err := run(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

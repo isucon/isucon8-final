@@ -8,6 +8,8 @@ const (
 	InitTimeout   = 10 * time.Second
 
 	// Scores
+	SignupScore         = 1
+	SigninScore         = 1
 	GetTradesScore      = 1
 	PostBuyOrdersScore  = 5
 	PostSellOrdersScore = 5
