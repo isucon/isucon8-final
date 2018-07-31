@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Songmu/strrand"
 	"github.com/pkg/errors"
 	"golang.org/x/net/publicsuffix"
 )
@@ -21,19 +20,11 @@ import (
 var (
 	RedirectAttemptedError = fmt.Errorf("redirect attempted")
 	UserAgent              = "Isutrader/0.0.1"
-	passwordGen            strrand.Generator
-	nameGen                strrand.Generator
 	createdAtUpper         = time.Now().Add(24 * time.Hour).Unix()
 )
 
 func init() {
 	var err error
-	if passwordGen, err = strrand.New().CreateGenerator(`[abcdefghjkmnpqrstuvwxyz23456789]{20}`); err != nil {
-		panic(err)
-	}
-	if nameGen, err = strrand.New().CreateGenerator(`[あ-んア-ンa-zA-Z0-9]{16}`); err != nil {
-		panic(err)
-	}
 	loc, err := time.LoadLocation("Asia/Tokyo")
 	if err != nil {
 		log.Panicln(err)
@@ -46,17 +37,44 @@ type ResponseWithElapsedTime struct {
 	ElapsedTime time.Duration
 }
 
+type StatusRes struct {
+	OK    bool   `jon:"ok"`
+	Error string `jon:"error,omitempty"`
+}
+
+type User struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	BankID    string    `json:"-"`
+	CreatedAt time.Time `json:"-"`
+}
+
+type Trade struct {
+	ID        int64     `json:"id"`
+	Amount    int64     `json:"amount"`
+	Price     int64     `json:"price"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Order struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	Amount    int64      `json:"amount"`
+	Price     int64      `json:"price"`
+	ClosedAt  *time.Time `json:"closed_at"`
+	TradeID   int64      `json:"trade_id,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	User      *User      `json:"user,omitempty"`
+	Trade     *Trade     `json:"trade,omitempty"`
+}
+
 type Client struct {
-	base      *url.URL
-	hc        *http.Client
-	bankid    string
-	pass      string
-	name      string
-	cache     *CacheStore
-	postTime  map[string]time.Duration
-	getTime   map[string]time.Duration
-	postCount map[string]int64
-	getCount  map[string]int64
+	base   *url.URL
+	hc     *http.Client
+	bankid string
+	pass   string
+	name   string
+	cache  *CacheStore
 }
 
 func NewClient(base, bankid, name, password string, timout time.Duration) (*Client, error) {
@@ -77,15 +95,11 @@ func NewClient(base, bankid, name, password string, timout time.Duration) (*Clie
 		Timeout: timout,
 	}
 	return &Client{
-		base:      b,
-		hc:        hc,
-		user:      nameGen.Generate(),
-		pass:      passwordGen.Generate(),
-		cache:     NewCacheStore(),
-		postTime:  make(map[string]time.Duration, 20),
-		getTime:   make(map[string]time.Duration, 20),
-		postCount: make(map[string]int64, 20),
-		getCount:  make(map[string]int64, 20),
+		base:  b,
+		hc:    hc,
+		name:  name,
+		pass:  password,
+		cache: NewCacheStore(),
 	}, nil
 }
 
@@ -149,6 +163,27 @@ func (c *Client) post(path string, val url.Values) (*http.Response, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return c.doRequest(req)
+}
+
+func (c *Client) Initialize(bankep, bankid, logep, logid string) error {
+	v := url.Values{}
+	v.Set("bank_endpoint", bankep)
+	v.Set("bank_appid", bankid)
+	v.Set("log_endpoint", logep)
+	v.Set("log_appid", logid)
+	res, err := c.post("/initialize", v)
+	if err != nil {
+		return errors.Wrap(err, "POST /initialize request failed")
+	}
+	defer res.Body.Close()
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return errors.Wrap(err, "POST /initialize body read failed")
+	}
+	if res.StatusCode == http.StatusOK {
+		return nil
+	}
+	return errors.Errorf("POST /initialize failed. body: %s", string(b))
 }
 
 func (c *Client) Signup() error {
@@ -244,37 +279,6 @@ func (c *Client) SellOrders() ([]Order, error) {
 
 func (c *Client) BuyOrders() ([]Order, error) {
 	return c.myOrders("/buy_orders")
-}
-
-type StatusRes struct {
-	OK    bool   `jon:"ok"`
-	Error string `jon:"error,omitempty"`
-}
-
-type User struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	BankID    string    `json:"-"`
-	CreatedAt time.Time `json:"-"`
-}
-
-type Trade struct {
-	ID        int64     `json:"id"`
-	Amount    int64     `json:"amount"`
-	Price     int64     `json:"price"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type Order struct {
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"user_id"`
-	Amount    int64      `json:"amount"`
-	Price     int64      `json:"price"`
-	ClosedAt  *time.Time `json:"closed_at"`
-	TradeID   int64      `json:"trade_id,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	User      *User      `json:"user,omitempty"`
-	Trade     *Trade     `json:"trade,omitempty"`
 }
 
 func (c *Client) addOrder(path string, amount, price int64) error {

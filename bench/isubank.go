@@ -1,4 +1,4 @@
-package main
+package bench
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/Songmu/strrand"
 	"github.com/pkg/errors"
 )
 
@@ -22,8 +21,7 @@ func (r *IsubankBasicResponse) Success() bool {
 }
 
 type Isubank struct {
-	endpoint  *url.URL
-	bankidGen strrand.Generator
+	endpoint *url.URL
 }
 
 func NewIsubank(endpoint string) (*Isubank, error) {
@@ -31,28 +29,20 @@ func NewIsubank(endpoint string) (*Isubank, error) {
 	if err != nil {
 		return nil, err
 	}
-	bankidGen, err := strrand.New().CreateGenerator(`[abcdefghjkmnpqrstuvwxyz123456789.-_]{10}`)
-	if err != nil {
-		return nil, err
-	}
 	return &Isubank{
-		endpoint:  u,
-		bankidGen: bankidGen,
+		endpoint: u,
 	}, nil
 }
 
-func (b *Isubank) NewBankID() (string, error) {
-	for i := 0; i < 10; i++ {
-		bankid := b.bankidGen.Generate()
-		var res IsubankBasicResponse
-		if err := b.request("/register", map[string]interface{}{"bank_id": bankid}, &res); err != nil {
-			return "", err
-		}
-		if res.Success() {
-			return bankid, nil
-		}
+func (b *Isubank) NewBankID(bankid string) (string, error) {
+	var res IsubankBasicResponse
+	if err := b.request("/register", map[string]interface{}{"bank_id": bankid}, &res); err != nil {
+		return err
 	}
-	return errors.New("failed register bankid. try over")
+	if res.Success() {
+		return nil
+	}
+	return errors.Errorf("/register failed. %s", res.Error)
 }
 
 func (b *Isubank) AddCredit(bankid string, price int64) error {
