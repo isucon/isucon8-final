@@ -67,7 +67,8 @@ func Success(w http.ResponseWriter) {
 }
 
 const (
-	MaxBodySize   = 1024 * 1024
+	MaxBodySize   = 1024 * 1024 // 1MB
+	Wait          = 20 * time.Millisecond
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
 )
@@ -171,6 +172,7 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	err := s.putLog(req.Log, req.AppID)
 	switch err {
 	case nil:
+		time.Sleep(Wait)
 		Success(w)
 	default:
 		log.Printf("[WARN] %s", err)
@@ -201,6 +203,7 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 	if len(errors) > 0 {
 		Error(w, "internal server error", http.StatusInternalServerError)
 	} else {
+		time.Sleep(Wait)
 		Success(w)
 	}
 }
