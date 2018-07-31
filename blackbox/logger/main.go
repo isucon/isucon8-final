@@ -67,7 +67,7 @@ func Success(w http.ResponseWriter) {
 }
 
 const (
-	BulkSendLimit = 100
+	MaxBodySize   = 1024 * 1024
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
 )
@@ -180,7 +180,7 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 
 func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 	req := &BulkLog{}
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodySize)).Decode(req); err != nil {
 		Error(w, "can't parse body", http.StatusBadRequest)
 		return
 	}
