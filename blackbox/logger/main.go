@@ -45,7 +45,10 @@ func main() {
 func NewServer(db *sql.DB) *http.ServeMux {
 	server := http.NewServeMux()
 
-	h := &Handler{db}
+	h := &Handler{
+		db:    db,
+		guard: make(map[string]chan struct{}, 1000),
+	}
 
 	server.HandleFunc("/send", h.Send)
 	server.HandleFunc("/send_bulk", h.SendBulk)
@@ -69,6 +72,7 @@ func Success(w http.ResponseWriter) {
 const (
 	MaxBodySize   = 1024 * 1024 // 1MB
 	Wait          = 20 * time.Millisecond
+	MultiExec     = 3
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
 )
@@ -156,7 +160,18 @@ type BuyClose struct {
 }
 
 type Handler struct {
-	db *sql.DB
+	db    *sql.DB
+	guard map[string]chan struct{}
+}
+
+func (s *Handler) lock(appid string) func() {
+	if _, ok := s.guard[appid]; !ok {
+		s.guard[appid] = make(chan struct{}, MultiExec)
+	}
+	s.guard[appid] <- struct{}{}
+	return func() {
+		<-s.guard[appid]
+	}
 }
 
 func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +184,8 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		Error(w, "app_id is required", http.StatusBadRequest)
 		return
 	}
+	unlock := s.lock(req.AppID)
+	defer unlock()
 	err := s.putLog(req.Log, req.AppID)
 	switch err {
 	case nil:
@@ -190,6 +207,8 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 		Error(w, "app_id is required", http.StatusBadRequest)
 		return
 	}
+	unlock := s.lock(req.AppID)
+	defer unlock()
 	errors := make([]error, 0, len(req.Logs))
 	for _, l := range req.Logs {
 		err := s.putLog(l, req.AppID)
