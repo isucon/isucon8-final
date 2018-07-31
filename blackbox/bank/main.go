@@ -198,7 +198,7 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	// TODO sleepを入れる
+	time.Sleep(40 * time.Millisecond)
 	switch {
 	case err == CreditIsInsufficient:
 		Error(w, "credit is insufficient", http.StatusOK)
@@ -267,6 +267,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 
+	time.Sleep(50 * time.Millisecond)
 	switch {
 	case err == CreditIsInsufficient:
 		Error(w, "credit is insufficient", http.StatusOK)
@@ -297,7 +298,6 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	// TODO sleepを入れる
 	err := s.txScorp(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
@@ -367,6 +367,7 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
+	time.Sleep(80 * time.Millisecond)
 	if err != nil {
 		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
 			Error(w, err.Error(), http.StatusBadRequest)
@@ -397,7 +398,6 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	// TODO sleepを入れる
 	err := s.txScorp(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
@@ -458,6 +458,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
+	time.Sleep(60 * time.Millisecond)
 	if err != nil {
 		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
 			Error(w, err.Error(), http.StatusBadRequest)
