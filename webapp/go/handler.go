@@ -84,7 +84,7 @@ type Handler struct {
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 	err := h.txScorp(func(tx *sql.Tx) error {
-		query := `INSERT INTO setting (key, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)`
+		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
 			BankEndpoint,
 			BankAppid,
@@ -856,7 +856,7 @@ func (h *Handler) newLogger() (*Logger, error) {
 }
 
 func (h *Handler) getSetting(k string) (v string, err error) {
-	err = h.db.QueryRow(`SELECT value FROM setting WHERE key = ?`, k).Scan(&v)
+	err = h.db.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
 	return
 }
 
