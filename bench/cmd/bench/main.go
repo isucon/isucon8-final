@@ -9,13 +9,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/kayac/inhouse-isucon-2018/bench"
+	"github.com/ken39arg/isucon2018-final/bench"
 )
 
 var (
-	host = flag.String("host", "localhost", "target host")
-	port = flag.String("port", "5003", "target port")
-	log  = bench.NewLogger(os.Stderr)
+	appep        = flag.String("appep", "http://127.0.0.1:12510", "app endpoint")
+	bankep       = flag.String("bankep", "http://127.0.0.1:5515", "isubank endpoint")
+	logep        = flag.String("logep", "http://127.0.0.1:5516", "isulog endpoint")
+	internalbank = flag.String("internalbank", "http://127.0.0.1:5515", "isubank endpoint")
+	log          = bench.NewLogger(os.Stderr)
 )
 
 func main() {
@@ -26,13 +28,11 @@ func main() {
 }
 
 func run() error {
-	bm, err := bench.NewBenchmarker(os.Stderr, bench.BenchmarkerParams{
-		Domain: "http://" + *host + ":" + *port,
-		Time:   time.Minute,
-	})
+	bc, err := bench.NewContext(os.Stderr, *appep, *bankep, *logep, *internalbank)
 	if err != nil {
 		return err
 	}
+	bm := bench.NewRunner(bc, time.Minute, time.Second*1)
 	if err = bm.Run(context.Background()); err != nil {
 		return err
 	}

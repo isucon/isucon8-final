@@ -34,7 +34,7 @@ func NewIsubank(endpoint string) (*Isubank, error) {
 	}, nil
 }
 
-func (b *Isubank) NewBankID(bankid string) (string, error) {
+func (b *Isubank) NewBankID(bankid string) error {
 	var res IsubankBasicResponse
 	if err := b.request("/register", map[string]interface{}{"bank_id": bankid}, &res); err != nil {
 		return err
@@ -53,7 +53,7 @@ func (b *Isubank) AddCredit(bankid string, price int64) error {
 	if res.Success() {
 		return nil
 	}
-	return errors.Error("failed add credit. bankid:%s, price:%d, err:%s", bankid, price, res.Error)
+	return errors.Errorf("failed add credit. bankid:%s, price:%d, err:%s", bankid, price, res.Error)
 }
 
 func (b *Isubank) request(p string, v map[string]interface{}, r interface{}) error {

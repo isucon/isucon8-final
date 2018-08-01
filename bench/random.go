@@ -13,7 +13,7 @@ func NewRandom() (*Random, error) {
 	if err != nil {
 		return nil, err
 	}
-	nameGen, err = strrand.New().CreateGenerator(`[あ-んア-ンa-zA-Z0-9]{5,10}`)
+	nameGen, err := strrand.New().CreateGenerator(`[あ-んア-ンa-zA-Z0-9]{5,10}`)
 	if err != nil {
 		return nil, err
 	}

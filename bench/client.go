@@ -3,7 +3,6 @@ package bench
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -18,9 +17,8 @@ import (
 )
 
 var (
-	RedirectAttemptedError = fmt.Errorf("redirect attempted")
-	UserAgent              = "Isutrader/0.0.1"
-	createdAtUpper         = time.Now().Add(24 * time.Hour).Unix()
+	UserAgent      = "Isutrader/0.0.1"
+	createdAtUpper = time.Now().Add(24 * time.Hour).Unix()
 )
 
 func init() {
@@ -90,16 +88,17 @@ func NewClient(base, bankid, name, password string, timout time.Duration) (*Clie
 		Jar: jar,
 		// Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return RedirectAttemptedError
+			return http.ErrUseLastResponse
 		},
 		Timeout: timout,
 	}
 	return &Client{
-		base:  b,
-		hc:    hc,
-		name:  name,
-		pass:  password,
-		cache: NewCacheStore(),
+		base:   b,
+		hc:     hc,
+		bankid: bankid,
+		name:   name,
+		pass:   password,
+		cache:  NewCacheStore(),
 	}, nil
 }
 
@@ -111,7 +110,7 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 		return nil, err
 	}
 	elapsedTime := time.Now().Sub(start)
-	return &ResponseWithElapsedTime{res, elapsedTime}
+	return &ResponseWithElapsedTime{res, elapsedTime}, nil
 }
 
 func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, error) {
@@ -131,7 +130,6 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	if cache, found := c.cache.Get(us); found {
 		// no-storeを外しかつcache-controlをつければOK
 		if cache.CanUseCache() {
-			c.getCount[path]++
 			return &ResponseWithElapsedTime{
 				Response: &http.Response{
 					StatusCode: http.StatusNotModified,
@@ -152,7 +150,7 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	return res, nil
 }
 
-func (c *Client) post(path string, val url.Values) (*http.Response, error) {
+func (c *Client) post(path string, val url.Values) (*ResponseWithElapsedTime, error) {
 	u, err := c.base.Parse(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
@@ -257,12 +255,9 @@ func (c *Client) Trades() ([]Trade, error) {
 	}
 	r := []Trade{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return errors.Wrapf(err, "GET %s body decode failed", path)
+		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	if r.OK {
-		return r, nil
-	}
-	return nil, errors.Errorf("POST %s failed. err:%s", path, r.Error)
+	return r, nil
 }
 
 func (c *Client) AddSellOrder(amount, price int64) error {
@@ -322,10 +317,7 @@ func (c *Client) myOrders(path string) ([]Order, error) {
 	}
 	r := []Order{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return errors.Wrapf(err, "GET %s body decode failed", path)
+		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	if r.OK {
-		return r, nil
-	}
-	return nil, errors.Errorf("POST %s failed. err:%s", path, r.Error)
+	return r, nil
 }

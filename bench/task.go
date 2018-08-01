@@ -1,6 +1,11 @@
 package bench
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+var ErrNoScore = fmt.Errorf("no score")
 
 type taskBase struct {
 	score int64
@@ -37,6 +42,9 @@ func NewExecTask(runner func(context.Context) error, score int64) *ExecTask {
 func (t *ExecTask) Run(ctx context.Context) error {
 	if err := t.runner(ctx); err != nil {
 		t.score = 0
+		if err == ErrNoScore {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -44,35 +52,30 @@ func (t *ExecTask) Run(ctx context.Context) error {
 
 type ListTask struct {
 	*taskBase
-	runners []func(context.Context) error
+	tasks []Task
 }
 
 func NewListTask(cap int) *ListTask {
-	return &ExecTask{
+	return &ListTask{
 		taskBase: &taskBase{score: 0},
-		runners:  make([]func(context.Context) error, 0, cap),
+		tasks:    make([]Task, 0, cap),
 	}
 }
 
-func (t *ListTask) Add(f func(context.Context) error, score int64) error {
-	t.runners = append(t.runners, func(ctx context.Context) error {
-		if err := f(ctx); err != nil {
-			return err
-		}
-		t.score += score
-		return nil
-	})
+func (t *ListTask) Add(task Task) {
+	t.tasks = append(t.tasks, task)
 }
 
 func (t *ListTask) Run(ctx context.Context) error {
-	for _, run := range t.runners {
+	for _, task := range t.tasks {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if err := run(ctx); err != nil {
+			if err := task.Run(ctx); err != nil {
 				return err
 			}
+			t.score += task.Score()
 		}
 	}
 	return nil

@@ -3,68 +3,136 @@ package bench
 import (
 	"context"
 	"math/rand"
+
+	"github.com/pkg/errors"
 )
 
-type isuorder struct {
-	amount, price int64
-	closed        bool
-}
-
 type Investor interface {
-	// 初期処理を実行するTaskをcontextに追加
-	Start(*Worker)
+	// 初期処理を実行するTaskを返す
+	Start() Task
 
 	// Tradeが発生したときに呼ばれる
-	Next(*Worker, []Trade)
+	Next([]Trade) Task
 
 	BankID() string
 }
 
 type investorBase struct {
-	c          *Client
-	credit     int64
-	isu        int64
-	buyorders  []isuorder
-	sellorders []isuorder
+	c           *Client
+	credit      int64
+	isu         int64
+	sellorder   int
+	buyorder    int
+	buyhistory  map[int64]Order
+	sellhistory map[int64]Order
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
-	return &investorBase{c, credit, isu, make([]isuorder, 0, 5), make([]isuorder, 0, 5)}
+	return &investorBase{
+		c:           c,
+		credit:      credit,
+		isu:         isu,
+		buyhistory:  map[int64]Order{},
+		sellhistory: map[int64]Order{},
+	}
 }
 
 func (i *investorBase) BankID() string {
 	return i.c.bankid
 }
 
-func (i *investorBase) Signup() func(context.Context) error {
-	return func(_ context.Context) error {
+func (i *investorBase) Signup() Task {
+	return NewExecTask(func(_ context.Context) error {
 		return i.c.Signup()
-	}
+	}, SignupScore)
 }
 
-func (i *investorBase) Signin() func(context.Context) error {
-	return func(_ context.Context) error {
+func (i *investorBase) Signin() Task {
+	return NewExecTask(func(_ context.Context) error {
 		return i.c.Signin()
-	}
+	}, SigninScore)
 }
 
-func (i *investorBase) BuyOrder(amount, price int64) func(context.Context) error {
-	return func(ctx context.Context) error {
+func (i *investorBase) BuyOrder(amount, price int64) Task {
+	return NewExecTask(func(ctx context.Context) error {
 		if err := i.c.AddBuyOrder(amount, price); err != nil {
 			return err
 		}
-		i.buyorders = append(i.buyorders, isuorder{amount, price, false})
+		i.buyorder++
 		return nil
-	}
+	}, PostBuyOrdersScore)
 }
 
-func (i *investorBase) SellOrder(amount, price int64) func(context.Context) error {
-	return func(ctx context.Context) error {
+func (i *investorBase) SellOrder(amount, price int64) Task {
+	return NewExecTask(func(ctx context.Context) error {
 		if err := i.c.AddSellOrder(amount, price); err != nil {
 			return err
 		}
-		i.sellorders = append(i.sellorders, isuorder{amount, price, false})
-	}
+		i.sellorder++
+		return nil
+	}, PostSellOrdersScore)
+}
+
+func (i *investorBase) UpdateBuyOrders() Task {
+	return NewExecTask(func(ctx context.Context) error {
+		if i.buyorder == 0 {
+			return ErrNoScore
+		}
+		orders, err := i.c.BuyOrders()
+		if err != nil {
+			return err
+		}
+		for _, order := range orders {
+			if order.ClosedAt == nil {
+				continue
+			}
+			if _, ok := i.buyhistory[order.ID]; ok {
+				continue
+			}
+			i.buyhistory[order.ID] = order
+			i.buyorder--
+			if order.Trade != nil {
+				// 買い取りは安くなければだめ
+				if order.Price < order.Trade.Price {
+					return errors.Errorf("買い注文の指値より高値で取引されています. order:%d", order.ID)
+				}
+				i.credit -= order.Trade.Price * order.Amount
+				i.isu += order.Amount
+			}
+		}
+		return nil
+	}, GetBuyOrdersScore)
+}
+
+func (i *investorBase) UpdateSellOrders() Task {
+	return NewExecTask(func(ctx context.Context) error {
+		if i.sellorder == 0 {
+			return ErrNoScore
+		}
+		orders, err := i.c.SellOrders()
+		if err != nil {
+			return err
+		}
+		for _, order := range orders {
+			if order.ClosedAt == nil {
+				continue
+			}
+			if _, ok := i.sellhistory[order.ID]; ok {
+				continue
+			}
+			i.sellhistory[order.ID] = order
+			i.sellorder--
+			if order.Trade != nil {
+				// 売却は高くなければだめ
+				if order.Price > order.Trade.Price {
+					return errors.Errorf("売り注文の指値より安値で取引されています. order:%d", order.ID)
+				}
+				i.credit += order.Trade.Price * order.Amount
+				i.isu -= order.Amount
+			}
+		}
+		return nil
+	}, GetSellOrdersScore)
 }
 
 // あまり考えずに売買する
@@ -78,28 +146,53 @@ func NewRandomInvestor(c *Client, credit, isu, unitamount, unitprice int64) *Ran
 	return &RandomInvestor{newInvestorBase(c, credit, isu), unitamount, unitprice}
 }
 
-func (i *RandomInvestor) Start(w *Worker) {
+func (i *RandomInvestor) Start() Task {
 	task := NewListTask(3)
-	task.Add(i.Signup(), SignupScore)
-	task.Add(i.Signin(), SigninScore)
+	task.Add(i.Signup())
+	task.Add(i.Signin())
 
-	// すぐに取引を成立させるため市場価格を見ずに突っ込む
-	if i.isu < i.amount && i.credit > i.unitprice {
-		task.Add(i.BuyOrder(rand.Int63n(i.unitamount)+1, i.unitprice), PostBuyOrdersScore)
+	if i.isu < i.unitamount && i.credit > i.unitprice {
+		task.Add(i.BuyOrder(rand.Int63n(i.unitamount)+1, i.unitprice))
 	} else {
-		task.Add(i.SellOrder(i.unitamount, i.unitprice), PostSellOrdersScore)
+		task.Add(i.SellOrder(rand.Int63n(i.unitamount)+1, i.unitprice))
 	}
-	w.AddTask(task)
+
+	return task
 }
 
-func (i *RandomInvestor) Next(w *Worker, trades []Trade) {
-	lastPrice := trades[0].Price
-	state := 0
-	if len(trades) > 1 {
-		if trades[1].Price < lastPrice {
-			state = 1
-		} else if trades[1].Price > lastPrice {
-			state = -1
-		}
+func (i *RandomInvestor) Next(trades []Trade) Task {
+	task := NewListTask(3)
+	task.Add(i.UpdateSellOrders())
+	task.Add(i.UpdateBuyOrders())
+	r := rand.Intn(10)
+	amount := rand.Int63n(i.unitamount) + 1
+	price := rand.Int63n(i.unitprice/2) - (i.unitprice / 4) + i.unitprice
+	if r < 2 {
+		// このターンは何もしない
+	} else if r < 6 {
+		// このターンは買う
+		task.Add(NewExecTask(func(ctx context.Context) error {
+			if i.credit < price*amount {
+				price = i.credit / amount
+			}
+			if err := i.c.AddBuyOrder(amount, price); err != nil {
+				return err
+			}
+			i.buyorder++
+			return nil
+		}, PostBuyOrdersScore))
+	} else {
+		// このターンは売る
+		task.Add(NewExecTask(func(ctx context.Context) error {
+			if i.isu < amount {
+				amount = i.isu
+			}
+			if err := i.c.AddSellOrder(amount, price); err != nil {
+				return err
+			}
+			i.sellorder++
+			return nil
+		}, PostSellOrdersScore))
 	}
+	return task
 }
