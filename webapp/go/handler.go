@@ -95,6 +95,16 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 		}
+		for _, q := range []string{
+			"DELETE FROM user",
+			"DELETE FROM sell_order",
+			"DELETE FROM buy_order",
+			"DELETE FROM trade",
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -409,11 +419,11 @@ func (h *Handler) runTrade() {
 		case err == sql.ErrNoRows:
 			return errNoItem
 		case err != nil:
-			return err
+			return errors.Wrap(err, "select sell_order")
 		}
 		sell, err := h.getOrderByIDWithLock(tx, "sell_order", id)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getOrderByIDWithLock sell_order")
 		}
 		if sell.ClosedAt != nil {
 			// 成約済み
@@ -421,25 +431,23 @@ func (h *Handler) runTrade() {
 		}
 		sell.User, err = h.getUserByIDWithLock(tx, sell.UserID)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getUserByIDWithLock sell user")
 		}
 		restAmount := sell.Amount
 		// 買い注文
 		q = `SELECT id FROM buy_order WHERE closed_at IS NULL AND price >= ? ORDER BY price DESC`
-		rows, err := tx.Query(q, sell.Price)
+		orderIds, err := h.queryAndScanIDs(tx, q, sell.Price)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "find buy_orders")
 		}
-		buys := []*Order{}
-		defer rows.Close()
-		for rows.Next() {
-			var orderID int64
-			if err = rows.Scan(&orderID); err != nil {
-				return err
-			}
+		if len(orderIds) == 0 {
+			return errNoItem
+		}
+		buys := make([]*Order, 0, len(orderIds))
+		for _, orderID := range orderIds {
 			buy, err := h.getOrderByIDWithLock(tx, "buy_order", orderID)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
 			}
 			if buy.ClosedAt != nil {
 				// 成約済み
@@ -450,18 +458,18 @@ func (h *Handler) runTrade() {
 			}
 			buy.User, err = h.getUserByIDWithLock(tx, buy.UserID)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "getUserByIDWithLock buy user")
 			}
 			resID, err := isubank.Reserve(buy.User.BankID, -sell.Price*buy.Amount)
 			if err != nil {
 				if err == ErrCreditInsufficient {
 					// 与信確保失敗
 					if _, err = tx.Exec(`UPDATE buy_order SET closed_at = ? WHERE id = ?`, now, buy.ID); err != nil {
-						return err
+						return errors.Wrap(err, "update buy_order for cancel")
 					}
 					continue
 				}
-				return err
+				return errors.Wrap(err, "isubank.Reserve")
 			}
 			reserves = append(reserves, resID)
 			buys = append(buys, buy)
@@ -470,29 +478,26 @@ func (h *Handler) runTrade() {
 				break
 			}
 		}
-		if err = rows.Err(); err != nil {
-			return err
-		}
 		if restAmount > 0 {
 			if len(reserves) > 0 {
 				if err = isubank.Cancel(reserves); err != nil {
-					return err
+					return errors.Wrap(err, "isubank.Cancel")
 				}
 			}
 			return errNoItem
 		}
 		resID, err := isubank.Reserve(sell.User.BankID, sell.Price*sell.Amount)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "isubank.Reserve")
 		}
 		reserves = append(reserves, resID)
 		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, sell.Amount, sell.Price, now)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "insert trade")
 		}
 		tradeID, err := res.LastInsertId()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "lastInsertID for trade")
 		}
 		logger.Send("close", LogDataClose{
 			Price:   sell.Price,
@@ -501,7 +506,7 @@ func (h *Handler) runTrade() {
 		})
 		for _, buy := range buys {
 			if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
-				return err
+				return errors.Wrap(err, "update buy_order for trade")
 			}
 			logger.Send("buy.close", LogDataBuyClose{
 				BuyID:   buy.ID,
@@ -512,7 +517,7 @@ func (h *Handler) runTrade() {
 			})
 		}
 		if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
-			return err
+			return errors.Wrap(err, "update sell_order for trade")
 		}
 		logger.Send("sell.close", LogDataSellClose{
 			SellID:  sell.ID,
@@ -522,7 +527,7 @@ func (h *Handler) runTrade() {
 			TradeID: tradeID,
 		})
 		if err = isubank.Commit(reserves); err != nil {
-			return err
+			return errors.Wrap(err, "commit")
 		}
 		return nil
 	}
@@ -538,44 +543,42 @@ func (h *Handler) runTrade() {
 		case err == sql.ErrNoRows:
 			return errNoItem
 		case err != nil:
-			return errors.Wrap(err, "select buyorder target failed")
+			return errors.Wrap(err, "select buy_order")
 		}
 		buy, err := h.getOrderByIDWithLock(tx, "buy_order", id)
 		if err != nil {
-			return errors.Wrap(err, "getOrderByIDWithLock failed")
+			return errors.Wrap(err, "getOrderByIDWithLock buy_order")
 		}
 		if buy.ClosedAt != nil {
 			return nil
 		}
 		buy.User, err = h.getUserByIDWithLock(tx, buy.UserID)
 		if err != nil {
-			return errors.Wrap(err, "getUserByIDWithLock failed")
+			return errors.Wrap(err, "getUserByIDWithLock buy user")
 		}
 		resID, err := isubank.Reserve(buy.User.BankID, -buy.Price*buy.Amount)
 		if err != nil {
 			if err == ErrCreditInsufficient {
 				// 与信確保失敗
 				if _, err = tx.Exec(`UPDATE buy_order SET closed_at = ? WHERE id = ?`, now, buy.ID); err != nil {
-					return errors.Wrap(err, "update to closed")
+					return errors.Wrap(err, "update buy_order for cancel")
 				}
 			}
-			return errors.Wrap(err, "reserve failed")
+			return errors.Wrap(err, "isubank.Reserve")
 		}
 		reserves = append(reserves, resID)
 		restAmount := buy.Amount
 		// 売り
 		q = `SELECT id FROM sell_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
-		rows, err := tx.Query(q, buy.Price)
+		orderIds, err := h.queryAndScanIDs(tx, q, buy.Price)
 		if err != nil {
-			return errors.Wrap(err, "select sell_order")
+			return errors.Wrap(err, "find sell_orders")
 		}
-		sells := []*Order{}
-		defer rows.Close()
-		for rows.Next() {
-			var orderID int64
-			if err = rows.Scan(&orderID); err != nil {
-				return errors.Wrap(err, "scan sell_order row")
-			}
+		if len(orderIds) == 0 {
+			return errNoItem
+		}
+		sells := make([]*Order, 0, len(orderIds))
+		for _, orderID := range orderIds {
 			sell, err := h.getOrderByIDWithLock(tx, "sell_order", orderID)
 			if err != nil {
 				return errors.Wrap(err, "getOrderByIDWithLock sell_order")
@@ -588,11 +591,11 @@ func (h *Handler) runTrade() {
 			}
 			sell.User, err = h.getUserByIDWithLock(tx, sell.UserID)
 			if err != nil {
-				return errors.Wrap(err, "getUserByIDWithLock")
+				return errors.Wrap(err, "getUserByIDWithLock sell user")
 			}
 			resID, err := isubank.Reserve(sell.User.BankID, buy.Price*sell.Amount)
 			if err != nil {
-				return errors.Wrap(err, "reserve failed")
+				return errors.Wrap(err, "isubank.Reserve")
 			}
 			reserves = append(reserves, resID)
 			sells = append(sells, sell)
@@ -601,13 +604,10 @@ func (h *Handler) runTrade() {
 				break
 			}
 		}
-		if err = rows.Err(); err != nil {
-			return errors.Wrap(err, "rows error")
-		}
 		if restAmount > 0 {
 			if len(reserves) > 0 {
 				if err = isubank.Cancel(reserves); err != nil {
-					return errors.Wrap(err, "cancel failed")
+					return errors.Wrap(err, "isubank.Cancel")
 				}
 			}
 			return errNoItem
@@ -736,9 +736,9 @@ func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 func (h *Handler) getUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
 	var user User
 	q := `SELECT id, name, bank_id, created_at FROM user WHERE id = ? FOR UPDATE`
-	err := h.db.QueryRow(q, id).Scan(&user.ID, &user.Name, &user.BankID, &user.CreatedAt)
+	err := tx.QueryRow(q, id).Scan(&user.ID, &user.Name, &user.BankID, &user.CreatedAt)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "QueryRow %s", q)
 	}
 	return &user, nil
 }
@@ -786,9 +786,9 @@ func (h *Handler) getOrderByIDWithLock(tx *sql.Tx, table string, id int64) (*Ord
 	var order Order
 	var closedAt mysql.NullTime
 	var tradeID sql.NullInt64
-	q := fmt.Sprintf(`SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE id = ? FOR UPDATE`, table)
+	q := fmt.Sprintf("SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE id = ? FOR UPDATE", table)
 	if err := tx.QueryRow(q, id).Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "QueryRow %s", q)
 	}
 	if closedAt.Valid {
 		order.ClosedAt = &closedAt.Time
@@ -804,7 +804,7 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Or
 	q := fmt.Sprintf(`SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`, table)
 	rows, err := h.db.Query(q, userID, limit)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Query %s", q)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -812,7 +812,7 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Or
 		var tradeID sql.NullInt64
 		var order Order
 		if err = rows.Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "Scan")
 		}
 		if closedAt.Valid {
 			order.ClosedAt = &closedAt.Time
@@ -822,21 +822,41 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Or
 		}
 		order.User, err = h.getUserByID(order.UserID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "getUserByID")
 		}
 		if order.TradeID > 0 {
 			order.Trade, err = h.getTradeByID(order.TradeID)
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "getTradeByID")
 			}
 		}
 		orders = append(orders, order)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "rows.Err")
 	}
 
 	return orders, nil
+}
+
+func (h *Handler) queryAndScanIDs(tx *sql.Tx, q string, args ...interface{}) ([]int64, error) {
+	rows, err := tx.Query(q, args...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "query failed. sql:%s", q)
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Wrap(err, "scan failed")
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "rows.Error")
+	}
+	return ids, nil
 }
 
 func (h *Handler) newIsubank() (*Isubank, error) {
