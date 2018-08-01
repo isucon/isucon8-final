@@ -174,7 +174,7 @@ func (c *Context) Next() ([]Task, error) {
 				break
 			}
 			c.level++
-			c.Logger().Fatalf("ワーカーレベルが上がります")
+			c.Logger().Printf("ワーカーレベルが上がります")
 
 			// 10人追加
 			unitamount := int64(c.level * 5)
