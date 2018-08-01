@@ -32,7 +32,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	bm := bench.NewRunner(bc, time.Minute, time.Second*1)
+	bm := bench.NewRunner(bc, time.Minute, time.Second*3)
 	if err = bm.Run(context.Background()); err != nil {
 		return err
 	}
