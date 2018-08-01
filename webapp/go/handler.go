@@ -128,12 +128,12 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 			h.handleError(w, err, http.StatusBadRequest)
 			return
 		}
-		pass, err := bcrypt.GenerateFromPassword([]byte(password), 31)
+		pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			h.handleError(w, err, http.StatusInternalServerError)
 			return
 		}
-		if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ? NOW())`, bankID, name, pass); err != nil {
+		if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW())`, bankID, name, pass); err != nil {
 			if mysqlError, ok := err.(*mysql.MySQLError); ok {
 				if mysqlError.Number == 1062 {
 					h.handleError(w, errors.New("bank_id already exists"), http.StatusBadRequest)
@@ -538,47 +538,47 @@ func (h *Handler) runTrade() {
 		case err == sql.ErrNoRows:
 			return errNoItem
 		case err != nil:
-			return err
+			return errors.Wrap(err, "select buyorder target failed")
 		}
 		buy, err := h.getOrderByIDWithLock(tx, "buy_order", id)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getOrderByIDWithLock failed")
 		}
 		if buy.ClosedAt != nil {
 			return nil
 		}
 		buy.User, err = h.getUserByIDWithLock(tx, buy.UserID)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getUserByIDWithLock failed")
 		}
 		resID, err := isubank.Reserve(buy.User.BankID, -buy.Price*buy.Amount)
 		if err != nil {
 			if err == ErrCreditInsufficient {
 				// 与信確保失敗
 				if _, err = tx.Exec(`UPDATE buy_order SET closed_at = ? WHERE id = ?`, now, buy.ID); err != nil {
-					return err
+					return errors.Wrap(err, "update to closed")
 				}
 			}
-			return err
+			return errors.Wrap(err, "reserve failed")
 		}
 		reserves = append(reserves, resID)
 		restAmount := buy.Amount
 		// 売り
-		q = `SELECT id FROM buy_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
+		q = `SELECT id FROM sell_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
 		rows, err := tx.Query(q, buy.Price)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "select sell_order")
 		}
 		sells := []*Order{}
 		defer rows.Close()
 		for rows.Next() {
 			var orderID int64
 			if err = rows.Scan(&orderID); err != nil {
-				return err
+				return errors.Wrap(err, "scan sell_order row")
 			}
 			sell, err := h.getOrderByIDWithLock(tx, "sell_order", orderID)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "getOrderByIDWithLock sell_order")
 			}
 			if sell.ClosedAt != nil {
 				continue
@@ -588,11 +588,11 @@ func (h *Handler) runTrade() {
 			}
 			sell.User, err = h.getUserByIDWithLock(tx, sell.UserID)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "getUserByIDWithLock")
 			}
 			resID, err := isubank.Reserve(sell.User.BankID, buy.Price*sell.Amount)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "reserve failed")
 			}
 			reserves = append(reserves, resID)
 			sells = append(sells, sell)
@@ -602,23 +602,23 @@ func (h *Handler) runTrade() {
 			}
 		}
 		if err = rows.Err(); err != nil {
-			return err
+			return errors.Wrap(err, "rows error")
 		}
 		if restAmount > 0 {
 			if len(reserves) > 0 {
 				if err = isubank.Cancel(reserves); err != nil {
-					return err
+					return errors.Wrap(err, "cancel failed")
 				}
 			}
 			return errNoItem
 		}
 		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, buy.Amount, buy.Price, now)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "insert trade")
 		}
 		tradeID, err := res.LastInsertId()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "last insert id trade")
 		}
 		logger.Send("close", LogDataClose{
 			Price:   buy.Price,
@@ -627,7 +627,7 @@ func (h *Handler) runTrade() {
 		})
 		for _, sell := range sells {
 			if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
-				return err
+				return errors.Wrap(err, "update sell_order")
 			}
 			logger.Send("sell.close", LogDataBuyClose{
 				BuyID:   sell.ID,
@@ -638,7 +638,7 @@ func (h *Handler) runTrade() {
 			})
 		}
 		if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
-			return err
+			return errors.Wrap(err, "update buy_order")
 		}
 		logger.Send("buy.close", LogDataSellClose{
 			SellID:  buy.ID,
@@ -648,7 +648,7 @@ func (h *Handler) runTrade() {
 			TradeID: tradeID,
 		})
 		if err = isubank.Commit(reserves); err != nil {
-			return err
+			return errors.Wrap(err, "commit")
 		}
 		return nil
 	}
@@ -785,12 +785,16 @@ func (h *Handler) getTradeByID(id int64) (*Trade, error) {
 func (h *Handler) getOrderByIDWithLock(tx *sql.Tx, table string, id int64) (*Order, error) {
 	var order Order
 	var closedAt mysql.NullTime
+	var tradeID sql.NullInt64
 	q := fmt.Sprintf(`SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE id = ? FOR UPDATE`, table)
-	if err := tx.QueryRow(q, id).Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &order.TradeID, &order.CreatedAt); err != nil {
+	if err := tx.QueryRow(q, id).Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
 		return nil, err
 	}
 	if closedAt.Valid {
 		order.ClosedAt = &closedAt.Time
+	}
+	if tradeID.Valid {
+		order.TradeID = tradeID.Int64
 	}
 	return &order, nil
 }
@@ -805,12 +809,16 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Or
 	defer rows.Close()
 	for rows.Next() {
 		var closedAt mysql.NullTime
+		var tradeID sql.NullInt64
 		var order Order
-		if err = rows.Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &order.TradeID, &order.CreatedAt); err != nil {
+		if err = rows.Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
 			return nil, err
 		}
 		if closedAt.Valid {
 			order.ClosedAt = &closedAt.Time
+		}
+		if tradeID.Valid {
+			order.TradeID = tradeID.Int64
 		}
 		order.User, err = h.getUserByID(order.UserID)
 		if err != nil {
