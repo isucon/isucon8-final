@@ -76,7 +76,7 @@
 
 - request: application/form-url-encoded
     - amount: 売りたい脚数
-    - price:  指値
+    - price:  指値(1脚あたりの最低額)
 - response: application/json
     - {"ok":true} = 成功
     - {"ok":false,"error":"メッセージ"} = 失敗
@@ -89,6 +89,25 @@
 - memo
     - 処理後に買い注文とのマッチングをする
 
+#### `GET /sell_orders`
+
+- response: application/json
+    - list
+        - id         : $order_id
+        - user_id    : $user_id
+        - amount     : $amount
+        - price      : $price (注文価格)
+        - closed_at  : $closed_at (注文成立または取り消しの時間、その他はnull)
+        - trade_id   : $trade_id  (注文成立時に注文番号、未成立の場合はキーなし)
+        - created_at : $created_at (注文時間)
+        - user: 
+            - id   : $user_id
+            - name : $user.name
+        - trade: 
+            - id         : $trade_id
+            - amount     : $amount (取引脚数)
+            - price      : $price (取引価格)
+            - created_at : $created_at (成立時間)
 
 ### 買い注文
 
@@ -96,7 +115,7 @@
 
 - request: application/form-url-encoded
     - amount: 買いたい脚数
-    - price:  指値
+    - price:  指値(1脚あたりの最高額)
 - response: application/json
     - {"ok":true} = 成功
     - {"ok":false,"error":"メッセージ"} = 失敗
@@ -115,7 +134,38 @@
     - 処理前に与信APIを叩く(これを叩かないとエラー)
     - 処理後に売り注文とのマッチングをする
 
+#### `GET /buy_orders`
+
+- response: application/json
+    - list
+        - id         : $order_id
+        - user_id    : $user_id
+        - amount     : $amount
+        - price      : $price (注文価格)
+        - closed_at  : $closed_at (注文成立または取り消しの時間、その他はnull)
+        - trade_id   : $trade_id  (注文成立時に注文番号、未成立の場合はキーなし)
+        - created_at : $created_at (注文時間)
+        - user: 
+            - id   : $user_id
+            - name : $user.name
+        - trade: 
+            - id         : $trade_id
+            - amount     : $amount (取引脚数)
+            - price      : $price (取引価格)
+            - created_at : $created_at (成立時間)
+
 ### 売買成立
+
+#### `GET /trades`
+
+- response: application/json
+    - list
+        - id         : $trade_id
+        - amount     : $amount (取引脚数)
+        - price      : $price (取引価格)
+        - created_at : $created_at (成立時間)
+
+#### `runTrade`
 
 売り注文/買い注文の確定後に実行されるサブルーチン
 
