@@ -25,7 +25,7 @@ services:
       - ./logger:/go/src/logger
 
   mysql:
-    image: mysql:5.6.35
+    image: mysql:8
     environment:
       - "TZ=Asia/Tokyo"
       - "MYSQL_ROOT_PASSWORD=root"

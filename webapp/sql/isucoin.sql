@@ -1,7 +1,9 @@
+use isucoin;
+
 CREATE TABLE setting (
-    key VARBINARY(191) NOT NULL,
-    value VARCHAR(255) NOT NULL,
-    PRIMARY KEY (key)
+    name VARBINARY(191) NOT NULL,
+    val VARCHAR(255) NOT NULL,
+    PRIMARY KEY (name)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 CREATE TABLE user (
@@ -11,7 +13,7 @@ CREATE TABLE user (
     password VARBINARY(191) NOT NULL,
     created_at DATETIME NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY (user_id)
+    UNIQUE KEY (bank_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 CREATE TABLE sell_order (

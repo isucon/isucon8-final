@@ -14,13 +14,13 @@ services:
       ISU_DB_NAME:     'isucoin'
     links:
       - mysql
-    working_dir: /webapp
+    working_dir: /go/src/webapp
     volumes:
       - gopath:/go
-      - ./go:/webapp
+      - ./go:/go/src/webapp
 
   mysql:
-    image: mysql:5.6.35
+    image: mysql:8
     environment:
       - "TZ=Asia/Tokyo"
       - "MYSQL_ROOT_PASSWORD=root"
