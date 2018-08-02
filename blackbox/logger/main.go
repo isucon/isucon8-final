@@ -89,8 +89,8 @@ func Success(w http.ResponseWriter) {
 
 const (
 	MaxBodySize   = 1024 * 1024 // 1MB
-	Wait          = 20 * time.Millisecond
-	MultiExec     = 3
+	Wait          = 25 * time.Millisecond
+	MultiExec     = 2
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
 )
