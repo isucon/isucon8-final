@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"math/rand"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -66,6 +67,9 @@ func (i *investorBase) Signin() Task {
 func (i *investorBase) BuyOrder(amount, price int64) Task {
 	return NewExecTask(func(ctx context.Context) error {
 		if err := i.c.AddBuyOrder(amount, price); err != nil {
+			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+				return ErrNoScore
+			}
 			return err
 		}
 		i.buyorder++
@@ -191,6 +195,9 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 				return ErrNoScore
 			}
 			if err := i.c.AddBuyOrder(amount, price); err != nil {
+				if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+					return ErrNoScore
+				}
 				return err
 			}
 			i.buyorder++
