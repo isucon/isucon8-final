@@ -127,9 +127,9 @@ func (c *Context) Start() ([]Task, error) {
 		if err != nil {
 			return nil, err
 		}
-		// TODO fetchIDに合わせて事前にやってしまいたい
-		c.isubank.AddCredit(cl.bankid, p.credit)
 		investor := NewRandomInvestor(cl, p.credit, p.isu, p.unitamount, p.unitprice)
+		// TODO fetchIDに合わせて事前にやってしまいたい
+		c.isubank.AddCredit(investor.BankID(), investor.Credit())
 		c.AddInvestor(investor)
 		tasks = append(tasks, investor.Start())
 	}
@@ -189,6 +189,7 @@ func (c *Context) Next() ([]Task, error) {
 				} else {
 					investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, c.lastTrade.Price+1)
 				}
+				c.isubank.AddCredit(investor.BankID(), investor.Credit())
 				c.AddInvestor(investor)
 				tasks = append(tasks, investor.Start())
 			}

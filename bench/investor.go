@@ -15,6 +15,8 @@ type Investor interface {
 	Next([]Trade) Task
 
 	BankID() string
+	Credit() int64
+	Isu() int64
 }
 
 type investorBase struct {
@@ -39,6 +41,14 @@ func newInvestorBase(c *Client, credit, isu int64) *investorBase {
 
 func (i *investorBase) BankID() string {
 	return i.c.bankid
+}
+
+func (i *investorBase) Credit() int64 {
+	return i.credit
+}
+
+func (i *investorBase) Isu() int64 {
+	return i.isu
 }
 
 func (i *investorBase) Signup() Task {
