@@ -60,7 +60,13 @@ func (i *investorBase) IsSignin() bool {
 
 func (i *investorBase) Signup() Task {
 	return NewExecTask(func(_ context.Context) error {
-		return i.c.Signup()
+		if err := i.c.Signup(); err != nil {
+			if strings.Index(err.Error(), "bank_id already exists") > -1 {
+				return nil
+			}
+			return err
+		}
+		return nil
 	}, SignupScore)
 }
 
@@ -78,7 +84,7 @@ func (i *investorBase) BuyOrder(amount, price int64) Task {
 	return NewExecTask(func(ctx context.Context) error {
 		if err := i.c.AddBuyOrder(amount, price); err != nil {
 			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
-				return ErrNoScore
+				return nil
 			}
 			return err
 		}
@@ -167,6 +173,12 @@ type RandomInvestor struct {
 }
 
 func NewRandomInvestor(c *Client, credit, isu, unitamount, unitprice int64) *RandomInvestor {
+	if unitprice < 50 {
+		unitprice = 50
+	}
+	if unitamount < 1 {
+		unitamount = 1
+	}
 	return &RandomInvestor{
 		investorBase: newInvestorBase(c, credit, isu),
 		unitamount:   unitamount,
@@ -195,6 +207,9 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 	r := rand.Intn(10)
 	amount := rand.Int63n(i.unitamount) + 1
 	price := rand.Int63n(i.unitprice/2) - (i.unitprice / 4) + trades[0].Price
+	if price <= 0 {
+		price += i.unitprice
+	}
 	if r < 2 {
 		// このターンは何もしない
 	} else if r < 6 {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -19,6 +20,7 @@ type Context struct {
 	logappid  string
 	rand      *Random
 	isubank   *Isubank
+	guest     *Client
 	idlist    chan string
 	closed    chan struct{}
 	investors []Investor
@@ -29,6 +31,8 @@ type Context struct {
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
 	level        uint
+
+	lastTradePorring time.Time
 }
 
 func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Context, error) {
@@ -37,6 +41,10 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 		return nil, err
 	}
 	isubank, err := NewIsubank(internalbank)
+	if err != nil {
+		return nil, err
+	}
+	guest, err := NewClient(appep, "", "", "", InitTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +57,7 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 		logappid:  rand.ID(),
 		rand:      rand,
 		isubank:   isubank,
+		guest:     guest,
 		idlist:    make(chan string, 10),
 		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
@@ -149,11 +158,7 @@ func (c *Context) Start() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	client, err := NewClient(c.appep, "", "", "", InitTimeout)
-	if err != nil {
-		return nil, err
-	}
-	if err = client.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
+	if err := c.guest.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
 		return nil, err
 	}
 	firstInvestor := len(firstprams)
@@ -164,7 +169,6 @@ func (c *Context) Start() ([]Task, error) {
 			return nil, err
 		}
 		investor := NewRandomInvestor(cl, p.credit, p.isu, p.unitamount, p.unitprice)
-		// TODO fetchIDに合わせて事前にやってしまいたい
 		c.isubank.AddCredit(investor.BankID(), investor.Credit())
 		c.AddInvestor(investor)
 		tasks = append(tasks, investor.Start())
@@ -176,18 +180,26 @@ func (c *Context) Next() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	client, err := NewClient(c.appep, "", "", "", ClientTimeout)
-	if err != nil {
-		return nil, errors.Wrap(err, "trades client の初期化に失敗しました")
+	var trades []Trade
+	var err error
+	if c.lastTradePorring.IsZero() || time.Now().Sub(c.lastTradePorring) >= TradePollingInterval {
+		trades, err = c.guest.Trades()
+		if err != nil {
+			return nil, errors.Wrap(err, "GET /trades の取得に失敗しました")
+		}
+		c.AddScore(GetTradesScore)
 	}
-	trades, err := client.Trades()
-	if err != nil {
-		return nil, errors.Wrap(err, "GET /trades の取得に失敗しました")
-	}
-	c.AddScore(GetTradesScore)
 
 	tasks := []Task{}
-	if len(trades) > 0 && trades[0].ID != c.lastTrade.ID {
+	for _, investor := range c.investors {
+		// 初期以外はnextのタイミングで一人づつ投入
+		if !investor.IsSignin() {
+			tasks = append(tasks, investor.Start())
+			break
+		}
+	}
+
+	if trades != nil && len(trades) > 0 && trades[0].ID != c.lastTrade.ID {
 		for _, trade := range trades {
 			if trade.ID > c.lastTrade.ID {
 				// これは個別のほうが良いか
@@ -232,9 +244,11 @@ func (c *Context) Next() ([]Task, error) {
 				} else {
 					investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, c.lastTrade.Price+1)
 				}
-				c.isubank.AddCredit(investor.BankID(), investor.Credit())
-				c.AddInvestor(investor)
-				tasks = append(tasks, investor.Start())
+				tasks = append(tasks, NewExecTask(func(_ context.Context) error {
+					c.isubank.AddCredit(investor.BankID(), investor.Credit())
+					c.AddInvestor(investor)
+					return nil
+				}, 0))
 			}
 		}
 	}

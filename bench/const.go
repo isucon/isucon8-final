@@ -7,6 +7,9 @@ const (
 	ClientTimeout = 10 * time.Second
 	InitTimeout   = 10 * time.Second
 
+	// tradeをpollingする間隔
+	TradePollingInterval = 1 * time.Second
+
 	// Scores
 	SignupScore         = 1
 	SigninScore         = 1
