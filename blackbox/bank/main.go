@@ -269,8 +269,10 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return errors.Wrap(err, "update user.credit failed")
 		}
-		rsvID, err = sr.LastInsertId()
-		return err
+		if rsvID, err = sr.LastInsertId(); err != nil {
+			return errors.Wrap(err, "lastInsertID failed")
+		}
+		return nil
 	})
 
 	time.Sleep(50 * time.Millisecond)

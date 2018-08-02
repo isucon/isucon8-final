@@ -92,7 +92,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 			LogAppid,
 		} {
 			if _, err := tx.Exec(query, k, r.FormValue(k)); err != nil {
-				return err
+				return errors.Wrapf(err, "set setting failed. %s", k)
 			}
 		}
 		for _, q := range []string{
@@ -102,7 +102,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 			"DELETE FROM trade",
 		} {
 			if _, err := tx.Exec(q); err != nil {
-				return err
+				return errors.Wrapf(err, "query failed. %s", q)
 			}
 		}
 		return nil
@@ -253,19 +253,19 @@ func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
 			if _, err := h.getUserByIDWithLock(tx, s.User.ID); err != nil {
-				return err
+				return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 			}
 			logger, err := h.newLogger()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "newLogger failed")
 			}
 			amount, err := formvalInt64(r, "amount")
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "formvalInt64 failed. amount")
 			}
 			price, err := formvalInt64(r, "price")
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "formvalInt64 failed. price")
 			}
 			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
 			if err != nil {
@@ -317,23 +317,23 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 		}
 		err := h.txScorp(func(tx *sql.Tx) error {
 			if _, err := h.getUserByIDWithLock(tx, s.User.ID); err != nil {
-				return err
+				return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 			}
 			logger, err := h.newLogger()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "newLogger failed")
 			}
 			isubank, err := h.newIsubank()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "newIsubank failed")
 			}
 			amount, err := formvalInt64(r, "amount")
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "formvalInt64 failed. amount")
 			}
 			price, err := formvalInt64(r, "price")
 			if err != nil {
-				return err
+				return errors.Wrapf(err, "formvalInt64 failed. price")
 			}
 			totalPrice := price * amount
 			if err = isubank.Check(s.User.BankID, totalPrice); err != nil {
@@ -748,7 +748,7 @@ func (h *Handler) getUserByID(id int64) (*User, error) {
 	var user User
 	q := `SELECT id, name, bank_id, created_at FROM user WHERE id = ?`
 	if err := h.db.QueryRow(q, id).Scan(&user.ID, &user.Name, &user.BankID, &user.CreatedAt); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "select user failed. q: %s", q)
 	}
 	return &user, nil
 }
@@ -758,18 +758,18 @@ func (h *Handler) getTrades(limit int) ([]Trade, error) {
 	q := `SELECT id, amount, price, created_at FROM trade ORDER BY created_at DESC LIMIT ?`
 	rows, err := h.db.Query(q, limit)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "select trade failed. q: %s", q)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var trade Trade
 		if err = rows.Scan(&trade.ID, &trade.Amount, &trade.Price, &trade.CreatedAt); err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "scan trade failed.")
 		}
 		trades = append(trades, trade)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "rows.Err failed.")
 	}
 	return trades, nil
 }
@@ -778,7 +778,7 @@ func (h *Handler) getTradeByID(id int64) (*Trade, error) {
 	var trade Trade
 	q := `SELECT id, amount, price, created_at FROM trade WHERE id = ?`
 	if err := h.db.QueryRow(q, id).Scan(&trade.ID, &trade.Amount, &trade.Price, &trade.CreatedAt); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "select trade failed. q: %s", q)
 	}
 	return &trade, nil
 }
@@ -869,11 +869,11 @@ func (h *Handler) queryAndScanIDs(tx *sql.Tx, q string, args ...interface{}) ([]
 func (h *Handler) newIsubank() (*Isubank, error) {
 	ep, err := h.getSetting(BankEndpoint)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
 	}
 	id, err := h.getSetting(BankAppid)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
 	}
 	return NewIsubank(ep, id)
 }
@@ -881,11 +881,11 @@ func (h *Handler) newIsubank() (*Isubank, error) {
 func (h *Handler) newLogger() (*Logger, error) {
 	ep, err := h.getSetting(LogEndpoint)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
 	}
 	id, err := h.getSetting(LogAppid)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
 	}
 	return NewLogger(ep, id)
 }
