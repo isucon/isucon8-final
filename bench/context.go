@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+
+	"github.com/pkg/errors"
 )
 
 type Context struct {
@@ -84,12 +86,31 @@ func (c *Context) GetScore() int64 {
 	return atomic.LoadInt64(&c.score)
 }
 
-func (c *Context) IncrErr() {
-	atomic.AddInt64(&c.errcount, 1)
+func (c *Context) IncrErr() error {
+	ec := atomic.AddInt64(&c.errcount, 1)
+
+	errorLimit := c.GetScore() / 20
+	if errorLimit < AllowErrorMin {
+		errorLimit = AllowErrorMin
+	} else if errorLimit > AllowErrorMax {
+		errorLimit = AllowErrorMax
+	}
+	if errorLimit <= ec {
+		return errors.Errorf("エラー件数が規定を超過しました.")
+	}
+	return nil
 }
 
 func (c *Context) ErrorCount() int64 {
 	return atomic.LoadInt64(&c.errcount)
+}
+
+func (c *Context) TotalScore() int64 {
+	score := c.GetScore()
+	demerit := score / (AllowErrorMax * 2)
+
+	// エラーが多いと最大スコアが半分になる
+	return score - demerit*c.ErrorCount()
 }
 
 func (c *Context) FindInvestor(bankID string) Investor {
@@ -142,11 +163,11 @@ func (c *Context) Next() ([]Task, error) {
 
 	client, err := NewClient(c.appep, "", "", "", ClientTimeout)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "trades client の初期化に失敗しました")
 	}
 	trades, err := client.Trades()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "GET /trades の取得に失敗しました")
 	}
 	c.AddScore(GetTradesScore)
 
@@ -171,6 +192,10 @@ func (c *Context) Next() ([]Task, error) {
 			// levelup
 			nextScore := (1 << c.level) * 100
 			if score < int64(nextScore) {
+				break
+			}
+			if int64(score/20) < c.ErrorCount() {
+				// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
 				break
 			}
 			c.level++

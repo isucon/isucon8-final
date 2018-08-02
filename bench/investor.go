@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"math/rand"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -66,6 +67,9 @@ func (i *investorBase) Signin() Task {
 func (i *investorBase) BuyOrder(amount, price int64) Task {
 	return NewExecTask(func(ctx context.Context) error {
 		if err := i.c.AddBuyOrder(amount, price); err != nil {
+			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+				return ErrNoScore
+			}
 			return err
 		}
 		i.buyorder++
@@ -153,7 +157,11 @@ type RandomInvestor struct {
 }
 
 func NewRandomInvestor(c *Client, credit, isu, unitamount, unitprice int64) *RandomInvestor {
-	return &RandomInvestor{newInvestorBase(c, credit, isu), unitamount, unitprice}
+	return &RandomInvestor{
+		investorBase: newInvestorBase(c, credit, isu),
+		unitamount:   unitamount,
+		unitprice:    unitprice,
+	}
 }
 
 func (i *RandomInvestor) Start() Task {
@@ -176,16 +184,20 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 	task.Add(i.UpdateBuyOrders())
 	r := rand.Intn(10)
 	amount := rand.Int63n(i.unitamount) + 1
-	price := rand.Int63n(i.unitprice/2) - (i.unitprice / 4) + i.unitprice
+	price := rand.Int63n(i.unitprice/2) - (i.unitprice / 4) + trades[0].Price
 	if r < 2 {
 		// このターンは何もしない
 	} else if r < 6 {
 		// このターンは買う
 		task.Add(NewExecTask(func(ctx context.Context) error {
 			if i.credit < price*amount {
-				price = i.credit / amount
+				// 資金がない
+				return ErrNoScore
 			}
 			if err := i.c.AddBuyOrder(amount, price); err != nil {
+				if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+					return ErrNoScore
+				}
 				return err
 			}
 			i.buyorder++
@@ -196,6 +208,10 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 		task.Add(NewExecTask(func(ctx context.Context) error {
 			if i.isu < amount {
 				amount = i.isu
+			}
+			if amount <= 0 {
+				// 売る椅子がない
+				return ErrNoScore
 			}
 			if err := i.c.AddSellOrder(amount, price); err != nil {
 				return err

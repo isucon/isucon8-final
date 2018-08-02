@@ -23,7 +23,7 @@ func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
 
 func (r *Runner) Result() {
 	c := r.bctx
-	c.Logger().Printf("Score: %d, (level: %d, errors: %d)", c.GetScore(), c.level, c.ErrorCount())
+	c.Logger().Printf("Score: %d, (level: %d, errors: %d)", c.TotalScore(), c.level, c.ErrorCount())
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -71,8 +71,11 @@ func (r *Runner) handleWorker(worker *Worker) {
 		case task := <-ch:
 			err := task.Error()
 			if err != nil && err != context.DeadlineExceeded {
-				r.bctx.IncrErr()
 				r.bctx.Logger().Printf("error: %s", err)
+				if e := r.bctx.IncrErr(); e != nil {
+					r.bctx.Logger().Printf("ベンチマークを終了します: %s", e)
+					worker.Finish()
+				}
 			}
 			r.bctx.AddScore(task.Score())
 		}
@@ -88,7 +91,8 @@ func (r *Runner) runTicker(worker *Worker) {
 			// nextが終わってから次のloopとしたいのでtickerではない
 			tasks, err := r.bctx.Next()
 			if err != nil {
-				r.bctx.Logger().Printf("error: %s", err)
+				r.bctx.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
+				worker.Finish()
 			}
 			if tasks != nil {
 				worker.AddTasks(tasks)
