@@ -92,8 +92,8 @@ func (i *investorBase) BuyOrder(amount, price int64) Task {
 			return err
 		}
 		i.mux.Lock()
-		defer i.mux.Unlock()
 		i.buyorder++
+		i.mux.Unlock()
 		return nil
 	}, PostBuyOrdersScore)
 }
@@ -104,8 +104,8 @@ func (i *investorBase) SellOrder(amount, price int64) Task {
 			return err
 		}
 		i.mux.Lock()
-		defer i.mux.Unlock()
 		i.sellorder++
+		i.mux.Unlock()
 		return nil
 	}, PostSellOrdersScore)
 }
@@ -218,8 +218,6 @@ func (i *RandomInvestor) Start() Task {
 }
 
 func (i *RandomInvestor) Next(trades []Trade) Task {
-	i.mux.Lock()
-	defer i.mux.Unlock()
 	task := NewListTask(3)
 	task.Add(i.UpdateSellOrders())
 	task.Add(i.UpdateBuyOrders())
