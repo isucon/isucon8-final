@@ -18,6 +18,7 @@ type Investor interface {
 	BankID() string
 	Credit() int64
 	Isu() int64
+	IsSignin() bool
 }
 
 type investorBase struct {
@@ -28,6 +29,7 @@ type investorBase struct {
 	buyorder    int
 	buyhistory  map[int64]Order
 	sellhistory map[int64]Order
+	isSignin    bool
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
@@ -52,6 +54,10 @@ func (i *investorBase) Isu() int64 {
 	return i.isu
 }
 
+func (i *investorBase) IsSignin() bool {
+	return i.isSignin
+}
+
 func (i *investorBase) Signup() Task {
 	return NewExecTask(func(_ context.Context) error {
 		return i.c.Signup()
@@ -60,7 +66,11 @@ func (i *investorBase) Signup() Task {
 
 func (i *investorBase) Signin() Task {
 	return NewExecTask(func(_ context.Context) error {
-		return i.c.Signin()
+		if err := i.c.Signin(); err != nil {
+			return err
+		}
+		i.isSignin = true
+		return nil
 	}, SigninScore)
 }
 

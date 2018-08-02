@@ -25,9 +25,10 @@ type Context struct {
 	score     int64
 	errcount  int64
 
-	lastTrade Trade
-	nextLock  sync.Mutex
-	level     uint
+	lastTrade    Trade
+	nextLock     sync.Mutex
+	investorLock sync.Mutex
+	level        uint
 }
 
 func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Context, error) {
@@ -75,7 +76,21 @@ func (c *Context) FetchNewID() string {
 }
 
 func (c *Context) AddInvestor(i Investor) {
+	c.investorLock.Lock()
+	defer c.investorLock.Unlock()
 	c.investors = append(c.investors, i)
+}
+
+func (c *Context) RemoveInvestor(i Investor) {
+	c.investorLock.Lock()
+	defer c.investorLock.Unlock()
+	cleared := make([]Investor, 0, cap(c.investors))
+	for _, ii := range c.investors {
+		if i.BankID() != ii.BankID() {
+			cleared = append(cleared, ii)
+		}
+	}
+	c.investors = cleared
 }
 
 func (c *Context) AddScore(score int64) {
@@ -182,6 +197,9 @@ func (c *Context) Next() ([]Task, error) {
 			}
 		}
 		for _, investor := range c.investors {
+			if !investor.IsSignin() {
+				continue
+			}
 			if task := investor.Next(trades); task != nil {
 				tasks = append(tasks, task)
 			}
@@ -194,7 +212,7 @@ func (c *Context) Next() ([]Task, error) {
 			if score < int64(nextScore) {
 				break
 			}
-			if int64(score/20) < c.ErrorCount() {
+			if AllowErrorMin < c.ErrorCount() {
 				// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
 				break
 			}
