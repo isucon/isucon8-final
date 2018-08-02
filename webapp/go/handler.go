@@ -568,6 +568,16 @@ func (h *Handler) runTrade() {
 		if err != nil {
 			return errors.Wrap(err, "getUserByIDWithLock buy user")
 		}
+		restAmount := buy.Amount
+		// 売り
+		q = `SELECT id FROM sell_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
+		orderIds, err := h.queryAndScanIDs(tx, q, buy.Price)
+		if err != nil {
+			return errors.Wrap(err, "find sell_orders")
+		}
+		if len(orderIds) == 0 {
+			return errNoItem
+		}
 		resID, err := isubank.Reserve(buy.User.BankID, -buy.Price*buy.Amount)
 		if err != nil {
 			if err == ErrCreditInsufficient {
@@ -579,16 +589,6 @@ func (h *Handler) runTrade() {
 			return errors.Wrap(err, "isubank.Reserve")
 		}
 		reserves = append(reserves, resID)
-		restAmount := buy.Amount
-		// 売り
-		q = `SELECT id FROM sell_order WHERE closed_at IS NULL AND price <= ? ORDER BY price ASC`
-		orderIds, err := h.queryAndScanIDs(tx, q, buy.Price)
-		if err != nil {
-			return errors.Wrap(err, "find sell_orders")
-		}
-		if len(orderIds) == 0 {
-			return errNoItem
-		}
 		sells := make([]*Order, 0, len(orderIds))
 		for _, orderID := range orderIds {
 			sell, err := h.getOrderByIDWithLock(tx, "sell_order", orderID)
