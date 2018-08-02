@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,16 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
+)
+
+const (
+	MaxBodySize   = 1024 * 1024 // 1MB
+	RTT           = 100 * time.Millisecond
+	MinAppTime    = 20 * time.Millisecond
+	MaxAppTime    = 1 * time.Second
+	WorkerPerApp  = 2
+	MySQLDatetime = "2006-01-02 15:04:05"
+	LocationName  = "Asia/Tokyo"
 )
 
 func main() {
@@ -44,6 +55,7 @@ func main() {
 	//log.Fatal(http.ListenAndServe(addr, server))
 	log.Fatal(http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		time.Sleep(RTT)
 		server.ServeHTTP(w, r)
 		elasped := time.Now().Sub(start)
 		log.Printf("%s\t%s\t%s\t%.5f", start.Format("2006-01-02T15:04:05.000"), r.Method, r.URL.Path, elasped.Seconds())
@@ -89,15 +101,6 @@ func Error(w http.ResponseWriter, err string, code int) {
 func Success(w http.ResponseWriter) {
 	fmt.Fprintln(w, "ok")
 }
-
-const (
-	MaxBodySize   = 1024 * 1024 // 1MB
-	Wait          = 20 * time.Millisecond
-	MaxWait       = 2 * time.Second
-	MultiExec     = 2
-	MySQLDatetime = "2006-01-02 15:04:05"
-	LocationName  = "Asia/Tokyo"
-)
 
 type TagType int
 
@@ -193,7 +196,7 @@ func (s *Handler) lock(appid string) func() {
 		s.mux.Lock()
 		defer s.mux.Unlock()
 		if _, ok := s.guard[appid]; !ok {
-			s.guard[appid] = make(chan struct{}, MultiExec)
+			s.guard[appid] = make(chan struct{}, WorkerPerApp)
 		}
 		if _, ok := s.waiting[appid]; !ok {
 			var i int64
@@ -203,9 +206,9 @@ func (s *Handler) lock(appid string) func() {
 	w := atomic.AddInt64(s.waiting[appid], 1)
 	s.guard[appid] <- struct{}{}
 	return func() {
-		wt := time.Duration(w) * Wait
-		if wt > MaxWait {
-			wt = MaxWait
+		wt := time.Duration(int64(math.Floor(math.Pow(2.0, float64(w)/2.0)*2.0))) + MinAppTime
+		if wt > MaxAppTime {
+			wt = MaxAppTime
 		}
 		time.Sleep(wt)
 		atomic.AddInt64(s.waiting[appid], -1)

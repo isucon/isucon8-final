@@ -14,6 +14,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	ResOK         = `{"status":"ok"}`
+	ResError      = `{"status":"ng","error":"%s"}`
+	MySQLDatetime = "2006-01-02 15:04:05"
+	LocationName  = "Asia/Tokyo"
+)
+
 func main() {
 	var (
 		port   = flag.Int("port", 5515, "bank app ranning port")
@@ -54,12 +61,19 @@ func NewServer(db *sql.DB) *http.ServeMux {
 
 	h := &Handler{db}
 
+	sleepHandle := func(f http.HandlerFunc, sleep time.Duration) http.HandlerFunc {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(sleep)
+			f.ServeHTTP(w, r)
+		})
+	}
+
 	server.HandleFunc("/register", h.Register)
 	server.HandleFunc("/add_credit", h.AddCredit)
-	server.HandleFunc("/check", h.Check)
-	server.HandleFunc("/reserve", h.Reserve)
-	server.HandleFunc("/commit", h.Commit)
-	server.HandleFunc("/cancel", h.Cancel)
+	server.HandleFunc("/check", sleepHandle(h.Check, 50*time.Millisecond))
+	server.HandleFunc("/reserve", sleepHandle(h.Reserve, 70*time.Millisecond))
+	server.HandleFunc("/commit", sleepHandle(h.Commit, 100*time.Millisecond))
+	server.HandleFunc("/cancel", sleepHandle(h.Cancel, 80*time.Millisecond))
 
 	// default 404
 	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -68,13 +82,6 @@ func NewServer(db *sql.DB) *http.ServeMux {
 	})
 	return server
 }
-
-const (
-	ResOK         = `{"status":"ok"}`
-	ResError      = `{"status":"ng","error":"%s"}`
-	MySQLDatetime = "2006-01-02 15:04:05"
-	LocationName  = "Asia/Tokyo"
-)
 
 var (
 	CreditIsInsufficient     = errors.New("credit is insufficient")
@@ -204,7 +211,6 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	time.Sleep(40 * time.Millisecond)
 	switch {
 	case err == CreditIsInsufficient:
 		Error(w, "credit is insufficient", http.StatusOK)
@@ -241,7 +247,6 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 	if userID <= 0 {
 		return
 	}
-	// TODO sleepを入れる
 	var rsvID int64
 	price := req.Price
 	memo := fmt.Sprintf("app:%s, price:%d", req.AppID, req.Price)
@@ -275,7 +280,6 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	time.Sleep(50 * time.Millisecond)
 	switch {
 	case err == CreditIsInsufficient:
 		Error(w, "credit is insufficient", http.StatusOK)
@@ -375,7 +379,6 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	time.Sleep(80 * time.Millisecond)
 	if err != nil {
 		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
 			Error(w, err.Error(), http.StatusBadRequest)
@@ -466,7 +469,6 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	time.Sleep(60 * time.Millisecond)
 	if err != nil {
 		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
 			Error(w, err.Error(), http.StatusBadRequest)
