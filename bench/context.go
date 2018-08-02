@@ -232,9 +232,9 @@ func (c *Context) Next() ([]Task, error) {
 				}
 				var investor Investor
 				if i%2 == 1 {
-					investor = NewRandomInvestor(cl, c.lastTrade.Price*1000, 0, unitamount, c.lastTrade.Price-1)
+					investor = NewRandomInvestor(cl, c.lastTrade.Price*1000, 0, unitamount, c.lastTrade.Price)
 				} else {
-					investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, c.lastTrade.Price+1)
+					investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, c.lastTrade.Price+5)
 				}
 				tasks = append(tasks, NewExecTask(func(_ context.Context) error {
 					c.isubank.AddCredit(investor.BankID(), investor.Credit())

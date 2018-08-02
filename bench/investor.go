@@ -2,6 +2,7 @@ package bench
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -224,7 +225,8 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 	task.Add(i.UpdateBuyOrders())
 	r := rand.Intn(10)
 	amount := rand.Int63n(i.unitamount) + 1
-	price := rand.Int63n(i.unitprice/2) - (i.unitprice / 4) + trades[0].Price
+	rate := rand.Float64()*0.3 + 0.9 // 0.9 - 1.2 までの値をつける
+	price := int64(math.Floor(float64(trades[0].Price) * rate))
 	if price <= 0 {
 		price += i.unitprice
 	}
@@ -233,7 +235,12 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 	} else if r < 6 {
 		// このターンは買う
 		task.Add(NewExecTask(func(ctx context.Context) error {
+			i.mux.Lock()
 			if i.credit < price*amount {
+				amount = i.credit / price
+			}
+			i.mux.Unlock()
+			if amount <= 0 {
 				// 資金がない
 				return ErrNoScore
 			}
@@ -243,15 +250,19 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 				}
 				return err
 			}
+			i.mux.Lock()
 			i.buyorder++
+			i.mux.Unlock()
 			return nil
 		}, PostBuyOrdersScore))
 	} else {
 		// このターンは売る
 		task.Add(NewExecTask(func(ctx context.Context) error {
+			i.mux.Lock()
 			if i.isu < amount {
 				amount = i.isu
 			}
+			i.mux.Unlock()
 			if amount <= 0 {
 				// 売る椅子がない
 				return ErrNoScore
@@ -259,7 +270,9 @@ func (i *RandomInvestor) Next(trades []Trade) Task {
 			if err := i.c.AddSellOrder(amount, price); err != nil {
 				return err
 			}
+			i.mux.Lock()
 			i.sellorder++
+			i.mux.Unlock()
 			return nil
 		}, PostSellOrdersScore))
 	}
