@@ -67,6 +67,18 @@ func NewServer(db *sql.DB) *http.ServeMux {
 	return server
 }
 
+type badRequestErr struct {
+	s string
+}
+
+func BadRequestErrorf(s string, args ...interface{}) error {
+	return &badRequestErr{fmt.Sprintf(s, args...)}
+}
+
+func (e *badRequestErr) Error() string {
+	return e.s
+}
+
 func Error(w http.ResponseWriter, err string, code int) {
 	http.Error(w, err, code)
 }
@@ -193,14 +205,18 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	unlock := s.lock(req.AppID)
 	defer unlock()
 	err := s.putLog(req.Log, req.AppID)
-	switch err {
-	case nil:
+	if err != nil {
 		time.Sleep(Wait)
-		Success(w)
-	default:
-		log.Printf("[WARN] %s", err)
-		Error(w, "internal server error", http.StatusInternalServerError)
+		if _, ok := err.(*badRequestErr); ok {
+			Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			log.Printf("[WARN] %s", err)
+			Error(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
 	}
+	time.Sleep(Wait)
+	Success(w)
 }
 
 func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
@@ -235,10 +251,10 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 
 func (s *Handler) putLog(l Log, appID string) error {
 	if len(l.Data) == 0 {
-		return errors.Errorf("%s data is required", l.Tag)
+		return BadRequestErrorf("%s data is required", l.Tag)
 	}
 	if l.Time < time.Now().Unix()-3600 {
-		return errors.Errorf("%d time is too old", l.Time)
+		return BadRequestErrorf("%d time is too old", l.Time)
 	}
 	lt := time.Unix(l.Time, 0)
 	var userID, tradeID int64
@@ -252,13 +268,13 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrapf(err, "%s parse data failed", l.Tag)
 		}
 		if data.Name == "" {
-			return errors.Errorf("%s data.name is required", l.Tag)
+			return BadRequestErrorf("%s data.name is required", l.Tag)
 		}
 		if data.BankID == "" {
-			return errors.Errorf("%s data.bank_id is required", l.Tag)
+			return BadRequestErrorf("%s data.bank_id is required", l.Tag)
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		userID = data.UserID
 	case "signin":
@@ -268,7 +284,7 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrapf(err, "%s parse data failed", l.Tag)
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		userID = data.UserID
 	case "sell.order":
@@ -278,16 +294,16 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		if data.SellID == 0 {
-			return errors.Errorf("%s data.sell_id is required", l.Tag)
+			return BadRequestErrorf("%s data.sell_id is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		userID = data.UserID
 	case "buy.order":
@@ -297,16 +313,16 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		if data.BuyID == 0 {
-			return errors.Errorf("%s data.buy_id is required", l.Tag)
+			return BadRequestErrorf("%s data.buy_id is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		userID = data.UserID
 	case "buy.error":
@@ -316,16 +332,16 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		if data.Error == "" {
-			return errors.Errorf("%s data.error is required", l.Tag)
+			return BadRequestErrorf("%s data.error is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		userID = data.UserID
 	case "close":
@@ -335,13 +351,13 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.TradeID == 0 {
-			return errors.Errorf("%s data.trade_id is required", l.Tag)
+			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		tradeID = data.TradeID
 	case "sell.close":
@@ -351,19 +367,19 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.TradeID == 0 {
-			return errors.Errorf("%s data.trade_id is required", l.Tag)
+			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		if data.SellID == 0 {
-			return errors.Errorf("%s data.sell_id is required", l.Tag)
+			return BadRequestErrorf("%s data.sell_id is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		tradeID = data.TradeID
 		userID = data.UserID
@@ -374,24 +390,24 @@ func (s *Handler) putLog(l Log, appID string) error {
 			return errors.Wrap(err, "parse data failed")
 		}
 		if data.TradeID == 0 {
-			return errors.Errorf("%s data.trade_id is required", l.Tag)
+			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
 		}
 		if data.UserID == 0 {
-			return errors.Errorf("%s data.user_id is required", l.Tag)
+			return BadRequestErrorf("%s data.user_id is required", l.Tag)
 		}
 		if data.BuyID == 0 {
-			return errors.Errorf("%s data.buy_id is required", l.Tag)
+			return BadRequestErrorf("%s data.buy_id is required", l.Tag)
 		}
 		if data.Amount == 0 {
-			return errors.Errorf("%s data.amount is required", l.Tag)
+			return BadRequestErrorf("%s data.amount is required", l.Tag)
 		}
 		if data.Price == 0 {
-			return errors.Errorf("%s data.price is required", l.Tag)
+			return BadRequestErrorf("%s data.price is required", l.Tag)
 		}
 		tradeID = data.TradeID
 		userID = data.UserID
 	default:
-		return errors.Errorf("%s unknown tag", l.Tag)
+		return BadRequestErrorf("%s unknown tag", l.Tag)
 	}
 
 	query := `INSERT INTO log (app_id, tag, time, user_id, trade_id, data) VALUES (?, ?, ?, ?, ?, ?)`
