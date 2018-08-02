@@ -505,7 +505,7 @@ func (h *Handler) runTrade() {
 			TradeID: tradeID,
 		})
 		for _, buy := range buys {
-			if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
+			if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
 				return errors.Wrap(err, "update buy_order for trade")
 			}
 			logger.Send("buy.close", LogDataBuyClose{
@@ -516,7 +516,7 @@ func (h *Handler) runTrade() {
 				TradeID: tradeID,
 			})
 		}
-		if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
 			return errors.Wrap(err, "update sell_order for trade")
 		}
 		logger.Send("sell.close", LogDataSellClose{
@@ -626,29 +626,29 @@ func (h *Handler) runTrade() {
 			TradeID: tradeID,
 		})
 		for _, sell := range sells {
-			if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
+			if _, err = tx.Exec(`UPDATE sell_order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, now, sell.ID); err != nil {
 				return errors.Wrap(err, "update sell_order")
 			}
-			logger.Send("sell.close", LogDataBuyClose{
-				BuyID:   sell.ID,
+			logger.Send("sell.close", LogDataSellClose{
+				SellID:  sell.ID,
 				Price:   buy.Price,
 				Amount:  sell.Amount,
 				UserID:  sell.UserID,
 				TradeID: tradeID,
 			})
 		}
-		if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ? AND closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE buy_order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, now, buy.ID); err != nil {
 			return errors.Wrap(err, "update buy_order")
 		}
-		logger.Send("buy.close", LogDataSellClose{
-			SellID:  buy.ID,
+		logger.Send("buy.close", LogDataBuyClose{
+			BuyID:   buy.ID,
 			Price:   buy.Price,
 			Amount:  buy.Amount,
 			UserID:  buy.UserID,
 			TradeID: tradeID,
 		})
 		if err = isubank.Commit(reserves); err != nil {
-			return errors.Wrap(err, "commit")
+			return errors.Wrap(err, "isubank.Commit")
 		}
 		return nil
 	}
@@ -715,7 +715,8 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 }
 
 func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
-	tx, err := h.db.Begin()
+	var tx *sql.Tx
+	tx, err = h.db.Begin()
 	if err != nil {
 		return errors.Wrap(err, "begin transaction failed")
 	}
