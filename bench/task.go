@@ -27,20 +27,14 @@ func (t *taskBase) Score() int64 {
 	return t.score
 }
 
-type ExecTask struct {
+type scoreTask struct {
 	*taskBase
-	runner func(context.Context) error
+	runner func(context.Context) (int64, error)
 }
 
-func NewExecTask(runner func(context.Context) error, score int64) *ExecTask {
-	return &ExecTask{
-		taskBase: &taskBase{score: score},
-		runner:   runner,
-	}
-}
-
-func (t *ExecTask) Run(ctx context.Context) error {
-	if err := t.runner(ctx); err != nil {
+func (t *scoreTask) Run(ctx context.Context) error {
+	var err error
+	if t.score, err = t.runner(ctx); err != nil {
 		t.score = 0
 		if err == ErrNoScore {
 			return nil
@@ -50,6 +44,19 @@ func (t *ExecTask) Run(ctx context.Context) error {
 	return nil
 }
 
+func NewScoreTask(runner func(context.Context) (int64, error)) Task {
+	return &scoreTask{
+		taskBase: &taskBase{},
+		runner:   runner,
+	}
+}
+
+func NewExecTask(runner func(context.Context) error, score int64) Task {
+	return NewScoreTask(func(ctx context.Context) (int64, error) {
+		return score, runner(ctx)
+	})
+}
+
 type ListTask struct {
 	*taskBase
 	tasks []Task
@@ -57,7 +64,7 @@ type ListTask struct {
 
 func NewListTask(cap int) *ListTask {
 	return &ListTask{
-		taskBase: &taskBase{score: 0},
+		taskBase: &taskBase{},
 		tasks:    make([]Task, 0, cap),
 	}
 }

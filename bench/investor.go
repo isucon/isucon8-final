@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"strings"
+	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -30,6 +31,7 @@ type investorBase struct {
 	buyhistory  map[int64]Order
 	sellhistory map[int64]Order
 	isSignin    bool
+	mux         sync.Mutex
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
@@ -88,6 +90,8 @@ func (i *investorBase) BuyOrder(amount, price int64) Task {
 			}
 			return err
 		}
+		i.mux.Lock()
+		defer i.mux.Unlock()
 		i.buyorder++
 		return nil
 	}, PostBuyOrdersScore)
@@ -98,20 +102,26 @@ func (i *investorBase) SellOrder(amount, price int64) Task {
 		if err := i.c.AddSellOrder(amount, price); err != nil {
 			return err
 		}
+		i.mux.Lock()
+		defer i.mux.Unlock()
 		i.sellorder++
 		return nil
 	}, PostSellOrdersScore)
 }
 
 func (i *investorBase) UpdateBuyOrders() Task {
-	return NewExecTask(func(ctx context.Context) error {
+	return NewScoreTask(func(ctx context.Context) (int64, error) {
+		var score int64
 		if i.buyorder == 0 {
-			return ErrNoScore
+			return 0, ErrNoScore
 		}
 		orders, err := i.c.BuyOrders()
 		if err != nil {
-			return err
+			return 0, err
 		}
+		score += GetBuyOrdersScore
+		i.mux.Lock()
+		defer i.mux.Unlock()
 		for _, order := range orders {
 			if order.ClosedAt == nil {
 				continue
@@ -124,25 +134,30 @@ func (i *investorBase) UpdateBuyOrders() Task {
 			if order.Trade != nil {
 				// 買い取りは安くなければだめ
 				if order.Price < order.Trade.Price {
-					return errors.Errorf("買い注文の指値より高値で取引されています. order:%d", order.ID)
+					return 0, errors.Errorf("買い注文の指値より高値で取引されています. order:%d", order.ID)
 				}
 				i.credit -= order.Trade.Price * order.Amount
 				i.isu += order.Amount
 			}
+			score += TradeSuccessScore
 		}
-		return nil
-	}, GetBuyOrdersScore)
+		return score, nil
+	})
 }
 
 func (i *investorBase) UpdateSellOrders() Task {
-	return NewExecTask(func(ctx context.Context) error {
+	return NewScoreTask(func(ctx context.Context) (int64, error) {
+		var score int64
 		if i.sellorder == 0 {
-			return ErrNoScore
+			return 0, ErrNoScore
 		}
 		orders, err := i.c.SellOrders()
 		if err != nil {
-			return err
+			return 0, err
 		}
+		score += GetSellOrdersScore
+		i.mux.Lock()
+		defer i.mux.Unlock()
 		for _, order := range orders {
 			if order.ClosedAt == nil {
 				continue
@@ -155,14 +170,15 @@ func (i *investorBase) UpdateSellOrders() Task {
 			if order.Trade != nil {
 				// 売却は高くなければだめ
 				if order.Price > order.Trade.Price {
-					return errors.Errorf("売り注文の指値より安値で取引されています. order:%d", order.ID)
+					return 0, errors.Errorf("売り注文の指値より安値で取引されています. order:%d", order.ID)
 				}
 				i.credit += order.Trade.Price * order.Amount
 				i.isu -= order.Amount
 			}
+			score += TradeSuccessScore
 		}
-		return nil
-	}, GetSellOrdersScore)
+		return score, nil
+	})
 }
 
 // あまり考えずに売買する
@@ -201,6 +217,8 @@ func (i *RandomInvestor) Start() Task {
 }
 
 func (i *RandomInvestor) Next(trades []Trade) Task {
+	i.mux.Lock()
+	defer i.mux.Unlock()
 	task := NewListTask(3)
 	task.Add(i.UpdateSellOrders())
 	task.Add(i.UpdateBuyOrders())

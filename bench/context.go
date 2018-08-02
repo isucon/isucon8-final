@@ -200,14 +200,6 @@ func (c *Context) Next() ([]Task, error) {
 	}
 
 	if trades != nil && len(trades) > 0 && trades[0].ID != c.lastTrade.ID {
-		for _, trade := range trades {
-			if trade.ID > c.lastTrade.ID {
-				// これは個別のほうが良いか
-				c.AddScore(TradeSuccessScore)
-			} else {
-				break
-			}
-		}
 		for _, investor := range c.investors {
 			if !investor.IsSignin() {
 				continue
