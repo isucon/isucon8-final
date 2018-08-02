@@ -263,9 +263,15 @@ func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return errors.Wrapf(err, "formvalInt64 failed. amount")
 			}
+			if amount <= 0 {
+				return errors.Errorf("amount is must be greater 0. [%d]", amount)
+			}
 			price, err := formvalInt64(r, "price")
 			if err != nil {
 				return errors.Wrapf(err, "formvalInt64 failed. price")
+			}
+			if price <= 0 {
+				return errors.Errorf("price is must be greater 0. [%d]", price)
 			}
 			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
 			if err != nil {
@@ -331,9 +337,15 @@ func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return errors.Wrapf(err, "formvalInt64 failed. amount")
 			}
+			if amount <= 0 {
+				return errors.Errorf("amount is must be greater 0. [%d]", amount)
+			}
 			price, err := formvalInt64(r, "price")
 			if err != nil {
 				return errors.Wrapf(err, "formvalInt64 failed. price")
+			}
+			if price <= 0 {
+				return errors.Errorf("price is must be greater 0. [%d]", price)
 			}
 			totalPrice := price * amount
 			if err = isubank.Check(s.User.BankID, totalPrice); err != nil {

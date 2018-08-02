@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -123,7 +125,11 @@ func (b *Logger) request(p string, v interface{}) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.Errorf("logger status is not ok. code: %d", res.StatusCode)
+		b, e := ioutil.ReadAll(res.Body)
+		if e != nil {
+			log.Printf("[WARN] logger body read failed. err:%s", e)
+		}
+		return errors.Errorf("logger status is not ok. code: %d, body: %s", res.StatusCode, string(b))
 	}
 	return nil
 }
