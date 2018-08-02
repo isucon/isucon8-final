@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -52,8 +54,9 @@ func NewServer(db *sql.DB) *http.ServeMux {
 	server := http.NewServeMux()
 
 	h := &Handler{
-		db:    db,
-		guard: make(map[string]chan struct{}, 1000),
+		db:      db,
+		guard:   make(map[string]chan struct{}, 1000),
+		waiting: make(map[string]*int64, 1000),
 	}
 
 	server.HandleFunc("/send", h.Send)
@@ -89,7 +92,8 @@ func Success(w http.ResponseWriter) {
 
 const (
 	MaxBodySize   = 1024 * 1024 // 1MB
-	Wait          = 25 * time.Millisecond
+	Wait          = 20 * time.Millisecond
+	MaxWait       = 2 * time.Second
 	MultiExec     = 2
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
@@ -178,16 +182,33 @@ type BuyClose struct {
 }
 
 type Handler struct {
-	db    *sql.DB
-	guard map[string]chan struct{}
+	db      *sql.DB
+	guard   map[string]chan struct{}
+	waiting map[string]*int64
+	mux     sync.Mutex
 }
 
 func (s *Handler) lock(appid string) func() {
-	if _, ok := s.guard[appid]; !ok {
-		s.guard[appid] = make(chan struct{}, MultiExec)
-	}
+	func() {
+		s.mux.Lock()
+		defer s.mux.Unlock()
+		if _, ok := s.guard[appid]; !ok {
+			s.guard[appid] = make(chan struct{}, MultiExec)
+		}
+		if _, ok := s.waiting[appid]; !ok {
+			var i int64
+			s.waiting[appid] = &i
+		}
+	}()
+	w := atomic.AddInt64(s.waiting[appid], 1)
 	s.guard[appid] <- struct{}{}
 	return func() {
+		wt := time.Duration(w) * Wait
+		if wt > MaxWait {
+			wt = MaxWait
+		}
+		time.Sleep(wt)
+		atomic.AddInt64(s.waiting[appid], -1)
 		<-s.guard[appid]
 	}
 }
@@ -206,7 +227,6 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	defer unlock()
 	err := s.putLog(req.Log, req.AppID)
 	if err != nil {
-		time.Sleep(Wait)
 		if _, ok := err.(*badRequestErr); ok {
 			Error(w, err.Error(), http.StatusBadRequest)
 		} else {
@@ -215,7 +235,6 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	time.Sleep(Wait)
 	Success(w)
 }
 
@@ -244,7 +263,6 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 	if len(errors) > 0 {
 		Error(w, "internal server error", http.StatusInternalServerError)
 	} else {
-		time.Sleep(Wait)
 		Success(w)
 	}
 }
