@@ -32,6 +32,7 @@ services:
     volumes:
       - mysql:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
+      - ./conf.d:/etc/mysql/conf.d
 
 volumes:
   isubankgopath:
