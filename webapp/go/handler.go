@@ -799,27 +799,37 @@ func (h *Handler) getOrderByIDWithLock(tx *sql.Tx, table string, id int64) (*Ord
 	return &order, nil
 }
 
-func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Order, error) {
-	orders := make([]Order, 0, limit)
-	q := fmt.Sprintf(`SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`, table)
-	rows, err := h.db.Query(q, userID, limit)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Query %s", q)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var closedAt mysql.NullTime
-		var tradeID sql.NullInt64
-		var order Order
-		if err = rows.Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
-			return nil, errors.Wrap(err, "Scan")
+func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]*Order, error) {
+	orders, err := func() ([]*Order, error) {
+		// for close
+		orders := make([]*Order, 0, limit)
+		q := fmt.Sprintf(`SELECT id, user_id, amount, price, closed_at, trade_id, created_at FROM %s WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`, table)
+		rows, err := h.db.Query(q, userID, limit)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Query %s", q)
 		}
-		if closedAt.Valid {
-			order.ClosedAt = &closedAt.Time
+		defer rows.Close()
+		for rows.Next() {
+			var closedAt mysql.NullTime
+			var tradeID sql.NullInt64
+			var order Order
+			if err = rows.Scan(&order.ID, &order.UserID, &order.Amount, &order.Price, &closedAt, &tradeID, &order.CreatedAt); err != nil {
+				return nil, errors.Wrap(err, "Scan")
+			}
+			if closedAt.Valid {
+				order.ClosedAt = &closedAt.Time
+			}
+			if tradeID.Valid {
+				order.TradeID = tradeID.Int64
+			}
+			orders = append(orders, &order)
 		}
-		if tradeID.Valid {
-			order.TradeID = tradeID.Int64
+		if err = rows.Err(); err != nil {
+			return nil, errors.Wrap(err, "rows.Err")
 		}
+		return orders, nil
+	}()
+	for _, order := range orders {
 		order.User, err = h.getUserByID(order.UserID)
 		if err != nil {
 			return nil, errors.Wrap(err, "getUserByID")
@@ -830,10 +840,6 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]Or
 				return nil, errors.Wrap(err, "getTradeByID")
 			}
 		}
-		orders = append(orders, order)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "rows.Err")
 	}
 
 	return orders, nil
