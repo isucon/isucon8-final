@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"fmt"
+	"log"
 )
 
 type Task interface {
@@ -62,6 +63,11 @@ func (w *Worker) TaskEnd() <-chan Task {
 }
 
 func (w *Worker) Finish() {
+	defer func() {
+		if e := recover(); e != nil {
+			log.Printf("[INFO] maybe multi close. e:%s", e)
+		}
+	}()
 	close(w.taskCh)
 }
 
