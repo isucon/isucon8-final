@@ -22,7 +22,7 @@
     - status: 404
         - error: bank_id not found
     - status: 40x
-        - error: insufficient
+        - error: credit is insufficient
 
 ### `POST /reserve`
 
@@ -48,7 +48,7 @@ reserveの有効期限は1分間
     - status: 404
         - error: bank_id not found
     - status: 40x
-        - error: insufficient
+        - error: credit is insufficien
 
 ### `POST /commit`
 

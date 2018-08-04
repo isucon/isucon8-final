@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	ResOK         = `{"status":"ok"}`
-	ResError      = `{"status":"ng","error":"%s"}`
+	ResOK         = `{}`
+	ResError      = `{"error":"%s"}`
 	MySQLDatetime = "2006-01-02 15:04:05"
 	LocationName  = "Asia/Tokyo"
 	AxLog         = false
@@ -197,12 +197,16 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Error(w, "can't parse body", http.StatusBadRequest)
 		return
 	}
-	if req.Price <= 0 {
-		Error(w, "price must be upper than 0", http.StatusBadRequest)
+	if req.Price < 0 {
+		Error(w, "price must be upper 0", http.StatusBadRequest)
 		return
 	}
 	userID := s.filterBankID(w, req.BankID)
 	if userID <= 0 {
+		return
+	}
+	if req.Price == 0 {
+		Success(w)
 		return
 	}
 	err := s.txScorp(func(tx *sql.Tx) error {
@@ -292,7 +296,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		Error(w, "internal server error", http.StatusInternalServerError)
 	default:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		fmt.Fprintln(w, fmt.Sprintf(`{"status":"ok","reserve_id":%d}`, rsvID))
+		fmt.Fprintln(w, fmt.Sprintf(`{"reserve_id":%d}`, rsvID))
 	}
 }
 
@@ -493,7 +497,7 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) 
 	err := s.db.QueryRow(`SELECT id FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id)
 	switch {
 	case err == sql.ErrNoRows:
-		Error(w, "user not found", http.StatusNotFound)
+		Error(w, "bank_id not found", http.StatusNotFound)
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
