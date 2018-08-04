@@ -36,6 +36,8 @@
     - status: 200
     - status: 40x
         - error: bank_id conflict
+    - status: 400
+        - error: bank user not found
 - log
     - tag:signup
         - name: $name

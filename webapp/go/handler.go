@@ -16,10 +16,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type Setting struct {
+	Name  string `json:"-"`
+	Value string `json:"-"`
+}
+
 type User struct {
 	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
 	BankID    string    `json:"-"`
+	Name      string    `json:"name"`
+	Password  string    `json:"-"`
 	CreatedAt time.Time `json:"-"`
 }
 
@@ -32,6 +38,7 @@ type Trade struct {
 
 type Order struct {
 	ID        int64      `json:"id"`
+	Type      string     `json:"type"`
 	UserID    int64      `json:"user_id"`
 	Amount    int64      `json:"amount"`
 	Price     int64      `json:"price"`
@@ -60,21 +67,21 @@ func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	}
 
 	server.HandleFunc("/initialize", h.Initialize)
+	server.HandleFunc("/", h.Top)
 	server.HandleFunc("/signup", h.Signup)
 	server.HandleFunc("/signin", h.Signin)
 	server.HandleFunc("/signout", h.Signout)
-	server.HandleFunc("/mypage", h.MyPage)
 	server.HandleFunc("/sell_orders", h.SellOrders)
 	server.HandleFunc("/buy_orders", h.BuyOrders)
 	server.HandleFunc("/trades", h.Trades)
 
 	// default 404
-	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	server.HandleFunc("/404", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[INFO] request not found %s", r.URL.RawPath)
 		http.Error(w, "Not found", 404)
 	})
 
-	return h.common(server)
+	return h.commonHandler(server)
 }
 
 type Handler struct {
@@ -115,106 +122,109 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		name := r.FormValue("name")
-		bankID := r.FormValue("bank_id")
-		password := r.FormValue("password")
-		if name == "" || bankID == "" || password == "" {
-			h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
-			return
-		}
-		isubank, err := h.newIsubank()
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		logger, err := h.newLogger()
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		// bankIDの検証
-		if err = isubank.Check(bankID, 1); err != nil {
-			h.handleError(w, err, http.StatusBadRequest)
-			return
-		}
-		pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW())`, bankID, name, pass); err != nil {
-			if mysqlError, ok := err.(*mysql.MySQLError); ok {
-				if mysqlError.Number == 1062 {
-					h.handleError(w, errors.New("bank_id already exists"), http.StatusBadRequest)
-					return
-				}
-			}
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		} else {
-			userID, _ := res.LastInsertId()
-			logger.Send("signup", LogDataSignup{
-				BankID: bankID,
-				UserID: userID,
-				Name:   name,
-			})
-		}
-		http.Redirect(w, r, "/signin", http.StatusFound)
-	} else {
-		// TODO Signup form or error
+	if r.Method != http.MethodPost {
+		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		return
 	}
+	name := r.FormValue("name")
+	bankID := r.FormValue("bank_id")
+	password := r.FormValue("password")
+	if name == "" || bankID == "" || password == "" {
+		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
+		return
+	}
+	isubank, err := h.newIsubank()
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	logger, err := h.newLogger()
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	// bankIDの検証
+	if err = isubank.Check(bankID, 0); err != nil {
+		h.handleError(w, err, http.StatusBadRequest)
+		return
+	}
+	pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW())`, bankID, name, pass); err != nil {
+		if mysqlError, ok := err.(*mysql.MySQLError); ok {
+			if mysqlError.Number == 1062 {
+				h.handleError(w, errors.New("bank_id conflict"), http.StatusConflict)
+				return
+			}
+		}
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	} else {
+		userID, _ := res.LastInsertId()
+		logger.Send("signup", LogDataSignup{
+			BankID: bankID,
+			UserID: userID,
+			Name:   name,
+		})
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintln(w, "{}")
 }
 
 func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		bankID := r.FormValue("bank_id")
-		password := r.FormValue("password")
-		if bankID == "" || password == "" {
-			h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
-			return
-		}
-		logger, err := h.newLogger()
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-
-		var userID int64
-		pass := []byte{}
-		if err := h.db.QueryRow(`SELECT id, password FROM user WHERE bank_id = ?`, bankID).Scan(&userID, &pass); err != nil {
-			if err == sql.ErrNoRows {
-				h.handleError(w, errors.New("bank_idまたはpasswordが間違っています"), http.StatusNotFound)
-				return
-			}
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if err := bcrypt.CompareHashAndPassword(pass, []byte(password)); err != nil {
-			if err == bcrypt.ErrMismatchedHashAndPassword {
-				h.handleError(w, errors.New("bank_idまたはpasswordが間違っています"), http.StatusNotFound)
-				return
-			}
-			h.handleError(w, err, http.StatusBadRequest)
-			return
-		}
-		session, err := h.store.Get(r, SessionName)
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		session.Values["user_id"] = userID
-		if err = session.Save(r, w); err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		logger.Send("signin", LogDataSignin{
-			UserID: userID,
-		})
-		http.Redirect(w, r, "/mypage", http.StatusFound)
-	} else {
-		// TODO Signin form or error
+	if r.Method != http.MethodPost {
+		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
+		return
 	}
+	bankID := r.FormValue("bank_id")
+	password := r.FormValue("password")
+	if bankID == "" || password == "" {
+		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
+		return
+	}
+	logger, err := h.newLogger()
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	user, err := getUserByBankID(h.db, bankID)
+	if err == nil {
+		if err == sql.ErrNoRows {
+			h.handleError(w, errors.New("bank_id or password is not match"), http.StatusNotFound)
+			return
+		}
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		if err == bcrypt.ErrMismatchedHashAndPassword {
+			h.handleError(w, errors.New("bank_id or password is not match"), http.StatusNotFound)
+			return
+		}
+		h.handleError(w, err, http.StatusBadRequest)
+		return
+	}
+	session, err := h.store.Get(r, SessionName)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	session.Values["user_id"] = user.ID
+	if err = session.Save(r, w); err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	logger.Send("signin", LogDataSignin{
+		UserID: user.ID,
+	})
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintln(w, "{}")
 }
 
 func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +242,7 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/signin", http.StatusFound)
 }
 
-func (h *Handler) MyPage(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Top(w http.ResponseWriter, r *http.Request) {
 	s, err := h.auth(r)
 	if err != nil {
 		h.handleError(w, err, http.StatusUnauthorized)
@@ -682,7 +692,7 @@ func (h *Handler) runTrade() {
 	}
 }
 
-func (h *Handler) common(f http.Handler) http.Handler {
+func (h *Handler) commonHandler(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			if err := r.ParseForm(); err != nil {
@@ -697,14 +707,12 @@ func (h *Handler) common(f http.Handler) http.Handler {
 		}
 		if _userID, ok := session.Values["user_id"]; ok {
 			userID := _userID.(int64)
-			user := &User{}
-			ctx := r.Context()
-			q := `SELECT id, bank_id, name, created_at FROM user WHERE id = ?`
-			if err := h.db.QueryRow(q, userID).Scan(&user.ID, &user.BankID, &user.Name, &user.CreatedAt); err != nil {
+			user, err := getUserByID(h.db, userID)
+			if err != nil {
 				h.handleError(w, err, http.StatusInternalServerError)
 				return
 			}
-			ctx = context.WithValue(ctx, "session", &Session{user})
+			ctx := context.WithValue(r.Context(), "session", &Session{user})
 			f.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			f.ServeHTTP(w, r)
@@ -915,7 +923,121 @@ func formvalInt64(r *http.Request, key string) (int64, error) {
 	i, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		log.Printf("[INFO] can't parse to int64 key:%s val:%s err:%s", key, v, err)
-		return 0, errors.Errorf("%s can't parse to int64")
+		return 0, errors.Errorf("%s can't parse to int64", key)
 	}
+	sql.ErrNoRows
 	return i, nil
+}
+
+const (
+	userColumns   = "id,bank_id,name,password,created_at"
+	ordersColumns = "id,type,user_id,amount,price,closed_at,trade_id,created_at"
+	tradeColumns  = "id,amount,price,created_at"
+)
+
+type RowScanner interface {
+	Scan(...interface{}) error
+}
+
+func scanUser(r RowScanner) (*User, error) {
+	var v User
+	if err := r.Scan(&v.ID, &v.BankID, &v.Name, &v.Password, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func scanTrade(r RowScanner) (*Trade, error) {
+	var v Trade
+	if err := r.Scan(&v.ID, &v.Amount, &v.Price, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func scanOrder(r RowScanner) (*Order, error) {
+	var v Order
+	var closedAt mysql.NullTime
+	var tradeID sql.NullInt64
+	if err := r.Scan(&v.ID, &v.Type, &v.UserID, &v.Amount, &v.Price, &closedAt, &tradeID, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	if closedAt.Valid {
+		v.ClosedAt = &closedAt.Time
+	}
+	if tradeID.Valid {
+		v.TradeID = tradeID.Int64
+	}
+	return &v, nil
+}
+
+type QueryExecuter interface {
+	Exec(string, ...interface{}) (*sql.Result, error)
+	QueryRow(string, ...interface{}) *sql.Row
+	Query(string, ...interface{}) (*sql.Rows, error)
+}
+
+func getUserByBankID(d QueryExecuter, bankID string) (*User, error) {
+	query := fmt.Sprintf("SELECT %s FROM user WHERE bank_id = ?", userColumns)
+	return scanUser(d.QueryRow(query, bankID))
+}
+
+func getUserByID(d QueryExecuter, id int64) (*User, error) {
+	query := fmt.Sprintf("SELECT %s FROM user WHERE id = ?", userColumns)
+	return scanUser(d.QueryRow(query, id))
+}
+
+func getUserByIDWithLock(d QueryExecuter, id int64) (*User, error) {
+	query := fmt.Sprintf("SELECT %s FROM user WHERE id = ? FOR UPDATE", userColumns)
+	return scanUser(d.QueryRow(query, id))
+}
+
+func getTradeByID(d QueryExecuter, id int64) (*Trade, error) {
+	query := fmt.Sprintf("SELECT %s FROM trade WHERE id = ?", tradeColumns)
+	return scanTrade(d.QueryRow(query, id))
+}
+
+func queryTrades(d QueryExecuter, query string, args ...interface{}) ([]*Trade, error) {
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
+	}
+	defer rows.Close()
+	trades := []*Trade{}
+	for rows.Next() {
+		trade, err = scanTrade(rows)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Scan failed.")
+		}
+		trades = append(trades, trade)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrapf(err, "rows.Err failed.")
+	}
+	return trades, nil
+}
+
+func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
+	}
+	defer rows.Close()
+	orders := []*Order{}
+	for rows.Next() {
+		order, err = scanOrder(rows)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Scan failed.")
+		}
+		orders = append(orders, order)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrapf(err, "rows.Err failed.")
+	}
+	return orders, nil
+}
+
+func getOrderByIDWithLock(d QueryExecuter, id int64) (*Order, error) {
+	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ?", ordersColumns)
+	return scanOrder(d.QueryRow(query, id))
 }
