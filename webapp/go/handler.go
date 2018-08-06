@@ -16,11 +16,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Setting struct {
-	Name  string `json:"-"`
-	Value string `json:"-"`
-}
-
 type User struct {
 	ID        int64     `json:"id"`
 	BankID    string    `json:"-"`
@@ -58,6 +53,25 @@ type OKResp struct {
 	Error string `jon:"error,omitempty"`
 }
 
+type errWithCode struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *errWithCode) Error() string {
+	return e.Err.Error()
+}
+
+func errcodeWrap(err error, code int) error {
+	if err == nil {
+		return nil
+	}
+	return &errWithCode{
+		StatusCode: code,
+		Err:        err,
+	}
+}
+
 func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	server := http.NewServeMux()
 
@@ -71,9 +85,8 @@ func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	server.HandleFunc("/signup", h.Signup)
 	server.HandleFunc("/signin", h.Signin)
 	server.HandleFunc("/signout", h.Signout)
-	server.HandleFunc("/sell_orders", h.SellOrders)
-	server.HandleFunc("/buy_orders", h.BuyOrders)
-	server.HandleFunc("/trades", h.Trades)
+	server.HandleFunc("/orders", h.Orders)
+	server.HandleFunc("/info", h.Info)
 
 	// default 404
 	server.HandleFunc("/404", func(w http.ResponseWriter, r *http.Request) {
@@ -251,74 +264,150 @@ func (h *Handler) Top(w http.ResponseWriter, r *http.Request) {
 	_ = s
 }
 
-func (h *Handler) SellOrders(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Orders(w http.ResponseWriter, r *http.Request) {
 	s, err := h.auth(r)
 	if err != nil {
 		h.handleError(w, err, http.StatusUnauthorized)
 		return
 	}
-	if r.Method == http.MethodPost {
-		res := &OKResp{
-			OK: true,
+	switch http.MethodPost {
+	case http.MethodPost:
+		h.addOrders(w, r)
+	case http.MethodDelete:
+		h.deleteOrders(w, r)
+	case http.MethodGet:
+		h.getOrders(w, r)
+	default:
+		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
+	s, _ := h.auth(r)
+
+	res := &OKResp{
+		OK: true,
+	}
+	err := h.txScorp(func(tx *sql.Tx) error {
+		if _, err := h.getUserByIDWithLock(tx, s.User.ID); err != nil {
+			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 		}
-		err := h.txScorp(func(tx *sql.Tx) error {
-			if _, err := h.getUserByIDWithLock(tx, s.User.ID); err != nil {
-				return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
-			}
-			logger, err := h.newLogger()
-			if err != nil {
-				return errors.Wrap(err, "newLogger failed")
-			}
-			amount, err := formvalInt64(r, "amount")
-			if err != nil {
-				return errors.Wrapf(err, "formvalInt64 failed. amount")
-			}
-			if amount <= 0 {
-				return errors.Errorf("amount is must be greater 0. [%d]", amount)
-			}
-			price, err := formvalInt64(r, "price")
-			if err != nil {
-				return errors.Wrapf(err, "formvalInt64 failed. price")
-			}
-			if price <= 0 {
-				return errors.Errorf("price is must be greater 0. [%d]", price)
-			}
-			res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
-			if err != nil {
-				return errors.Wrap(err, "insert sell_order failed")
-			}
-			sellID, err := res.LastInsertId()
-			if err != nil {
-				return errors.Wrap(err, "get sell_id failed")
-			}
-			err = logger.Send("sell.order", LogDataSellOrder{
-				SellID: sellID,
-				UserID: s.User.ID,
-				Amount: amount,
-				Price:  price,
-			})
-			if err != nil {
-				return errors.Wrap(err, "send log failed")
-			}
-			return nil
+		logger, err := h.newLogger()
+		if err != nil {
+			return errors.Wrap(err, "newLogger failed")
+		}
+		amount, err := formvalInt64(r, "amount")
+		if err != nil {
+			return errors.Wrapf(err, "formvalInt64 failed. amount")
+		}
+		if amount <= 0 {
+			return errors.Errorf("amount is must be greater 0. [%d]", amount)
+		}
+		price, err := formvalInt64(r, "price")
+		if err != nil {
+			return errors.Wrapf(err, "formvalInt64 failed. price")
+		}
+		if price <= 0 {
+			return errors.Errorf("price is must be greater 0. [%d]", price)
+		}
+		res, err := tx.Exec(`INSERT INTO sell_order (user_id, amount, price, created_at) VALUES (?, ?, ?, NOW())`, s.User.ID, amount, price)
+		if err != nil {
+			return errors.Wrap(err, "insert sell_order failed")
+		}
+		sellID, err := res.LastInsertId()
+		if err != nil {
+			return errors.Wrap(err, "get sell_id failed")
+		}
+		err = logger.Send("sell.order", LogDataSellOrder{
+			SellID: sellID,
+			UserID: s.User.ID,
+			Amount: amount,
+			Price:  price,
 		})
 		if err != nil {
-			res.OK = false
-			res.Error = err.Error() // TODO message
-		} else {
-			h.runTrade()
+			return errors.Wrap(err, "send log failed")
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(res)
+		return nil
+	})
+	if err != nil {
+		res.OK = false
+		res.Error = err.Error() // TODO message
 	} else {
-		orders, err := h.getOrdersByUserID("sell_order", s.User.ID, ListLimit)
+		h.runTrade()
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) getOrders(w http.ResponseWriter, r *http.Request) {
+	s, _ := h.auth(r)
+	q := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL)`, ordersColumns)
+	orders, err := queryOrders(h.db, q, s.User.ID)
+	if err != nil {
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+	for _, order := range orders {
+		order.User, err = getUserByID(h.db, order.UserID)
 		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
+			h.handleError(w, errors.Wrapf(err, "getOrderByID failed. id"), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(orders)
+		if order.TradeID > 0 {
+			order.Trade, err = getTradeByID(h.db, order.TradeID)
+			if err != nil {
+				h.handleError(w, errors.Wrapf(err, "getTradeByID failed. id"), http.StatusInternalServerError)
+				return
+			}
+		}
 	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(orders)
+}
+
+func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
+	s, _ := h.auth(r)
+	var id int64
+	err := h.txScorp(func(tx *sql.Tx) error {
+		if _, err := h.getUserByIDWithLock(tx, s.User.ID); err != nil {
+			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
+		}
+		logger, err := h.newLogger()
+		if err != nil {
+			return errors.Wrap(err, "newLogger failed")
+		}
+		id, err = formvalInt64(r, "id")
+		if err != nil {
+			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. id"), 400)
+		}
+		order, err := getOrderByIDWithLock(tx, id)
+		if err != nil {
+			err = errors.Wrapf(err, "getOrderByIDWithLock failed. id")
+			if err == sql.ErrNoRows {
+				return errcodeWrap(err, 404)
+			}
+			return err
+		}
+		if order.UserID != s.User.ID {
+			return errcodeWrap(errors.New("not found"), 404)
+		}
+		if order.ClosedAt != nil {
+			return errcodeWrap(errors.New("already closed"), 404)
+		}
+		return nil
+	})
+
+	if err != nil {
+		if e, ok := err.(*errWithCode); ok {
+			h.handleError(w, e.Err, e.StatusCode)
+			return
+		}
+		h.handleError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintf(w, `{"id":%d}`, id)
 }
 
 func (h *Handler) BuyOrders(w http.ResponseWriter, r *http.Request) {
@@ -866,32 +955,12 @@ func (h *Handler) getOrdersByUserID(table string, userID int64, limit int) ([]*O
 	return orders, nil
 }
 
-func (h *Handler) queryAndScanIDs(tx *sql.Tx, q string, args ...interface{}) ([]int64, error) {
-	rows, err := tx.Query(q, args...)
-	if err != nil {
-		return nil, errors.Wrapf(err, "query failed. sql:%s", q)
-	}
-	defer rows.Close()
-	ids := []int64{}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, errors.Wrap(err, "scan failed")
-		}
-		ids = append(ids, id)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "rows.Error")
-	}
-	return ids, nil
-}
-
 func (h *Handler) newIsubank() (*Isubank, error) {
-	ep, err := h.getSetting(BankEndpoint)
+	ep, err := getSettingValue(h.db, BankEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
 	}
-	id, err := h.getSetting(BankAppid)
+	id, err := getSettingValue(h.db, BankAppid)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
 	}
@@ -899,20 +968,15 @@ func (h *Handler) newIsubank() (*Isubank, error) {
 }
 
 func (h *Handler) newLogger() (*Logger, error) {
-	ep, err := h.getSetting(LogEndpoint)
+	ep, err := getSettingValue(h.db, LogEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
 	}
-	id, err := h.getSetting(LogAppid)
+	id, err := getSettingValue(h.db, LogAppid)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
 	}
 	return NewLogger(ep, id)
-}
-
-func (h *Handler) getSetting(k string) (v string, err error) {
-	err = h.db.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
-	return
 }
 
 func formvalInt64(r *http.Request, key string) (int64, error) {
@@ -925,7 +989,6 @@ func formvalInt64(r *http.Request, key string) (int64, error) {
 		log.Printf("[INFO] can't parse to int64 key:%s val:%s err:%s", key, v, err)
 		return 0, errors.Errorf("%s can't parse to int64", key)
 	}
-	sql.ErrNoRows
 	return i, nil
 }
 
@@ -972,9 +1035,14 @@ func scanOrder(r RowScanner) (*Order, error) {
 }
 
 type QueryExecuter interface {
-	Exec(string, ...interface{}) (*sql.Result, error)
+	Exec(string, ...interface{}) (sql.Result, error)
 	QueryRow(string, ...interface{}) *sql.Row
 	Query(string, ...interface{}) (*sql.Rows, error)
+}
+
+func getSettingValue(d QueryExecuter, k string) (v string, err error) {
+	err = d.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
+	return
 }
 
 func getUserByBankID(d QueryExecuter, bankID string) (*User, error) {
@@ -1005,7 +1073,7 @@ func queryTrades(d QueryExecuter, query string, args ...interface{}) ([]*Trade, 
 	defer rows.Close()
 	trades := []*Trade{}
 	for rows.Next() {
-		trade, err = scanTrade(rows)
+		trade, err := scanTrade(rows)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Scan failed.")
 		}
@@ -1017,6 +1085,26 @@ func queryTrades(d QueryExecuter, query string, args ...interface{}) ([]*Trade, 
 	return trades, nil
 }
 
+func queryIDs(d QueryExecuter, q string, args ...interface{}) ([]int64, error) {
+	rows, err := d.Query(q, args...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "query failed. sql:%s", q)
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Wrap(err, "scan failed")
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrap(err, "rows.Error")
+	}
+	return ids, nil
+}
+
 func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
 	rows, err := d.Query(query, args...)
 	if err != nil {
@@ -1025,7 +1113,7 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 	defer rows.Close()
 	orders := []*Order{}
 	for rows.Next() {
-		order, err = scanOrder(rows)
+		order, err := scanOrder(rows)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Scan failed.")
 		}
