@@ -144,13 +144,15 @@
     - last_trade_id: 最後に取得したtrade_id
 
 - response: application/json
-    - updated_orders: 更新のあったorder情報
+    - traded_orders: トレードの成立した注文
         - [$order]
     - trades: # last_trade_id より新しいtradeを返す
         - id         : $trade_id
         - amount     : $amount (取引脚数)
         - price      : $price (取引価格)
         - created_at : $created_at (成立時間)
+    - lowest_sell_price: $price
+    - highest_buy_price: $price
 
 ### 更新処理
 

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -265,16 +266,66 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Top(w http.ResponseWriter, r *http.Request) {
-	s, err := h.auth(r)
-	if err != nil {
-		h.handleError(w, err, http.StatusUnauthorized)
-		return
-	}
-	// html返すだけ
-	_ = s
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
+	s, _ := h.auth(r)
+	_ = s
+	var lastTradeID int64
+	if _lastInsertID := r.URL.Query().Get("last_trade_id"); _lastInsertID != "" {
+		var err error
+		lastTradeID, err = strconv.ParseInt(_lastInsertID, 10, 64)
+		if err != nil {
+			h.handleError(w, errors.Wrap(err, "last_trade_id parse failed"), http.StatusBadRequest)
+			return
+		}
+	}
+	trades, err := getTrades(h.db, lastTradeID)
+	if err != nil {
+		h.handleError(w, errors.Wrap(err, "getTrades failed"), http.StatusInternalServerError)
+		return
+	}
+	lowestSellOrder, err := getLowestSellOrder(h.db)
+	switch {
+	case err == sql.ErrNoRows:
+		lowestSellOrder = &Order{Price: 0}
+	case err != nil:
+		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), http.StatusInternalServerError)
+		return
+	}
+	highestBuyOrder, err := getHighestBuyOrder(h.db)
+	switch {
+	case err == sql.ErrNoRows:
+		highestBuyOrder = &Order{Price: 0}
+	case err != nil:
+		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), http.StatusInternalServerError)
+		return
+	}
+	res := map[string]interface{}{
+		"trades":            trades,
+		"lowest_sell_price": lowestSellOrder.Price,
+		"highest_buy_price": highestBuyOrder.Price,
+	}
+	if s != nil {
+		tradeIDs := make([]int64, len(trades))
+		for i, trade := range trades {
+			tradeIDs[i] = trade.ID
+		}
+		orders, err := getOrdersByUserIDAndTradeIds(h.db, s.User.ID, tradeIDs)
+		if err != nil {
+			h.handleError(w, err, http.StatusInternalServerError)
+			return
+		}
+		for _, order := range orders {
+			if err = fetchOrderRelation(h.db, order); err != nil {
+				h.handleError(w, err, http.StatusInternalServerError)
+				return
+			}
+		}
+		res["traded_orders"] = orders
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(res)
 }
 
 func (h *Handler) Orders(w http.ResponseWriter, r *http.Request) {
@@ -385,8 +436,7 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getOrders(w http.ResponseWriter, r *http.Request) {
 	s, _ := h.auth(r)
-	q := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL)`, ordersColumns)
-	orders, err := queryOrders(h.db, q, s.User.ID)
+	orders, err := getOrdersByUserID(h.db, s.User.ID)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
@@ -626,10 +676,11 @@ func getTradeByID(d QueryExecuter, id int64) (*Trade, error) {
 	return scanTrade(d.QueryRow(query, id))
 }
 
-func queryTrades(d QueryExecuter, query string, args ...interface{}) ([]*Trade, error) {
-	rows, err := d.Query(query, args...)
+func getTrades(d QueryExecuter, lastID int64) ([]*Trade, error) {
+	query := fmt.Sprintf("SELECT %s FROM trade WHERE id > ? ORDER BY id ASC", tradeColumns)
+	rows, err := d.Query(query, lastID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
+		return nil, errors.Wrapf(err, "Query failed. query:%s, lastID:%d", query, lastID)
 	}
 	defer rows.Close()
 	trades := []*Trade{}
@@ -666,6 +717,26 @@ func queryInt64(d QueryExecuter, q string, args ...interface{}) ([]int64, error)
 	return is, nil
 }
 
+func getOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
+	query := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY id ASC`, ordersColumns)
+	return queryOrders(d, query, userID)
+}
+
+func getOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
+	if len(tradeIDs) == 0 {
+		tradeIDs = []int64{0}
+	}
+	win := strings.Repeat(",?", len(tradeIDs))
+	win = win[1:]
+	args := make([]interface{}, 0, len(tradeIDs)+1)
+	args = append(args, userID)
+	for _, id := range tradeIDs {
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY id ASC`, ordersColumns, win)
+	return queryOrders(d, query, args...)
+}
+
 func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
 	rows, err := d.Query(query, args...)
 	if err != nil {
@@ -689,6 +760,16 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ? FOR UPDATE", ordersColumns)
 	return scanOrder(tx.QueryRow(query, id))
+}
+
+func getLowestSellOrder(d QueryExecuter) (*Order, error) {
+	q := fmt.Sprintf("SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, id ASC LIMIT 1", ordersColumns)
+	return scanOrder(d.QueryRow(q, OrderTypeSell))
+}
+
+func getHighestBuyOrder(d QueryExecuter) (*Order, error) {
+	q := fmt.Sprintf("SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, id ASC LIMIT 1", ordersColumns)
+	return scanOrder(d.QueryRow(q, OrderTypeBuy))
 }
 
 func fetchOrderRelation(d QueryExecuter, order *Order) error {
@@ -867,15 +948,14 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 
 func runTrade(db *sql.DB) error {
 	for {
-		q := "SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price %s, id ASC LIMIT 1"
-		lowestSellOrder, err := scanOrder(db.QueryRow(fmt.Sprintf(q, ordersColumns, "ASC"), OrderTypeSell))
+		lowestSellOrder, err := getLowestSellOrder(db)
 		switch {
 		case err == sql.ErrNoRows:
 			return errNoOrder
 		case err != nil:
 			return errors.Wrap(err, "find lowest sell order failed")
 		}
-		highestBuyOrder, err := scanOrder(db.QueryRow(fmt.Sprintf(q, ordersColumns, "DESC"), OrderTypeBuy))
+		highestBuyOrder, err := getHighestBuyOrder(db)
 		switch {
 		case err == sql.ErrNoRows:
 			return errNoOrder
