@@ -76,6 +76,12 @@ func errcode(err string, code int) error {
 	return errcodeWrap(errors.New(err), code)
 }
 
+var (
+	errClosedOrder  = errors.New("closed order")
+	errNoOrder      = errors.New("no order")
+	errPriceUnmatch = errors.New("price unmatch")
+)
+
 func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	server := http.NewServeMux()
 
@@ -107,7 +113,7 @@ type Handler struct {
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
-	err := h.txScorp(func(tx *sql.Tx) error {
+	err := txScorp(h.db, func(tx *sql.Tx) error {
 		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
 			BankEndpoint,
@@ -149,12 +155,12 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
 		return
 	}
-	isubank, err := h.newIsubank()
+	isubank, err := newIsubank(h.db)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
 	}
-	logger, err := h.newLogger()
+	logger, err := newLogger(h.db)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
@@ -202,7 +208,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
 		return
 	}
-	logger, err := h.newLogger()
+	logger, err := newLogger(h.db)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
@@ -293,15 +299,15 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 	s, _ := h.auth(r)
 
 	var id int64
-	err := h.txScorp(func(tx *sql.Tx) error {
+	err := txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 		}
-		logger, err := h.newLogger()
+		logger, err := newLogger(tx)
 		if err != nil {
 			return errors.Wrap(err, "newLogger failed")
 		}
-		isubank, err := h.newIsubank()
+		isubank, err := newIsubank(tx)
 		if err != nil {
 			return errors.Wrap(err, "newIsubank failed")
 		}
@@ -336,6 +342,8 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 				return errors.Wrap(err, "isubank check failed")
 			}
 		case OrderTypeSell:
+			// 売却のときは残高チェックは不要
+			// TODO 椅子の保有チェック
 		default:
 			return errcode("type must be sell or buy", 400)
 		}
@@ -367,7 +375,10 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
 	}
-	h.runTrade()
+	if err := runTrade(h.db); err != nil {
+		// トレードに失敗してもエラーにはしない
+		log.Printf("runTrade err:%s", err)
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	fmt.Fprintf(w, `{"id":%d}`, id)
 }
@@ -393,11 +404,11 @@ func (h *Handler) getOrders(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 	s, _ := h.auth(r)
 	var id int64
-	err := h.txScorp(func(tx *sql.Tx) error {
+	err := txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 		}
-		logger, err := h.newLogger()
+		logger, err := newLogger(tx)
 		if err != nil {
 			return errors.Wrap(err, "newLogger failed")
 		}
@@ -422,7 +433,7 @@ func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 		if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
 			return errors.Wrap(err, "update orders for cancel")
 		}
-		tag := order.Type + "..delete"
+		tag := order.Type + ".delete"
 		logger.Send(tag, LogDataOrderDelete{
 			OrderID: id,
 			Reason:  "canceled",
@@ -441,256 +452,6 @@ func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	fmt.Fprintf(w, `{"id":%d}`, id)
-}
-
-func (h *Handler) runTrade() {
-	var (
-		errClosed = errors.New("closed order")
-		errNoItem = errors.New("no item")
-	)
-
-	reserve := func(d QueryExecuter, order *Order, price int64) (int64, error) {
-		isubank, err := h.newIsubank()
-		if err != nil {
-			return 0, errors.Wrap(err, "isubank init failed")
-		}
-		logger, err := h.newLogger()
-		if err != nil {
-			return 0, errors.Wrap(err, "logger init failed")
-		}
-		p := order.Amount * price
-		if order.Type == OrderTypeBuy {
-			p *= -1
-		}
-
-		id, err := isubank.Reserve(order.User.BankID, p)
-		if err != nil {
-			if err == ErrCreditInsufficient {
-				// 与信確保失敗した場合はorderを破棄する
-				if _, err = d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
-					return 0, errors.Wrap(err, "update buy_order for cancel")
-				}
-				tag := order.Type + "..delete"
-				logger.Send(tag, LogDataOrderDelete{
-					OrderID: id,
-					Reason:  "reserve_failed",
-				})
-				return 0, err
-			}
-			return 0, errors.Wrap(err, "isubank.Reserve")
-		}
-
-		return id, nil
-	}
-
-	fetchOpenOrder := func(tx *sql.Tx, orderID int64) (*Order, error) {
-		order, err := getOrderByIDWithLock(tx, orderID)
-		if err != nil {
-			return nil, errors.Wrap(err, "getOrderByIDWithLock sell_order")
-		}
-		if order.ClosedAt != nil {
-			return nil, errClosed
-		}
-		order.User, err = getUserByIDWithLock(tx, order.UserID)
-		if err != nil {
-			return nil, errors.Wrap(err, "getUserByIDWithLock sell user")
-		}
-		return order, nil
-	}
-
-	fixOrder := func(tx *sql.Tx, order *Order, targets []*Order, reserves []int64) error {
-		isubank, err := h.newIsubank()
-		if err != nil {
-			return errors.Wrap(err, "isubank init failed")
-		}
-		logger, err := h.newLogger()
-		if err != nil {
-			return errors.Wrap(err, "logger init failed")
-		}
-		res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, order.Amount, order.Price, time.Now())
-		if err != nil {
-			return errors.Wrap(err, "insert trade")
-		}
-		tradeID, err := res.LastInsertId()
-		if err != nil {
-			return errors.Wrap(err, "lastInsertID for trade")
-		}
-		logger.Send("trade", LogDataTrade{
-			TradeID: tradeID,
-			Price:   order.Price,
-			Amount:  order.Amount,
-		})
-		for _, o := range append(targets, order) {
-			if _, err = tx.Exec(`UPDATE order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
-				return errors.Wrap(err, "update order for trade")
-			}
-			logger.Send(o.Type+".trade", LogDataOrderTrade{
-				OrderID: o.ID,
-				Price:   order.Price,
-				Amount:  o.Amount,
-				UserID:  o.UserID,
-				TradeID: tradeID,
-			})
-		}
-		if err = isubank.Commit(reserves); err != nil {
-			return errors.Wrap(err, "commit")
-		}
-		return nil
-	}
-
-	tradeBySell := func(tx *sql.Tx) error {
-		// 一番安い売り注文
-		ids, err := queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC LIMIT 1`, OrderTypeSell)
-		switch {
-		case err != nil:
-			return errors.Wrap(err, "select orders")
-		case len(ids) == 0:
-			return errNoItem
-		}
-		id := ids[0]
-		order, err := fetchOpenOrder(tx, id)
-		if err != nil {
-			return err
-		}
-		restAmount := order.Amount
-		unitPrice := order.Price
-		reserves := make([]int64, 1, order.Amount+1)
-		targets := make([]*Order, 0, order.Amount)
-		reserves[0], err = reserve(tx, order, unitPrice)
-		if err != nil {
-			return err
-		}
-		// 買い注文
-		targetIDs, err := queryInt64(tx, `SELECT id FROM buy_order WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC`, OrderTypeBuy, order.Price)
-		if err != nil {
-			return errors.Wrap(err, "find buy_orders")
-		}
-		if len(targetIDs) == 0 {
-			return errNoItem
-		}
-		for _, tid := range targetIDs {
-			to, err := fetchOpenOrder(tx, tid)
-			if err != nil {
-				if err == errClosed {
-					continue
-				}
-				return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
-			}
-			if to.Amount > restAmount {
-				continue
-			}
-			rid, err := reserve(tx, to, unitPrice)
-			if err != nil {
-				if err == ErrCreditInsufficient {
-					continue
-				}
-				return err
-			}
-			reserves = append(reserves, rid)
-			targets = append(targets, to)
-			restAmount -= to.Amount
-			if restAmount == 0 {
-				break
-			}
-		}
-		if restAmount > 0 {
-			isubank, err := h.newIsubank()
-			if err != nil {
-				return errors.Wrap(err, "isubank init failed")
-			}
-			if len(reserves) > 0 {
-				if err = isubank.Cancel(reserves); err != nil {
-					return errors.Wrap(err, "isubank.Cancel")
-				}
-			}
-			return errNoItem
-		}
-		return fixOrder(tx, order, targets, reserves)
-	}
-
-	tradeByBuy := func(tx *sql.Tx) error {
-		ids, err := queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC ASC LIMIT 1`, OrderTypeBuy)
-		switch {
-		case err != nil:
-			return errors.Wrap(err, "select orders")
-		case len(ids) == 0:
-			return errNoItem
-		}
-		id := ids[0]
-		order, err := fetchOpenOrder(tx, id)
-		if err != nil {
-			return err
-		}
-		restAmount := order.Amount
-		unitPrice := order.Price
-		reserves := make([]int64, 1, order.Amount+1)
-		targets := make([]*Order, 0, order.Amount)
-		reserves[0], err = reserve(tx, order, unitPrice)
-		if err != nil {
-			return err
-		}
-		targetIDs, err := queryInt64(tx, `SELECT id FROM buy_order WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC`, OrderTypeSell, order.Price)
-		if err != nil {
-			return errors.Wrap(err, "find buy_orders")
-		}
-		if len(targetIDs) == 0 {
-			return errNoItem
-		}
-		for _, tid := range targetIDs {
-			to, err := fetchOpenOrder(tx, tid)
-			if err != nil {
-				if err == errClosed {
-					continue
-				}
-				return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
-			}
-			if to.Amount > restAmount {
-				continue
-			}
-			rid, err := reserve(tx, to, unitPrice)
-			if err != nil {
-				if err == ErrCreditInsufficient {
-					continue
-				}
-				return err
-			}
-			reserves = append(reserves, rid)
-			targets = append(targets, to)
-			restAmount -= to.Amount
-			if restAmount == 0 {
-				break
-			}
-		}
-		if restAmount > 0 {
-			isubank, err := h.newIsubank()
-			if err != nil {
-				return errors.Wrap(err, "isubank init failed")
-			}
-			if len(reserves) > 0 {
-				if err = isubank.Cancel(reserves); err != nil {
-					return errors.Wrap(err, "isubank.Cancel")
-				}
-			}
-			return errNoItem
-		}
-		return fixOrder(tx, order, targets, reserves)
-	}
-
-	var err error
-	for err == nil {
-		err = h.txScorp(tradeBySell)
-		if err != nil && err != errNoItem {
-			log.Printf("[WARN] tradeBySell failed. err: %s", err)
-		}
-	}
-
-	err = nil
-	for err == nil {
-		err = h.txScorp(tradeByBuy)
-		if err != nil && err != errNoItem {
-			log.Printf("[WARN] tradeByBuy failed. err: %s", err)
-		}
-	}
 }
 
 func (h *Handler) commonHandler(f http.Handler) http.Handler {
@@ -735,9 +496,22 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 	http.Error(w, err.Error(), code)
 }
 
-func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
+func formvalInt64(r *http.Request, key string) (int64, error) {
+	v := r.FormValue(key)
+	if v == "" {
+		return 0, errors.Errorf("%s is required", key)
+	}
+	i, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		log.Printf("[INFO] can't parse to int64 key:%s val:%s err:%s", key, v, err)
+		return 0, errors.Errorf("%s can't parse to int64", key)
+	}
+	return i, nil
+}
+
+func txScorp(db *sql.DB, f func(*sql.Tx) error) (err error) {
 	var tx *sql.Tx
-	tx, err = h.db.Begin()
+	tx, err = db.Begin()
 	if err != nil {
 		return errors.Wrap(err, "begin transaction failed")
 	}
@@ -753,43 +527,6 @@ func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	}()
 	err = f(tx)
 	return
-}
-
-func (h *Handler) newIsubank() (*Isubank, error) {
-	ep, err := getSettingValue(h.db, BankEndpoint)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
-	}
-	id, err := getSettingValue(h.db, BankAppid)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
-	}
-	return NewIsubank(ep, id)
-}
-
-func (h *Handler) newLogger() (*Logger, error) {
-	ep, err := getSettingValue(h.db, LogEndpoint)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
-	}
-	id, err := getSettingValue(h.db, LogAppid)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
-	}
-	return NewLogger(ep, id)
-}
-
-func formvalInt64(r *http.Request, key string) (int64, error) {
-	v := r.FormValue(key)
-	if v == "" {
-		return 0, errors.Errorf("%s is required", key)
-	}
-	i, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		log.Printf("[INFO] can't parse to int64 key:%s val:%s err:%s", key, v, err)
-		return 0, errors.Errorf("%s can't parse to int64", key)
-	}
-	return i, nil
 }
 
 const (
@@ -845,6 +582,30 @@ func getSettingValue(d QueryExecuter, k string) (v string, err error) {
 	return
 }
 
+func newIsubank(d QueryExecuter) (*Isubank, error) {
+	ep, err := getSettingValue(d, BankEndpoint)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
+	}
+	id, err := getSettingValue(d, BankAppid)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
+	}
+	return NewIsubank(ep, id)
+}
+
+func newLogger(d QueryExecuter) (*Logger, error) {
+	ep, err := getSettingValue(d, LogEndpoint)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
+	}
+	id, err := getSettingValue(d, LogAppid)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
+	}
+	return NewLogger(ep, id)
+}
+
 func getUserByBankID(d QueryExecuter, bankID string) (*User, error) {
 	query := fmt.Sprintf("SELECT %s FROM user WHERE bank_id = ?", userColumns)
 	return scanUser(d.QueryRow(query, bankID))
@@ -855,9 +616,9 @@ func getUserByID(d QueryExecuter, id int64) (*User, error) {
 	return scanUser(d.QueryRow(query, id))
 }
 
-func getUserByIDWithLock(d QueryExecuter, id int64) (*User, error) {
+func getUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
 	query := fmt.Sprintf("SELECT %s FROM user WHERE id = ? FOR UPDATE", userColumns)
-	return scanUser(d.QueryRow(query, id))
+	return scanUser(tx.QueryRow(query, id))
 }
 
 func getTradeByID(d QueryExecuter, id int64) (*Trade, error) {
@@ -925,9 +686,9 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 	return orders, nil
 }
 
-func getOrderByIDWithLock(d QueryExecuter, id int64) (*Order, error) {
+func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ? FOR UPDATE", ordersColumns)
-	return scanOrder(d.QueryRow(query, id))
+	return scanOrder(tx.QueryRow(query, id))
 }
 
 func fetchOrderRelation(d QueryExecuter, order *Order) error {
@@ -943,4 +704,203 @@ func fetchOrderRelation(d QueryExecuter, order *Order) error {
 		}
 	}
 	return nil
+}
+
+func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
+	order, err := getOrderByIDWithLock(tx, id)
+	if err != nil {
+		return nil, errors.Wrap(err, "getOrderByIDWithLock sell_order")
+	}
+	if order.ClosedAt != nil {
+		return nil, errClosedOrder
+	}
+	order.User, err = getUserByIDWithLock(tx, order.UserID)
+	if err != nil {
+		return nil, errors.Wrap(err, "getUserByIDWithLock sell user")
+	}
+	return order, nil
+}
+
+func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
+	isubank, err := newIsubank(d)
+	if err != nil {
+		return 0, errors.Wrap(err, "isubank init failed")
+	}
+	logger, err := newLogger(d)
+	if err != nil {
+		return 0, errors.Wrap(err, "logger init failed")
+	}
+	p := order.Amount * price
+	if order.Type == OrderTypeBuy {
+		p *= -1
+	}
+
+	id, err := isubank.Reserve(order.User.BankID, p)
+	if err != nil {
+		if err == ErrCreditInsufficient {
+			// 与信確保失敗した場合はorderを破棄する
+			if _, err = d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
+				return 0, errors.Wrap(err, "update buy_order for cancel")
+			}
+			tag := order.Type + "..delete"
+			logger.Send(tag, LogDataOrderDelete{
+				OrderID: id,
+				Reason:  "reserve_failed",
+			})
+			return 0, err
+		}
+		return 0, errors.Wrap(err, "isubank.Reserve")
+	}
+
+	return id, nil
+}
+
+func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []int64) error {
+	isubank, err := newIsubank(tx)
+	if err != nil {
+		return errors.Wrap(err, "isubank init failed")
+	}
+	logger, err := newLogger(tx)
+	if err != nil {
+		return errors.Wrap(err, "logger init failed")
+	}
+	res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, order.Amount, order.Price, time.Now())
+	if err != nil {
+		return errors.Wrap(err, "insert trade")
+	}
+	tradeID, err := res.LastInsertId()
+	if err != nil {
+		return errors.Wrap(err, "lastInsertID for trade")
+	}
+	logger.Send("trade", LogDataTrade{
+		TradeID: tradeID,
+		Price:   order.Price,
+		Amount:  order.Amount,
+	})
+	for _, o := range append(targets, order) {
+		if _, err = tx.Exec(`UPDATE order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
+			return errors.Wrap(err, "update order for trade")
+		}
+		logger.Send(o.Type+".trade", LogDataOrderTrade{
+			OrderID: o.ID,
+			Price:   order.Price,
+			Amount:  o.Amount,
+			UserID:  o.UserID,
+			TradeID: tradeID,
+		})
+	}
+	if err = isubank.Commit(reserves); err != nil {
+		return errors.Wrap(err, "commit")
+	}
+	return nil
+}
+
+func tryTrade(tx *sql.Tx, orderID int64) error {
+	order, err := getOpenOrderByID(tx, orderID)
+	if err != nil {
+		return err
+	}
+
+	restAmount := order.Amount
+	unitPrice := order.Price
+	reserves := make([]int64, 1, order.Amount+1)
+	targets := make([]*Order, 0, order.Amount)
+
+	reserves[0], err = reserveOrder(tx, order, unitPrice)
+	if err != nil {
+		return err
+	}
+
+	var targetIDs []int64
+	switch order.Type {
+	case OrderTypeBuy:
+		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, id ASC`, OrderTypeSell, order.Price)
+	case OrderTypeSell:
+		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC id ASC`, OrderTypeBuy, order.Price)
+	}
+	if err != nil {
+		return errors.Wrap(err, "find target orders")
+	}
+	if len(targetIDs) == 0 {
+		return errNoOrder
+	}
+
+	for _, tid := range targetIDs {
+		to, err := getOpenOrderByID(tx, tid)
+		if err != nil {
+			if err == errClosedOrder {
+				continue
+			}
+			return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
+		}
+		if to.Amount > restAmount {
+			continue
+		}
+		rid, err := reserveOrder(tx, to, unitPrice)
+		if err != nil {
+			if err == ErrCreditInsufficient {
+				continue
+			}
+			return err
+		}
+		reserves = append(reserves, rid)
+		targets = append(targets, to)
+		restAmount -= to.Amount
+		if restAmount == 0 {
+			break
+		}
+	}
+	if restAmount > 0 {
+		isubank, err := newIsubank(tx)
+		if err != nil {
+			return errors.Wrap(err, "isubank init failed")
+		}
+		if len(reserves) > 0 {
+			if err = isubank.Cancel(reserves); err != nil {
+				return errors.Wrap(err, "isubank.Cancel")
+			}
+		}
+		return errNoOrder
+	}
+	return commitReservedOrder(tx, order, targets, reserves)
+}
+
+func runTrade(db *sql.DB) error {
+	for {
+		q := "SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price %s, id ASC LIMIT 1"
+		lowestSellOrder, err := scanOrder(db.QueryRow(fmt.Sprintf(q, ordersColumns, "ASC"), OrderTypeSell))
+		switch {
+		case err == sql.ErrNoRows:
+			return errNoOrder
+		case err != nil:
+			return errors.Wrap(err, "find lowest sell order failed")
+		}
+		highestBuyOrder, err := scanOrder(db.QueryRow(fmt.Sprintf(q, ordersColumns, "DESC"), OrderTypeBuy))
+		switch {
+		case err == sql.ErrNoRows:
+			return errNoOrder
+		case err != nil:
+			return errors.Wrap(err, "find highest buy order failed")
+		}
+
+		if lowestSellOrder.Price > highestBuyOrder.Price {
+			// 売値が買値よりも高い
+			return errPriceUnmatch
+		}
+
+		for _, orderID := range []int64{lowestSellOrder.ID, highestBuyOrder.ID} {
+			err = txScorp(db, func(tx *sql.Tx) error {
+				return tryTrade(tx, orderID)
+			})
+			switch err {
+			case nil:
+				break
+			case errNoOrder, errClosedOrder:
+				err = nil
+				continue
+			default:
+				return err
+			}
+		}
+	}
 }
