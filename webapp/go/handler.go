@@ -270,7 +270,6 @@ func (h *Handler) Top(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	s, _ := h.auth(r)
-	_ = s
 	var lastTradeID int64
 	if _lastInsertID := r.URL.Query().Get("last_trade_id"); _lastInsertID != "" {
 		var err error
