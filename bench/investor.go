@@ -453,10 +453,7 @@ func (i *RandomInvestor) UpdateOrderTask() Task {
 		if i.highestBuyPrice == 0 {
 			price = i.unitprice
 		}
-		amount := rand.Int63n(logicalIsu) + 1
-		if i.unitamount < amount {
-			amount = i.unitamount
-		}
+		amount := rand.Int63n(i.unitamount) + 1
 		log.Printf("[INFO] RandomInvestor::UpdateOrderTask::AddOrder 6")
 		return i.AddOrder(TradeTypeBuy, amount, price)
 	default:
