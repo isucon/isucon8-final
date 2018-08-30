@@ -137,6 +137,11 @@ type SoloLog struct {
 	AppID string `json:"app_id"`
 }
 
+type LogData struct {
+	UserID  int64 `json:"user_id"`
+	TradeID int64 `json:"trade_id"`
+}
+
 type LogDataSignup struct {
 	Name   string `json:"name"`
 	BankID string `json:"bank_id"`
@@ -274,163 +279,171 @@ func (s *Handler) putLog(l Log, appID string) error {
 		return BadRequestErrorf("%d time is too old", l.Time)
 	}
 	lt := time.Unix(l.Time, 0)
-	var userID, tradeID int64
-	var tag TagType
-	// benchmarkerでどこまで見るかで各caseでinsertでも良い
-	switch l.Tag {
-	case "signup":
-		tag = TagSignup
-		data := &LogDataSignup{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrapf(err, "%s parse data failed", l.Tag)
-		}
-		if data.Name == "" {
-			return BadRequestErrorf("%s data.name is required", l.Tag)
-		}
-		if data.BankID == "" {
-			return BadRequestErrorf("%s data.bank_id is required", l.Tag)
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		userID = data.UserID
-	case "signin":
-		tag = TagSignin
-		data := &LogDataSignin{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrapf(err, "%s parse data failed", l.Tag)
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		userID = data.UserID
-	case "sell.order":
-		tag = TagSellOrder
-		data := &LogDataOrder{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		if data.OrderID == 0 {
-			return BadRequestErrorf("%s data.order_id is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		userID = data.UserID
-	case "buy.order":
-		tag = TagBuyOrder
-		data := &LogDataOrder{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		if data.OrderID == 0 {
-			return BadRequestErrorf("%s data.order_id is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		userID = data.UserID
-	case "buy.error":
-		tag = TagBuyError
-		data := &LogDataBuyError{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		if data.Error == "" {
-			return BadRequestErrorf("%s data.error is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		userID = data.UserID
-	case "trade":
-		tag = TagClose
-		data := &LogDataTrade{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.TradeID == 0 {
-			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		tradeID = data.TradeID
-	case "sell.close":
-		tag = TagSellClose
-		data := &SellClose{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.TradeID == 0 {
-			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		if data.SellID == 0 {
-			return BadRequestErrorf("%s data.sell_id is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		tradeID = data.TradeID
-		userID = data.UserID
-	case "buy.close":
-		tag = TagBuyClose
-		data := &BuyClose{}
-		if err := json.Unmarshal(l.Data, data); err != nil {
-			return errors.Wrap(err, "parse data failed")
-		}
-		if data.TradeID == 0 {
-			return BadRequestErrorf("%s data.trade_id is required", l.Tag)
-		}
-		if data.UserID == 0 {
-			return BadRequestErrorf("%s data.user_id is required", l.Tag)
-		}
-		if data.BuyID == 0 {
-			return BadRequestErrorf("%s data.buy_id is required", l.Tag)
-		}
-		if data.Amount == 0 {
-			return BadRequestErrorf("%s data.amount is required", l.Tag)
-		}
-		if data.Price == 0 {
-			return BadRequestErrorf("%s data.price is required", l.Tag)
-		}
-		tradeID = data.TradeID
-		userID = data.UserID
-	default:
-		return BadRequestErrorf("%s unknown tag", l.Tag)
+	data := &LogData{}
+	if err := json.Unmarshal(l.Data, data); err != nil {
+		return errors.Wrapf(err, "%s parse data failed", l.Tag)
 	}
-
 	query := `INSERT INTO log (app_id, tag, time, user_id, trade_id, data) VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.Exec(query, appID, int(tag), lt.Format(MySQLDatetime), userID, tradeID, string(l.Data)); err != nil {
+	if _, err := s.db.Exec(query, appID, l.Tag, lt.Format(MySQLDatetime), data.UserID, data.TradeID, string(l.Data)); err != nil {
 		return errors.Wrap(err, "insert log failed")
 	}
+	//var userID, tradeID int64
+	//var tag TagType
+	//// benchmarkerでどこまで見るかで各caseでinsertでも良い
+	//switch l.Tag {
+	//case "signup":
+	//	tag = TagSignup
+	//	data := &LogDataSignup{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrapf(err, "%s parse data failed", l.Tag)
+	//	}
+	//	if data.Name == "" {
+	//		return BadRequestErrorf("%s data.name is required", l.Tag)
+	//	}
+	//	if data.BankID == "" {
+	//		return BadRequestErrorf("%s data.bank_id is required", l.Tag)
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	userID = data.UserID
+	//case "signin":
+	//	tag = TagSignin
+	//	data := &LogDataSignin{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrapf(err, "%s parse data failed", l.Tag)
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	userID = data.UserID
+	//case "sell.order":
+	//	tag = TagSellOrder
+	//	data := &LogDataOrder{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	if data.OrderID == 0 {
+	//		return BadRequestErrorf("%s data.order_id is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	userID = data.UserID
+	//case "buy.order":
+	//	tag = TagBuyOrder
+	//	data := &LogDataOrder{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	if data.OrderID == 0 {
+	//		return BadRequestErrorf("%s data.order_id is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	userID = data.UserID
+	//case "buy.error":
+	//	tag = TagBuyError
+	//	data := &LogDataBuyError{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	if data.Error == "" {
+	//		return BadRequestErrorf("%s data.error is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	userID = data.UserID
+	//case "trade":
+	//	tag = TagClose
+	//	data := &LogDataTrade{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.TradeID == 0 {
+	//		return BadRequestErrorf("%s data.trade_id is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	tradeID = data.TradeID
+	//case "sell.close":
+	//	tag = TagSellClose
+	//	data := &SellClose{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.TradeID == 0 {
+	//		return BadRequestErrorf("%s data.trade_id is required", l.Tag)
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	if data.SellID == 0 {
+	//		return BadRequestErrorf("%s data.sell_id is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	tradeID = data.TradeID
+	//	userID = data.UserID
+	//case "buy.close":
+	//	tag = TagBuyClose
+	//	data := &BuyClose{}
+	//	if err := json.Unmarshal(l.Data, data); err != nil {
+	//		return errors.Wrap(err, "parse data failed")
+	//	}
+	//	if data.TradeID == 0 {
+	//		return BadRequestErrorf("%s data.trade_id is required", l.Tag)
+	//	}
+	//	if data.UserID == 0 {
+	//		return BadRequestErrorf("%s data.user_id is required", l.Tag)
+	//	}
+	//	if data.BuyID == 0 {
+	//		return BadRequestErrorf("%s data.buy_id is required", l.Tag)
+	//	}
+	//	if data.Amount == 0 {
+	//		return BadRequestErrorf("%s data.amount is required", l.Tag)
+	//	}
+	//	if data.Price == 0 {
+	//		return BadRequestErrorf("%s data.price is required", l.Tag)
+	//	}
+	//	tradeID = data.TradeID
+	//	userID = data.UserID
+	//default:
+	//	return BadRequestErrorf("%s unknown tag", l.Tag)
+	//}
+
+	// query := `INSERT INTO log (app_id, tag, time, user_id, trade_id, data) VALUES (?, ?, ?, ?, ?, ?)`
+	// if _, err := s.db.Exec(query, appID, int(tag), lt.Format(MySQLDatetime), userID, tradeID, string(l.Data)); err != nil {
+	// 	return errors.Wrap(err, "insert log failed")
+	// }
 	return nil
 }
 
