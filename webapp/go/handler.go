@@ -858,7 +858,7 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 		Amount:  order.Amount,
 	})
 	for _, o := range append(targets, order) {
-		if _, err = tx.Exec(`UPDATE order SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE orders SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
 			return errors.Wrap(err, "update order for trade")
 		}
 		logger.Send(o.Type+".trade", LogDataOrderTrade{
@@ -896,7 +896,7 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	case OrderTypeBuy:
 		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, id ASC`, OrderTypeSell, order.Price)
 	case OrderTypeSell:
-		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC id ASC`, OrderTypeBuy, order.Price)
+		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, id ASC`, OrderTypeBuy, order.Price)
 	}
 	if err != nil {
 		return errors.Wrap(err, "find target orders")
