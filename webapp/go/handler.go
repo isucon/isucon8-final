@@ -216,7 +216,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := getUserByBankID(h.db, bankID)
-	if err == nil {
+	if err != nil {
 		if err == sql.ErrNoRows {
 			h.handleError(w, errors.New("bank_id or password is not match"), http.StatusNotFound)
 			return
@@ -333,7 +333,7 @@ func (h *Handler) Orders(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err, http.StatusUnauthorized)
 		return
 	}
-	switch http.MethodPost {
+	switch r.Method {
 	case http.MethodPost:
 		h.addOrders(w, r)
 	case http.MethodDelete:
