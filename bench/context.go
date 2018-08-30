@@ -20,14 +20,12 @@ type Context struct {
 	logappid  string
 	rand      *Random
 	isubank   *Isubank
-	guest     *Client
 	idlist    chan string
 	closed    chan struct{}
 	investors []Investor
 	score     int64
 	errcount  int64
 
-	lastTrade    Trade
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
 	level        uint
@@ -44,10 +42,6 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 	if err != nil {
 		return nil, err
 	}
-	guest, err := NewClient(appep, "", "", "", InitTimeout)
-	if err != nil {
-		return nil, err
-	}
 	return &Context{
 		logger:    NewLogger(out),
 		appep:     appep,
@@ -57,7 +51,6 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 		logappid:  rand.ID(),
 		rand:      rand,
 		isubank:   isubank,
-		guest:     guest,
 		idlist:    make(chan string, 10),
 		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
@@ -158,17 +151,26 @@ func (c *Context) Start() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	if err := c.guest.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
+	guest, err := NewClient(c.appep, "", "", "", InitTimeout)
+	if err != nil {
 		return nil, err
 	}
-	firstInvestor := len(firstprams)
-	tasks := make([]Task, 0, firstInvestor)
-	for _, p := range firstprams {
+	if err := guest.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
+		return nil, err
+	}
+
+	tasks := make([]Task, 0, AddWorkersByLevel)
+	for i := 0; i < AddWorkersByLevel; i++ {
 		cl, err := c.NewClient()
 		if err != nil {
 			return nil, err
 		}
-		investor := NewRandomInvestor(cl, p.credit, p.isu, p.unitamount, p.unitprice)
+		var investor Investor
+		if i%2 == 1 {
+			investor = NewRandomInvestor(cl, 10000, 0, 2, int64(100+i/2))
+		} else {
+			investor = NewRandomInvestor(cl, 1, 5, 2, int64(100+i/2))
+		}
 		c.isubank.AddCredit(investor.BankID(), investor.Credit())
 		c.AddInvestor(investor)
 		tasks = append(tasks, investor.Start())
@@ -180,85 +182,58 @@ func (c *Context) Next() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	var trades []Trade
-	var err error
-	if c.lastTradePorring.IsZero() || time.Now().Sub(c.lastTradePorring) >= TradePollingInterval {
-		trades, err = c.guest.Trades()
-		if err != nil {
-			return nil, errors.Wrap(err, "GET /trades の取得に失敗しました")
-		}
-		c.AddScore(GetTradesScore)
-	}
-
 	tasks := []Task{}
 	for _, investor := range c.investors {
 		// 初期以外はnextのタイミングで一人づつ投入
-		if !investor.IsSignin() {
+		if !investor.IsStarted() {
 			tasks = append(tasks, investor.Start())
 			break
 		}
 	}
 
-	if trades != nil && len(trades) > 0 && trades[0].ID != c.lastTrade.ID {
-		for _, investor := range c.investors {
-			if !investor.IsSignin() {
-				continue
-			}
-			if task := investor.Next(trades); task != nil {
-				tasks = append(tasks, task)
-			}
+	for _, investor := range c.investors {
+		if !investor.IsSignin() {
+			continue
 		}
-		c.lastTrade = trades[0]
-		score := c.GetScore()
-		for {
-			// levelup
-			nextScore := (1 << c.level) * 100
-			if score < int64(nextScore) {
-				break
-			}
-			if AllowErrorMin < c.ErrorCount() {
-				// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
-				break
-			}
-			c.level++
-			c.Logger().Printf("ワーカーレベルが上がります")
+		if task := investor.Next(); task != nil {
+			tasks = append(tasks, task)
+		}
+	}
 
-			// 10人追加
-			unitamount := int64(c.level * 5)
-			for i := 0; i < 10; i++ {
-				cl, err := c.NewClient()
-				if err != nil {
-					return nil, err
-				}
-				var investor Investor
-				if i%2 == 1 {
-					investor = NewRandomInvestor(cl, c.lastTrade.Price*1000, 0, unitamount, c.lastTrade.Price)
-				} else {
-					investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, c.lastTrade.Price+5)
-				}
-				tasks = append(tasks, NewExecTask(func(_ context.Context) error {
-					c.isubank.AddCredit(investor.BankID(), investor.Credit())
-					c.AddInvestor(investor)
-					return nil
-				}, 0))
+	score := c.GetScore()
+	for {
+		// levelup
+		nextScore := (1 << c.level) * 100
+		if score < int64(nextScore) {
+			break
+		}
+		if AllowErrorMin < c.ErrorCount() {
+			// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
+			break
+		}
+		latestTradePrice := c.investors[0].LatestTradePrice()
+		c.level++
+		c.Logger().Printf("ワーカーレベルが上がります")
+
+		// 10人追加
+		unitamount := int64(c.level * 5)
+		for i := 0; i < 10; i++ {
+			cl, err := c.NewClient()
+			if err != nil {
+				return nil, err
 			}
+			var investor Investor
+			if i%2 == 1 {
+				investor = NewRandomInvestor(cl, latestTradePrice*1000, 0, unitamount, latestTradePrice-2)
+			} else {
+				investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, latestTradePrice+5)
+			}
+			tasks = append(tasks, NewExecTask(func(_ context.Context) error {
+				c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				c.AddInvestor(investor)
+				return nil
+			}, 0))
 		}
 	}
 	return tasks, nil
-}
-
-// まずは100円で成立させる
-var firstprams = []struct {
-	credit, isu, unitamount, unitprice int64
-}{
-	{100000, 0, 3, 100},
-	{1, 1000, 3, 100},
-	{100000, 0, 3, 100},
-	{1, 1000, 3, 100},
-	{1000, 0, 1, 100},
-	{1, 10, 1, 100},
-	{1000, 0, 1, 100},
-	{1, 10, 1, 100},
-	{1000, 0, 1, 100},
-	{1, 10, 1, 100},
 }

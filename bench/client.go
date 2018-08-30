@@ -310,15 +310,7 @@ func (c *Client) Info(lastID int64) (*InfoResponse, error) {
 	return r, nil
 }
 
-func (c *Client) AddSellOrder(amount, price int64) (*Order, error) {
-	return c.addOrder(TradeTypeSell, amount, price)
-}
-
-func (c *Client) AddBuyOrder(amount, price int64) (*Order, error) {
-	return c.addOrder(TradeTypeBuy, amount, price)
-}
-
-func (c *Client) addOrder(ordertyp string, amount, price int64) (*Order, error) {
+func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) {
 	path := "/orders"
 	v := url.Values{}
 	v.Set("type", ordertyp)
