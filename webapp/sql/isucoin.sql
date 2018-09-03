@@ -22,9 +22,9 @@ CREATE TABLE orders (
     user_id VARBINARY(191) NOT NULL,
     amount BIGINT NOT NULL,
     price BIGINT NOT NULL,
-    closed_at DATETIME,
+    closed_at DATETIME(6),
     trade_id BIGINT,
-    created_at DATETIME NOT NULL,
+    created_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
@@ -32,6 +32,6 @@ CREATE TABLE trade (
     id BIGINT NOT NULL AUTO_INCREMENT,
     amount BIGINT NOT NULL,
     price BIGINT NOT NULL,
-    created_at DATETIME NOT NULL,
+    created_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;

@@ -176,7 +176,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW())`, bankID, name, pass); err != nil {
+	if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW(6))`, bankID, name, pass); err != nil {
 		if mysqlError, ok := err.(*mysql.MySQLError); ok {
 			if mysqlError.Number == 1062 {
 				h.handleError(w, errors.New("bank_id conflict"), http.StatusConflict)
@@ -397,7 +397,7 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 		default:
 			return errcode("type must be sell or buy", 400)
 		}
-		res, err := tx.Exec(`INSERT INTO orders (type, user_id, amount, price, created_at) VALUES (?, ?, ?, ?, NOW())`, ot, s.User.ID, amount, price)
+		res, err := tx.Exec(`INSERT INTO orders (type, user_id, amount, price, created_at) VALUES (?, ?, ?, ?, NOW(6))`, ot, s.User.ID, amount, price)
 		if err != nil {
 			return errors.Wrap(err, "insert order failed")
 		}
