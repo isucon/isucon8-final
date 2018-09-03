@@ -17,14 +17,13 @@ import (
 )
 
 const (
-	MaxBodySize   = 1024 * 1024 // 1MB
-	RTT           = 100 * time.Millisecond
-	MinAppTime    = 20 * time.Millisecond
-	MaxAppTime    = 1 * time.Second
-	WorkerPerApp  = 2
-	MySQLDatetime = "2006-01-02 15:04:05"
-	LocationName  = "Asia/Tokyo"
-	AxLog         = true
+	MaxBodySize  = 1024 * 1024 // 1MB
+	RTT          = 100 * time.Millisecond
+	MinAppTime   = 20 * time.Millisecond
+	MaxAppTime   = 1 * time.Second
+	WorkerPerApp = 2
+	LocationName = "Asia/Tokyo"
+	AxLog        = true
 )
 
 func main() {
@@ -284,7 +283,7 @@ func (s *Handler) putLog(l Log, appID string) error {
 		return errors.Wrapf(err, "%s parse data failed", l.Tag)
 	}
 	query := `INSERT INTO log (app_id, tag, time, user_id, trade_id, data) VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.Exec(query, appID, l.Tag, lt.Format(MySQLDatetime), data.UserID, data.TradeID, string(l.Data)); err != nil {
+	if _, err := s.db.Exec(query, appID, l.Tag, lt, data.UserID, data.TradeID, string(l.Data)); err != nil {
 		return errors.Wrap(err, "insert log failed")
 	}
 	//var userID, tradeID int64

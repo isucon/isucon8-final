@@ -15,11 +15,10 @@ import (
 )
 
 const (
-	ResOK         = `{}`
-	ResError      = `{"error":"%s"}`
-	MySQLDatetime = "2006-01-02 15:04:05"
-	LocationName  = "Asia/Tokyo"
-	AxLog         = false
+	ResOK        = `{}`
+	ResError     = `{"error":"%s"}`
+	LocationName = "Asia/Tokyo"
+	AxLog        = false
 )
 
 func main() {
@@ -128,7 +127,7 @@ func (s *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Error(w, "bank_id is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.db.Exec(`INSERT INTO user (bank_id, created_at) VALUES (?, NOW())`, req.BankID); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO user (bank_id, created_at) VALUES (?, NOW(6))`, req.BankID); err != nil {
 		if mysqlError, ok := err.(*mysql.MySQLError); ok {
 			if mysqlError.Number == 1062 {
 				Error(w, "bank_id already exists", http.StatusBadRequest)
@@ -270,7 +269,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM credit WHERE user_id = ?`, userID).Scan(&fixed); err != nil {
 				return errors.Wrap(err, "calc credit failed")
 			}
-			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire.Format(MySQLDatetime)).Scan(&reserved); err != nil {
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire).Scan(&reserved); err != nil {
 				return errors.Wrap(err, "calc reserve failed")
 			}
 			if fixed+reserved+price < 0 {
@@ -278,7 +277,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		query := `INSERT INTO reserve (user_id, amount, note, is_minus, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)`
-		sr, err := tx.Exec(query, userID, price, memo, isMinus, now.Format(MySQLDatetime), expire.Format(MySQLDatetime))
+		sr, err := tx.Exec(query, userID, price, memo, isMinus, now, expire)
 		if err != nil {
 			return errors.Wrap(err, "update user.credit failed")
 		}
@@ -525,7 +524,7 @@ func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 }
 
 func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) error {
-	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW())`, userID, price, memo); err != nil {
+	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW(6))`, userID, price, memo); err != nil {
 		return errors.Wrap(err, "insert credit failed")
 	}
 	var credit int64
