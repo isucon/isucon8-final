@@ -461,9 +461,13 @@ func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return errors.Wrap(err, "newLogger failed")
 		}
-		id, err = formvalInt64(r, "id")
+		_id := r.URL.Query().Get("id")
+		if _id == "" {
+			return errcodeWrap(errors.Errorf("id is required"), 400)
+		}
+		id, err := strconv.ParseInt(_id, 10, 64)
 		if err != nil {
-			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. id"), 400)
+			return errcodeWrap(errors.Wrap(err, "id parse failed"), 400)
 		}
 		order, err := getOrderByIDWithLock(tx, id)
 		if err != nil {
