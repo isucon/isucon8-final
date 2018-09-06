@@ -212,6 +212,9 @@ func (c *Context) Next() ([]Task, error) {
 			break
 		}
 		latestTradePrice := c.investors[0].LatestTradePrice()
+		if latestTradePrice == 0 {
+			latestTradePrice = 100
+		}
 		c.level++
 		c.Logger().Printf("ワーカーレベルが上がります")
 

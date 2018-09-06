@@ -394,7 +394,7 @@ func (i *RandomInvestor) UpdateOrderTask() Task {
 	update := len(i.orders) == 0 || i.lastOrder.Add(OrderUpdateInterval).After(now)
 
 	if !update {
-		log.Printf("skip update order last:%s, now:%s", i.lastOrder, now)
+		//log.Printf("skip update order last:%s, now:%s", i.lastOrder, now)
 		return nil
 	}
 	logicalCredit := i.credit - i.resvedCredit
