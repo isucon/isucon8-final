@@ -185,7 +185,7 @@ func (i *investorBase) Info() Task {
 		}
 		for _, trade := range info.Trades {
 			if trade.ID < i.lastID {
-				return score, errors.Errorf("trades sort is broken? lastID:%d, trades:%#v", i.lastID, info.Trades)
+				return score, errors.Errorf("trades sort is broken? lastID:%d, tradeID:%d, trades:%#v", i.lastID, trade.ID, info.Trades)
 			}
 			if len(i.latestTrades) == cap(i.latestTrades) {
 				i.latestTrades = i.latestTrades[1:]
@@ -246,7 +246,7 @@ func (i *investorBase) UpdateOrders() Task {
 		if len(orders) < len(i.orders) {
 			return errors.Errorf("few orders")
 		}
-		if len(orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
+		if len(orders) > 0 && len(i.orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
 			return errors.Errorf("orders is not last ordered")
 		}
 		var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
