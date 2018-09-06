@@ -204,11 +204,14 @@ func (c *Client) del(path string, val url.Values) (*ResponseWithElapsedTime, err
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
 	}
-	req, err := http.NewRequest(http.MethodDelete, u.String(), strings.NewReader(val.Encode()))
+	for k, v := range u.Query() {
+		val[k] = v
+	}
+	u.RawQuery = val.Encode()
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "new request failed")
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return c.doRequest(req)
 }
 
@@ -291,7 +294,9 @@ func (c *Client) Top() error {
 
 func (c *Client) Info(lastID int64) (*InfoResponse, error) {
 	path := "/info"
-	res, err := c.get(path, url.Values{})
+	v := url.Values{}
+	v.Set("last_trade_id", strconv.FormatInt(lastID, 10))
+	res, err := c.get(path, v)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
