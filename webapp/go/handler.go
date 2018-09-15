@@ -465,7 +465,7 @@ func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 		if _id == "" {
 			return errcodeWrap(errors.Errorf("id is required"), 400)
 		}
-		id, err := strconv.ParseInt(_id, 10, 64)
+		id, err = strconv.ParseInt(_id, 10, 64)
 		if err != nil {
 			return errcodeWrap(errors.Wrap(err, "id parse failed"), 400)
 		}
