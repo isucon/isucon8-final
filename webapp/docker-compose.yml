@@ -12,12 +12,14 @@ services:
       ISU_DB_USER:     'root'
       ISU_DB_PASSWORD: 'root'
       ISU_DB_NAME:     'isucoin'
+      ISU_PUBLIC_DIR:  '/public'
     links:
       - mysql
     working_dir: /go/src/webapp
     volumes:
       - gopath:/go
       - ./go:/go/src/webapp
+      - ./public:/public
 
   mysql:
     image: mysql:8
