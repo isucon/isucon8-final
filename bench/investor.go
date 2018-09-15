@@ -54,6 +54,7 @@ type investorBase struct {
 	mux             sync.Mutex
 	taskLock        sync.Mutex
 	taskStack       []Task
+	timeoutCount    int
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
@@ -83,20 +84,22 @@ func (i *investorBase) pushNextTask(task Task) {
 }
 
 func (i *investorBase) pushOrder(o *Order) {
+	//log.Printf("[DEBUG] pushOrder [id:%d]", o.ID)
 	i.orders = append(i.orders, o)
 }
 
 func (i *investorBase) removeOrder(id int64) *Order {
-	new := make([]*Order, 0, cap(i.orders))
+	//log.Printf("[DEBUG] removeOrder [id:%d]", id)
+	newl := make([]*Order, 0, cap(i.orders))
 	var removed *Order
 	for _, o := range i.orders {
 		if o.ID != id {
-			new = append(new, o)
+			newl = append(newl, o)
 		} else {
 			removed = o
 		}
 	}
-	i.orders = new
+	i.orders = newl
 	return removed
 }
 
@@ -199,6 +202,9 @@ func (i *investorBase) Info() Task {
 		for _, order := range info.TradedOrders {
 			o := i.removeOrder(order.ID)
 			if o == nil {
+				if i.timeoutCount > 0 {
+					continue
+				}
 				return score, errors.Errorf("received `traded_order` that is not mine, or already closed. [%d]", order.ID)
 			}
 			if o.Type != order.Type {
@@ -243,11 +249,11 @@ func (i *investorBase) UpdateOrders() Task {
 		if err != nil {
 			return err
 		}
-		if len(orders) < len(i.orders) {
-			return errors.Errorf("few orders")
+		if g, w := len(orders), len(i.orders); g < w {
+			return errors.Errorf("few orders. got:%d, want:%d", g, w)
 		}
-		if len(orders) > 0 && len(i.orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
-			return errors.Errorf("orders is not last ordered")
+		if i.timeoutCount == 0 && len(orders) > 0 && len(i.orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
+			return errors.Errorf("orders is not last ordered. got:[len:%d,lastid:%d], want:[len:%d,lastid:%d]", len(orders), orders[len(orders)-1].ID, len(i.orders), i.orders[len(i.orders)-1].ID)
 		}
 		var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
 		for _, order := range orders {
@@ -264,13 +270,25 @@ func (i *investorBase) UpdateOrders() Task {
 				// 売り注文
 				resvedIsu += order.Amount
 				if !i.hasOrder(order.ID) {
-					return errors.Errorf("fined removed order")
+					if i.timeoutCount == 0 {
+						return errors.Errorf("fined removed order [orderID:%d]", order.ID)
+						if len(i.orders) < cap(i.orders) {
+							i.pushOrder(&order)
+							//i.timeoutCount--
+						}
+					}
 				}
 			case order.Type == TradeTypeBuy:
 				// 買い注文
 				resvedCredit += order.Amount * order.Price
 				if !i.hasOrder(order.ID) {
-					return errors.Errorf("fined removed order")
+					if i.timeoutCount == 0 {
+						return errors.Errorf("fined removed order [orderID:%d]", order.ID)
+						if len(i.orders) < cap(i.orders) {
+							i.pushOrder(&order)
+							//i.timeoutCount--
+						}
+					}
 				}
 			}
 		}
@@ -298,6 +316,9 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) Task {
 			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
 				return nil
 			}
+			if strings.Index(err.Error(), "Client.Timeout") > -1 {
+				i.timeoutCount++
+			}
 			return err
 		}
 		i.pushOrder(order)
@@ -307,15 +328,26 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) Task {
 }
 
 func (i *investorBase) RemoveOrder(order *Order) Task {
-	return NewExecTask(func(ctx context.Context) error {
+	return NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.mux.Lock()
 		defer i.mux.Unlock()
+		if !i.hasOrder(order.ID) {
+			return 0, nil
+		}
 		if err := i.c.DeleteOrders(order.ID); err != nil {
-			return err
+			if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 404 {
+				// 404エラーはしょうがないのでerrにはしないが加点しない
+				log.Printf("[INFO] delete 404 %s", er)
+				return 0, nil
+			}
+			if strings.Index(err.Error(), "Client.Timeout") > -1 {
+				i.timeoutCount++
+			}
+			return 0, err
 		}
 		i.removeOrder(order.ID)
-		return nil
-	}, DeleteOrdersScore)
+		return DeleteOrdersScore, nil
+	})
 }
 
 func (i *investorBase) Start() Task {
@@ -390,6 +422,8 @@ func (i *RandomInvestor) FixNextTask() Task {
 }
 
 func (i *RandomInvestor) UpdateOrderTask() Task {
+	i.mux.Lock()
+	defer i.mux.Unlock()
 	now := time.Now()
 	update := len(i.orders) == 0 || i.lastOrder.Add(OrderUpdateInterval).After(now)
 

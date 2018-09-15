@@ -98,7 +98,7 @@ type InfoResponse struct {
 	HighestBuyPrice int64   `json:"highest_buy_price"`
 }
 
-type OderActionResponse struct {
+type OrderActionResponse struct {
 	ID int64 `json:"id"`
 }
 
@@ -333,7 +333,7 @@ func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) 
 		}
 		return nil, errorWithStatus(errors.Errorf("POST %s failed.", path), res.StatusCode, string(b))
 	}
-	r := &OderActionResponse{}
+	r := &OrderActionResponse{}
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
 		return nil, errors.Wrapf(err, "POST %s body decode failed", path)
 	}
@@ -386,12 +386,12 @@ func (c *Client) DeleteOrders(id int64) error {
 		}
 		return errorWithStatus(errors.Errorf("DELETE %s failed.", path), res.StatusCode, string(b))
 	}
-	r := &OderActionResponse{}
+	r := &OrderActionResponse{}
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
 		return errors.Wrapf(err, "DELETE %s body decode failed", path)
 	}
 	if r.ID != id {
-		return errors.Errorf("DELETE %s failed. id is not match requested value", path)
+		return errors.Errorf("DELETE %s failed. id is not match requested value [got:%d, want:%d]", path, r.ID, id)
 	}
 	return nil
 }
