@@ -15,11 +15,10 @@ import (
 )
 
 const (
-	ResOK         = `{"status":"ok"}`
-	ResError      = `{"status":"ng","error":"%s"}`
-	MySQLDatetime = "2006-01-02 15:04:05"
-	LocationName  = "Asia/Tokyo"
-	AxLog         = false
+	ResOK        = `{}`
+	ResError     = `{"error":"%s"}`
+	LocationName = "Asia/Tokyo"
+	AxLog        = false
 )
 
 func main() {
@@ -128,7 +127,7 @@ func (s *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Error(w, "bank_id is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.db.Exec(`INSERT INTO user (bank_id, created_at) VALUES (?, NOW())`, req.BankID); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO user (bank_id, created_at) VALUES (?, NOW(6))`, req.BankID); err != nil {
 		if mysqlError, ok := err.(*mysql.MySQLError); ok {
 			if mysqlError.Number == 1062 {
 				Error(w, "bank_id already exists", http.StatusBadRequest)
@@ -197,12 +196,16 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Error(w, "can't parse body", http.StatusBadRequest)
 		return
 	}
-	if req.Price <= 0 {
-		Error(w, "price must be upper than 0", http.StatusBadRequest)
+	if req.Price < 0 {
+		Error(w, "price must be upper 0", http.StatusBadRequest)
 		return
 	}
 	userID := s.filterBankID(w, req.BankID)
 	if userID <= 0 {
+		return
+	}
+	if req.Price == 0 {
+		Success(w)
 		return
 	}
 	err := s.txScorp(func(tx *sql.Tx) error {
@@ -266,7 +269,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM credit WHERE user_id = ?`, userID).Scan(&fixed); err != nil {
 				return errors.Wrap(err, "calc credit failed")
 			}
-			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire.Format(MySQLDatetime)).Scan(&reserved); err != nil {
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire).Scan(&reserved); err != nil {
 				return errors.Wrap(err, "calc reserve failed")
 			}
 			if fixed+reserved+price < 0 {
@@ -274,7 +277,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		query := `INSERT INTO reserve (user_id, amount, note, is_minus, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)`
-		sr, err := tx.Exec(query, userID, price, memo, isMinus, now.Format(MySQLDatetime), expire.Format(MySQLDatetime))
+		sr, err := tx.Exec(query, userID, price, memo, isMinus, now, expire)
 		if err != nil {
 			return errors.Wrap(err, "update user.credit failed")
 		}
@@ -292,7 +295,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		Error(w, "internal server error", http.StatusInternalServerError)
 	default:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		fmt.Fprintln(w, fmt.Sprintf(`{"status":"ok","reserve_id":%d}`, rsvID))
+		fmt.Fprintln(w, fmt.Sprintf(`{"reserve_id":%d}`, rsvID))
 	}
 }
 
@@ -493,7 +496,7 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) 
 	err := s.db.QueryRow(`SELECT id FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id)
 	switch {
 	case err == sql.ErrNoRows:
-		Error(w, "user not found", http.StatusNotFound)
+		Error(w, "bank_id not found", http.StatusNotFound)
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
@@ -521,7 +524,7 @@ func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 }
 
 func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) error {
-	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW())`, userID, price, memo); err != nil {
+	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW(6))`, userID, price, memo); err != nil {
 		return errors.Wrap(err, "insert credit failed")
 	}
 	var credit int64

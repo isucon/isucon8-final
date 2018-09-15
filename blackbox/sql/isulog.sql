@@ -3,8 +3,8 @@ use isulog;
 CREATE TABLE log (
     id BIGINT NOT NULL AUTO_INCREMENT,
     app_id VARBINARY(191) NOT NULL,
-    tag TINYINT NOT NULL,
-    time DATETIME NOT NULL,
+    tag VARBINARY(50) NOT NULL,
+    time DATETIME(6) NOT NULL,
     user_id BIGINT NOT NULL,
     trade_id BIGINT NOT NULL,
     data TEXT NOT NULL,

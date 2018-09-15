@@ -6,27 +6,35 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 
 	"github.com/pkg/errors"
 )
 
 var (
+	ErrNoUser             = errors.New("no bank user")
 	ErrCreditInsufficient = errors.New("credit is insufficient")
 )
 
-type IsubankBasicResponse struct {
-	Status string `json:"status"`
+type isubankResponse interface {
+	SetStatus(int)
+}
+
+type isubankBasicResponse struct {
+	status int
 	Error  string `json:"error"`
 }
 
-type IsubankReserveResponse struct {
-	IsubankBasicResponse
+type isubankReserveResponse struct {
+	isubankBasicResponse
 	ReserveID int64 `json:"reserve_id"`
 }
 
-func (r *IsubankBasicResponse) Success() bool {
-	return strings.ToLower(r.Status) == "ok"
+func (r *isubankBasicResponse) Success() bool {
+	return r.status == 200
+}
+
+func (r *isubankBasicResponse) SetStatus(s int) {
+	r.status = s
 }
 
 type Isubank struct {
@@ -46,7 +54,7 @@ func NewIsubank(endpoint, appID string) (*Isubank, error) {
 }
 
 func (b *Isubank) Check(bankID string, price int64) error {
-	res := &IsubankBasicResponse{}
+	res := &isubankBasicResponse{}
 	v := map[string]interface{}{
 		"bank_id": bankID,
 		"price":   price,
@@ -54,17 +62,20 @@ func (b *Isubank) Check(bankID string, price int64) error {
 	if err := b.request("/check", v, res); err != nil {
 		return errors.Wrap(err, "check failed")
 	}
-	if !res.Success() {
-		if res.Error == "credit is insufficient" {
-			return ErrCreditInsufficient
-		}
-		return errors.Errorf("check failed. err:%s", res.Error)
+	if res.Success() {
+		return nil
 	}
-	return nil
+	if res.Error == "bank_id not found" {
+		return ErrNoUser
+	}
+	if res.Error == "credit is insufficient" {
+		return ErrCreditInsufficient
+	}
+	return errors.Errorf("check failed. err:%s", res.Error)
 }
 
 func (b *Isubank) Reserve(bankID string, price int64) (int64, error) {
-	res := &IsubankReserveResponse{}
+	res := &isubankReserveResponse{}
 	v := map[string]interface{}{
 		"bank_id": bankID,
 		"price":   price,
@@ -82,7 +93,7 @@ func (b *Isubank) Reserve(bankID string, price int64) (int64, error) {
 }
 
 func (b *Isubank) Commit(reserveIDs []int64) error {
-	res := &IsubankBasicResponse{}
+	res := &isubankBasicResponse{}
 	v := map[string]interface{}{
 		"reserve_ids": reserveIDs,
 	}
@@ -99,7 +110,7 @@ func (b *Isubank) Commit(reserveIDs []int64) error {
 }
 
 func (b *Isubank) Cancel(reserveIDs []int64) error {
-	res := &IsubankBasicResponse{}
+	res := &isubankBasicResponse{}
 	v := map[string]interface{}{
 		"reserve_ids": reserveIDs,
 	}
@@ -112,7 +123,7 @@ func (b *Isubank) Cancel(reserveIDs []int64) error {
 	return nil
 }
 
-func (b *Isubank) request(p string, v map[string]interface{}, r interface{}) error {
+func (b *Isubank) request(p string, v map[string]interface{}, r isubankResponse) error {
 	u := new(url.URL)
 	*u = *b.endpoint
 	u.Path = path.Join(u.Path, p)
@@ -127,5 +138,9 @@ func (b *Isubank) request(p string, v map[string]interface{}, r interface{}) err
 		return errors.Wrap(err, "isubank request failed")
 	}
 	defer res.Body.Close()
-	return json.NewDecoder(res.Body).Decode(r)
+	if err = json.NewDecoder(res.Body).Decode(r); err != nil {
+		return errors.Wrap(err, "isubank decode json failed")
+	}
+	r.SetStatus(res.StatusCode)
+	return nil
 }

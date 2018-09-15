@@ -3,6 +3,7 @@ package bench
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -21,6 +22,11 @@ var (
 	createdAtUpper = time.Now().Add(24 * time.Hour).Unix()
 )
 
+const (
+	TradeTypeSell = "sell"
+	TradeTypeBuy  = "buy"
+)
+
 func init() {
 	var err error
 	loc, err := time.LoadLocation("Asia/Tokyo")
@@ -33,6 +39,24 @@ func init() {
 type ResponseWithElapsedTime struct {
 	*http.Response
 	ElapsedTime time.Duration
+}
+
+type ErrorWithStatus struct {
+	StatusCode int
+	Body       string
+	err        error
+}
+
+func errorWithStatus(err error, code int, body string) *ErrorWithStatus {
+	return &ErrorWithStatus{
+		StatusCode: code,
+		Body:       body,
+		err:        err,
+	}
+}
+
+func (e *ErrorWithStatus) Error() string {
+	return fmt.Sprintf("%s [status:%d, body:%s]", e.err.Error(), e.StatusCode, e.Body)
 }
 
 type StatusRes struct {
@@ -56,6 +80,7 @@ type Trade struct {
 
 type Order struct {
 	ID        int64      `json:"id"`
+	Type      string     `json:"type"`
 	UserID    int64      `json:"user_id"`
 	Amount    int64      `json:"amount"`
 	Price     int64      `json:"price"`
@@ -64,6 +89,17 @@ type Order struct {
 	CreatedAt time.Time  `json:"created_at"`
 	User      *User      `json:"user,omitempty"`
 	Trade     *Trade     `json:"trade,omitempty"`
+}
+
+type InfoResponse struct {
+	TradedOrders    []Order `json:"traded_orders"`
+	Trades          []Trade `json:"trades"`
+	LowestSellPrice int64   `json:"lowest_sell_price"`
+	HighestBuyPrice int64   `json:"highest_buy_price"`
+}
+
+type OrderActionResponse struct {
+	ID int64 `json:"id"`
 }
 
 type Client struct {
@@ -163,6 +199,22 @@ func (c *Client) post(path string, val url.Values) (*ResponseWithElapsedTime, er
 	return c.doRequest(req)
 }
 
+func (c *Client) del(path string, val url.Values) (*ResponseWithElapsedTime, error) {
+	u, err := c.base.Parse(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "url parse failed")
+	}
+	for k, v := range u.Query() {
+		val[k] = v
+	}
+	u.RawQuery = val.Encode()
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "new request failed")
+	}
+	return c.doRequest(req)
+}
+
 func (c *Client) Initialize(bankep, bankid, logep, logid string) error {
 	v := url.Values{}
 	v.Set("bank_endpoint", bankep)
@@ -181,7 +233,7 @@ func (c *Client) Initialize(bankep, bankid, logep, logid string) error {
 	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	return errors.Errorf("POST /initialize failed. body: %s", string(b))
+	return errorWithStatus(errors.Errorf("POST /initialize failed."), res.StatusCode, string(b))
 }
 
 func (c *Client) Signup() error {
@@ -198,10 +250,10 @@ func (c *Client) Signup() error {
 	if err != nil {
 		return errors.Wrap(err, "POST /signup body read failed")
 	}
-	if res.StatusCode == http.StatusFound {
+	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	return errors.Errorf("POST /signup failed. body: %s", string(b))
+	return errorWithStatus(errors.Errorf("POST /signup failed."), res.StatusCode, string(b))
 }
 
 func (c *Client) Signin() error {
@@ -217,31 +269,34 @@ func (c *Client) Signin() error {
 	if err != nil {
 		return errors.Wrap(err, "POST /signin body read failed")
 	}
-	if res.StatusCode == http.StatusFound {
+	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	return errors.Errorf("POST /signin failed. body: %s", string(b))
+	return errorWithStatus(errors.Errorf("POST /signin failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Mypage() error {
-	res, err := c.get("/mypage", url.Values{})
+func (c *Client) Top() error {
+	res, err := c.get("/", url.Values{})
 	if err != nil {
-		return errors.Wrap(err, "GET /mypage request failed")
+		return errors.Wrap(err, "GET / request failed")
 	}
 	defer res.Body.Close()
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "GET /mypage body read failed")
+		return errors.Wrap(err, "GET / body read failed")
 	}
 	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	return errors.Errorf("POST /mypage failed. body: %s", string(b))
+	// TODO top HTML の不正チェック
+	return errorWithStatus(errors.Errorf("GET / failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Trades() ([]Trade, error) {
-	path := "/trades"
-	res, err := c.get(path, url.Values{})
+func (c *Client) Info(lastID int64) (*InfoResponse, error) {
+	path := "/info"
+	v := url.Values{}
+	v.Set("last_trade_id", strconv.FormatInt(lastID, 10))
+	res, err := c.get(path, v)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
@@ -251,58 +306,51 @@ func (c *Client) Trades() ([]Trade, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "GET %s body read failed", path)
 		}
-		return nil, errors.Errorf("GET %s status code is %d, body: %s", path, res.StatusCode, string(b))
+		return nil, errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
 	}
-	r := []Trade{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+	r := &InfoResponse{}
+	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
 	return r, nil
 }
 
-func (c *Client) AddSellOrder(amount, price int64) error {
-	return c.addOrder("/sell_orders", amount, price)
-}
-
-func (c *Client) AddBuyOrder(amount, price int64) error {
-	return c.addOrder("/buy_orders", amount, price)
-}
-
-func (c *Client) SellOrders() ([]Order, error) {
-	return c.myOrders("/sell_orders")
-}
-
-func (c *Client) BuyOrders() ([]Order, error) {
-	return c.myOrders("/buy_orders")
-}
-
-func (c *Client) addOrder(path string, amount, price int64) error {
+func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) {
+	path := "/orders"
 	v := url.Values{}
+	v.Set("type", ordertyp)
 	v.Set("amount", strconv.FormatInt(amount, 10))
 	v.Set("price", strconv.FormatInt(price, 10))
 	res, err := c.post(path, v)
 	if err != nil {
-		return errors.Wrapf(err, "POST %s request failed", path)
+		return nil, errors.Wrapf(err, "POST %s request failed", path)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return errors.Wrapf(err, "POST %s body read failed", path)
+			return nil, errors.Wrapf(err, "POST %s body read failed", path)
 		}
-		return errors.Errorf("POST %s status code is %d, body: %s", path, res.StatusCode, string(b))
+		return nil, errorWithStatus(errors.Errorf("POST %s failed.", path), res.StatusCode, string(b))
 	}
-	r := &StatusRes{}
+	r := &OrderActionResponse{}
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
-		return errors.Wrapf(err, "POST %s body decode failed", path)
+		return nil, errors.Wrapf(err, "POST %s body decode failed", path)
 	}
-	if r.OK {
-		return nil
+	if r.ID == 0 {
+		return nil, errors.Errorf("POST %s failed. id is not returned", path)
 	}
-	return errors.Errorf("POST %s failed. err:%s", path, r.Error)
+
+	return &Order{
+		ID:     r.ID,
+		Amount: amount,
+		Price:  price,
+		Type:   ordertyp,
+	}, nil
 }
 
-func (c *Client) myOrders(path string) ([]Order, error) {
+func (c *Client) GetOrders() ([]Order, error) {
+	path := "/orders"
 	res, err := c.get(path, url.Values{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
@@ -313,11 +361,37 @@ func (c *Client) myOrders(path string) ([]Order, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "GET %s body read failed", path)
 		}
-		return nil, errors.Errorf("GET %s status code is %d, body: %s", path, res.StatusCode, string(b))
+		return nil, errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
 	}
 	r := []Order{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
 	return r, nil
+}
+
+func (c *Client) DeleteOrders(id int64) error {
+	path := "/orders"
+	v := url.Values{}
+	v.Set("id", strconv.FormatInt(id, 10))
+	res, err := c.del(path, v)
+	if err != nil {
+		return errors.Wrapf(err, "DELETE %s request failed", path)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return errors.Wrapf(err, "DELETE %s body read failed", path)
+		}
+		return errorWithStatus(errors.Errorf("DELETE %s failed.", path), res.StatusCode, string(b))
+	}
+	r := &OrderActionResponse{}
+	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
+		return errors.Wrapf(err, "DELETE %s body decode failed", path)
+	}
+	if r.ID != id {
+		return errors.Errorf("DELETE %s failed. id is not match requested value [got:%d, want:%d]", path, r.ID, id)
+	}
+	return nil
 }

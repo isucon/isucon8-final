@@ -57,23 +57,23 @@ func NewExecTask(runner func(context.Context) error, score int64) Task {
 	})
 }
 
-type ListTask struct {
+type SerialTask struct {
 	*taskBase
 	tasks []Task
 }
 
-func NewListTask(cap int) *ListTask {
-	return &ListTask{
+func NewSerialTask(cap int) *SerialTask {
+	return &SerialTask{
 		taskBase: &taskBase{},
 		tasks:    make([]Task, 0, cap),
 	}
 }
 
-func (t *ListTask) Add(task Task) {
+func (t *SerialTask) Add(task Task) {
 	t.tasks = append(t.tasks, task)
 }
 
-func (t *ListTask) Run(ctx context.Context) error {
+func (t *SerialTask) Run(ctx context.Context) error {
 	for _, task := range t.tasks {
 		select {
 		case <-ctx.Done():

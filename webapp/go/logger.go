@@ -38,18 +38,11 @@ type LogDataSignin struct {
 	UserID int64 `json:"user_id"`
 }
 
-type LogDataSellOrder struct {
-	UserID int64 `json:"user_id"`
-	SellID int64 `json:"sell_id"`
-	Amount int64 `json:"amount"`
-	Price  int64 `json:"price"`
-}
-
-type LogDataBuyOrder struct {
-	UserID int64 `json:"user_id"`
-	BuyID  int64 `json:"buy_id"`
-	Amount int64 `json:"amount"`
-	Price  int64 `json:"price"`
+type LogDataOrder struct {
+	UserID  int64 `json:"user_id"`
+	OrderID int64 `json:"order_id"`
+	Amount  int64 `json:"amount"`
+	Price   int64 `json:"price"`
 }
 
 type LogDataBuyError struct {
@@ -59,26 +52,23 @@ type LogDataBuyError struct {
 	Error  string `json:"error"`
 }
 
-type LogDataClose struct {
+type LogDataTrade struct {
 	TradeID int64 `json:"trade_id"`
 	Amount  int64 `json:"amount"`
 	Price   int64 `json:"price"`
 }
 
-type LogDataSellClose struct {
+type LogDataOrderTrade struct {
 	TradeID int64 `json:"trade_id"`
 	UserID  int64 `json:"user_id"`
-	SellID  int64 `json:"sell_id"`
+	OrderID int64 `json:"order_id"`
 	Amount  int64 `json:"amount"`
 	Price   int64 `json:"price"`
 }
 
-type LogDataBuyClose struct {
-	TradeID int64 `json:"trade_id"`
-	UserID  int64 `json:"user_id"`
-	BuyID   int64 `json:"buy_id"`
-	Amount  int64 `json:"amount"`
-	Price   int64 `json:"price"`
+type LogDataOrderDelete struct {
+	OrderID int64  `json:"order_id"`
+	Reason  string `json:"reason"`
 }
 
 type Logger struct {

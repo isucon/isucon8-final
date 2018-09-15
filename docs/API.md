@@ -1,4 +1,4 @@
-## webapp
+# webapp
 
 ### 初期化
 
@@ -10,12 +10,20 @@
     - log_endpoint  : logAPIのエンドポイント
     - log_appid     : logAPIのエンドポイントで利用するappid
 
-### 登録
+### TOP
 
-#### `GET /signup`
+#### `GET /`
 
 - response: text/html 
-    - 登録フォーム
+    - $orders: 自分の注文リスト (ログインしている場合)
+    - $trades: 全体の成立した売買
+    - 売り注文フォーム (未ログインの場合は非活性)
+    - 買い注文フォーム (未ログインの場合は非活性)
+
+- Memo
+    - SPA
+
+### 登録
 
 #### `POST /signup`
 
@@ -25,7 +33,11 @@
     - password 
 
 - response
-    - redirect `/signin`
+    - status: 200
+    - status: 40x
+        - error: bank_id conflict
+    - status: 400
+        - error: bank user not found
 - log
     - tag:signup
         - name: $name
@@ -34,11 +46,6 @@
 
 ### ログイン
 
-#### `GET /signin`
-
-- response: text/html 
-    - ログインフォーム
-
 #### `POST /signin`
 
 - request: application/form-url-encoded
@@ -46,83 +53,33 @@
     - password 
 
 - response
-    - redirect `/mypage`
-    - with Session
+    - status: 200
+    - status: 404
+        - error: bank_id or password is not match
 - log
     - tag:signin
         - user_id: $user_id
 
-### マイページ
-
-#### `GET /mypage`
-
-- response: text/html 
-    - 売り注文リスト
-    - 買い注文リスト
-    - 自分の注文
-    - 成立した売買
-    - 売り注文フォーム
-    - 買い注文フォーム
-
-- Memo
-    - リストのページャー
-    - リアルタイム性(TODO)
-    - 売買成立の通知
-
-
 ### 売り注文
 
-#### `POST /sell_orders`
+#### `POST /orders`
 
 - request: application/form-url-encoded
-    - amount: 売りたい脚数
-    - price:  指値(1脚あたりの最低額)
+    - type:   sell=売り注文, buy=買い注文
+    - amount: 注文脚数 (Uint)
+    - price:  指値(1脚あたりの最低額) (Uint)
+
 - response: application/json
-    - {"ok":true} = 成功
-    - {"ok":false,"error":"メッセージ"} = 失敗
+    - status: 200
+        - id: $order_id
+    - status: 400
+        - error: invalid params
+    - status: 40x
+        - error: 残高不足
 - log
-    - tag:sell.order
+    - tag:{$type}.order
+        - order_id: $order_id
         - user_id: $user_id
-        - sell_id: $sell_id
-        - amount: $amount
-        - price: $price
-- memo
-    - 処理後に買い注文とのマッチングをする
-
-#### `GET /sell_orders`
-
-- response: application/json
-    - list
-        - id         : $order_id
-        - user_id    : $user_id
-        - amount     : $amount
-        - price      : $price (注文価格)
-        - closed_at  : $closed_at (注文成立または取り消しの時間、その他はnull)
-        - trade_id   : $trade_id  (注文成立時に注文番号、未成立の場合はキーなし)
-        - created_at : $created_at (注文時間)
-        - user: 
-            - id   : $user_id
-            - name : $user.name
-        - trade: 
-            - id         : $trade_id
-            - amount     : $amount (取引脚数)
-            - price      : $price (取引価格)
-            - created_at : $created_at (成立時間)
-
-### 買い注文
-
-#### `POST /buy_orders`
-
-- request: application/form-url-encoded
-    - amount: 買いたい脚数
-    - price:  指値(1脚あたりの最高額)
-- response: application/json
-    - {"ok":true} = 成功
-    - {"ok":false,"error":"メッセージ"} = 失敗
-- log
-    - tag:buy.order
-        - user_id: $user_id
-        - buy_id: $buy_id
         - amount: $amount
         - price: $price
     - tag:buy.error (与信API失敗時)
@@ -131,14 +88,39 @@
         - amount: $amount
         - price: $price
 - memo
-    - 処理前に与信APIを叩く(これを叩かないとエラー)
-    - 処理後に売り注文とのマッチングをする
+    - 買い注文の場合、資金があるか処理前に与信APIを叩く(これを叩かないとfail)
+    - 処理後にマッチングをする
+    - 直後にGET /ordersを叩く
 
-#### `GET /buy_orders`
+#### `DELETE /orders`
+
+- request: application/form-url-encoded
+    - id: $order.id
+
+- response: application/json
+    - status: 200
+        - id: $order.id
+    - status: 401
+        - error: unautholize
+    - status: 404
+        - error: no order
+    - status: 40x
+        - error: alreay trade
+- log
+    - tag:{$type}.delete
+        - order_id: $order_id
+        - reason:   canceled
+
+- memo
+    - 買い注文の場合、資金があるか処理前に与信APIを叩く(これを叩かないとfail)
+    - 処理後にマッチングをする
+
+#### `GET /orders`
 
 - response: application/json
     - list
         - id         : $order_id
+        - type       : $type
         - user_id    : $user_id
         - amount     : $amount
         - price      : $price (注文価格)
@@ -154,16 +136,25 @@
             - price      : $price (取引価格)
             - created_at : $created_at (成立時間)
 
-### 売買成立
+### 更新情報API
 
-#### `GET /trades`
+#### `GET /info`
+
+- request: 
+    - last_trade_id: 最後に取得したtrade_id
 
 - response: application/json
-    - list
+    - traded_orders: トレードの成立した注文
+        - [$order]
+    - trades: # last_trade_id より新しいtradeを返す
         - id         : $trade_id
         - amount     : $amount (取引脚数)
         - price      : $price (取引価格)
         - created_at : $created_at (成立時間)
+    - lowest_sell_price: $price
+    - highest_buy_price: $price
+
+### 更新処理
 
 #### `runTrade`
 
@@ -174,122 +165,16 @@
     - 買い注文に対して 引き落としAPIを叩く
     - 売り注文に対して 振込APIを叩く
 - log
-    - tag:close
+    - tag:trade
         - trade_id: $trade_id
         - amount: $amount
         - price: $price
-    - tag:sell.close
-        - trade_id: $trade_id
-        - user_id: $user_id
-        - sell_id: $sell_id
-        - amount: $amount
-        - price: $price
-    - tag:buy.close
+    - tag:{$order.type}.trade
+        - order_id: $order_id
         - trade_id: $trade_id
         - user_id: $user_id
-        - buy_id: $buy_id
         - amount: $amount
         - price: $price
-
-
-## 銀行API
-
-ユーザーには公開しないAPI
-
-### `POST /register`
-
-登録 (本来は非公開API)
-
-- request: application/json
-    - bank_id 
-- response: application/json
-    - status: ok
-
-### `POST /add_credit`
-
-creditの追加 (本来は非公開API)
-
-- request: application/json
-    - bank_id 
-    - price
-- response: application/json
-    - status: ok
-
-### `POST /check`
-
-与信API
-
-指定したpriceを支払い可能の場合 status:ok
-
-- request: application/json
-    - app_id
-    - bank_id
-    - price
-- response: application/json
-    - status: ok
-    - error: ...
-
-### `POST /reserve`
-
-決済予約API
-
-`price>0` : 振込
-`price<0` : 引き落とし
-
-reserveの有効期限は1分間
-1分以内のcommitは保証されます
-
-- request: application/json
-    - app_id
-    - bank_id
-    - price
-- response: application/json
-    - status: ok
-    - reserve_id: bigint
-    - error: ...
-
-### `POST /commit`
-
-決済確定API
-
-reserve APIで予約した決済を確定します
-
-- request: application/json
-    - app_id
-    - reserve_ids
-- response: application/json
-    - status: ok
-    - error: ...
-
-### `POST /cancel`
-
-決済取り消しAPI
-
-reserve APIで予約した決済を取り消します
-
-- request: application/json
-    - app_id
-    - reserve_ids
-- response: application/json
-    - status: ok
-    - error: ...
-
-## ロガー
-
-### `POST /send`
-
-- request: application/json
-    - app_id
-    - tag
-    - time
-    - data 
-
-### `POST /send_bulk`
-
-- request: application/json
-
-    - app_id
-    - logs
-        - tag
-        - time
-        - data
+    - tag:{$order.type}.delete
+        - order_id: $order_id
+        - reason: reserve_failed
