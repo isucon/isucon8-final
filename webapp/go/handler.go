@@ -83,7 +83,7 @@ var (
 	errPriceUnmatch = errors.New("price unmatch")
 )
 
-func NewServer(db *sql.DB, store sessions.Store) http.Handler {
+func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler {
 	server := http.NewServeMux()
 
 	h := &Handler{
@@ -92,17 +92,21 @@ func NewServer(db *sql.DB, store sessions.Store) http.Handler {
 	}
 
 	server.HandleFunc("/initialize", h.Initialize)
-	server.HandleFunc("/", h.Top)
 	server.HandleFunc("/signup", h.Signup)
 	server.HandleFunc("/signin", h.Signin)
 	server.HandleFunc("/signout", h.Signout)
 	server.HandleFunc("/orders", h.Orders)
 	server.HandleFunc("/info", h.Info)
 
-	// default 404
-	server.HandleFunc("/404", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[INFO] request not found %s", r.URL.RawPath)
-		http.Error(w, "Not found", 404)
+	fs := http.FileServer(http.Dir(publicdir))
+	server.Handle("/js/", fs)
+	server.Handle("/css/", fs)
+	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
+			fs.ServeHTTP(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
 	})
 
 	return h.commonHandler(server)
@@ -263,9 +267,6 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/signin", http.StatusFound)
-}
-
-func (h *Handler) Top(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
