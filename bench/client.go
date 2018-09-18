@@ -371,10 +371,8 @@ func (c *Client) GetOrders() ([]Order, error) {
 }
 
 func (c *Client) DeleteOrders(id int64) error {
-	path := "/orders"
-	v := url.Values{}
-	v.Set("id", strconv.FormatInt(id, 10))
-	res, err := c.del(path, v)
+	path := fmt.Sprintf("/order/%d", id)
+	res, err := c.del(path, url.Values{})
 	if err != nil {
 		return errors.Wrapf(err, "DELETE %s request failed", path)
 	}

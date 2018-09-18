@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
+	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -84,32 +85,24 @@ var (
 )
 
 func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler {
-	server := http.NewServeMux()
 
 	h := &Handler{
 		db:    db,
 		store: store,
 	}
 
-	server.HandleFunc("/initialize", h.Initialize)
-	server.HandleFunc("/signup", h.Signup)
-	server.HandleFunc("/signin", h.Signin)
-	server.HandleFunc("/signout", h.Signout)
-	server.HandleFunc("/orders", h.Orders)
-	server.HandleFunc("/info", h.Info)
+	router := httprouter.New()
+	router.POST("/initialize", h.Initialize)
+	router.POST("/signup", h.Signup)
+	router.POST("/signin", h.Signin)
+	router.POST("/signout", h.Signout)
+	router.GET("/info", h.Info)
+	router.GET("/orders", h.GetOrders)
+	router.POST("/orders", h.AddOrders)
+	router.DELETE("/order/:id", h.DeleteOrders)
+	router.NotFound = http.FileServer(http.Dir(publicdir))
 
-	fs := http.FileServer(http.Dir(publicdir))
-	server.Handle("/js/", fs)
-	server.Handle("/css/", fs)
-	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
-			fs.ServeHTTP(w, r)
-		} else {
-			http.NotFound(w, r)
-		}
-	})
-
-	return h.commonHandler(server)
+	return h.commonHandler(router)
 }
 
 type Handler struct {
@@ -117,7 +110,7 @@ type Handler struct {
 	store sessions.Store
 }
 
-func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	err := txScorp(h.db, func(tx *sql.Tx) error {
 		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
@@ -148,11 +141,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
-		return
-	}
+func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	name := r.FormValue("name")
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
@@ -202,11 +191,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "{}")
 }
 
-func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
-		return
-	}
+func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
 	if bankID == "" || password == "" {
@@ -254,7 +239,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "{}")
 }
 
-func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	session, err := h.store.Get(r, SessionName)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
@@ -269,7 +254,7 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/signin", http.StatusFound)
 }
 
-func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	s, _ := h.auth(r)
 	var lastTradeID int64
 	if _lastInsertID := r.URL.Query().Get("last_trade_id"); _lastInsertID != "" {
@@ -328,29 +313,15 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-func (h *Handler) Orders(w http.ResponseWriter, r *http.Request) {
-	_, err := h.auth(r)
+func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	s, err := h.auth(r)
 	if err != nil {
 		h.handleError(w, err, http.StatusUnauthorized)
 		return
 	}
-	switch r.Method {
-	case http.MethodPost:
-		h.addOrders(w, r)
-	case http.MethodDelete:
-		h.deleteOrders(w, r)
-	case http.MethodGet:
-		h.getOrders(w, r)
-	default:
-		h.handleError(w, errors.New("method not allowed"), http.StatusMethodNotAllowed)
-	}
-}
-
-func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
-	s, _ := h.auth(r)
 
 	var id int64
-	err := txScorp(h.db, func(tx *sql.Tx) error {
+	err = txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 		}
@@ -434,8 +405,12 @@ func (h *Handler) addOrders(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"id":%d}`, id)
 }
 
-func (h *Handler) getOrders(w http.ResponseWriter, r *http.Request) {
-	s, _ := h.auth(r)
+func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	s, err := h.auth(r)
+	if err != nil {
+		h.handleError(w, err, http.StatusUnauthorized)
+		return
+	}
 	orders, err := getOrdersByUserID(h.db, s.User.ID)
 	if err != nil {
 		h.handleError(w, err, http.StatusInternalServerError)
@@ -451,10 +426,14 @@ func (h *Handler) getOrders(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(orders)
 }
 
-func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
-	s, _ := h.auth(r)
+func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	s, err := h.auth(r)
+	if err != nil {
+		h.handleError(w, err, http.StatusUnauthorized)
+		return
+	}
 	var id int64
-	err := txScorp(h.db, func(tx *sql.Tx) error {
+	err = txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
 		}
@@ -462,7 +441,7 @@ func (h *Handler) deleteOrders(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return errors.Wrap(err, "newLogger failed")
 		}
-		_id := r.URL.Query().Get("id")
+		_id := p.ByName("id")
 		if _id == "" {
 			return errcodeWrap(errors.Errorf("id is required"), 400)
 		}
