@@ -195,6 +195,11 @@ paths:
               highest_buy_price:
                 type: integer
                 description: 現在の最高買い注文単価
+              traded_orders:
+                type: array 
+                description: 取引成立した注文
+                items:
+                  $ref: "#/definitions/Order"
               chart_by_sec:
                 description: 秒単位のロウソクチャート用の取引データ
                 type: array

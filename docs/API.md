@@ -138,16 +138,15 @@
 #### `GET /info`
 
 - request: 
-    - last_trade_id: 最後に取得したtrade_id
+    - cursor: 全リクエストでのcursor
 
 - response: application/json
+    - cursor: 次のリクエストに渡すcursor
     - traded_orders: トレードの成立した注文
         - [$order]
-    - trades: # last_trade_id より新しいtradeを返す
-        - id         : $trade_id
-        - amount     : $amount (取引脚数)
-        - price      : $price (取引価格)
-        - created_at : $created_at (成立時間)
+    - chart_by_sec: ロウソクチャート用の単位秒取引結果
+    - chart_by_min: ロウソクチャート用の単位分取引結果
+    - chart_by_hour: ロウソクチャート用の単位時間取引結果
     - lowest_sell_price: $price
     - highest_buy_price: $price
 
