@@ -172,7 +172,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 	// bankIDの検証
 	if err = isubank.Check(bankID, 0); err != nil {
-		h.handleError(w, err, http.StatusBadRequest)
+		h.handleError(w, err, http.StatusNotFound)
 		return
 	}
 	pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

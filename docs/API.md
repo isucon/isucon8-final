@@ -92,10 +92,7 @@
     - 処理後にマッチングをする
     - 直後にGET /ordersを叩く
 
-#### `DELETE /orders`
-
-- request: application/form-url-encoded
-    - id: $order.id
+#### `DELETE /order/{id}`
 
 - response: application/json
     - status: 200

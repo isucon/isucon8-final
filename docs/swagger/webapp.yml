@@ -1,0 +1,447 @@
+swagger: "2.0"
+info:
+  description: |
+    世界最大の仮想椅子取引所「ISUCOIN」のAPIドキュメント
+  version: "1.0.0"
+  title: "ISUCOIN API"
+
+tags:
+- name: "user"
+  description: "ユーザー操作"
+- name: "order"
+  description: "注文に関するオペレーション"
+- name: "info"
+  description: "画面表示用"
+- name: "bench"
+  description: "ベンチマーカー用"
+
+paths:
+  /initialize:
+    post:
+      tags:
+      - "bench"
+      summary: "初期化"
+      description: |
+        ベンチマークの初期化時に一度だけ外部APIに必要な情報をPOSTします
+        このAPIは10秒以内にレスポンスを返す必要があります
+      operationId: "Initialize"
+
+      parameters:
+      - name: "bank_endpoint"
+        in: formData
+        description: ISUBANK API エンドポイント
+        required: true
+        type: string
+        example: http://isubank.example.com/api/
+      - name: "bank_appid"
+        in: formData
+        description: ISUBANK アプリケーションID
+        required: true
+        type: string
+        example: isubankapp123 
+      - name: "log_endpoint"
+        in: formData
+        description: ISU Logger API エンドポイント
+        required: true
+        type: string
+        example: http://logger.example.com/endpoint/
+      - name: "log_appid"
+        in: formData
+        description: ISU Logger アプリケーションID
+        required: true
+        type: string
+        example: logger123 
+
+      produces:
+        - "text/plain"
+      responses:
+        200:
+          description: "ok"
+        500:
+          description: "Internal Server Error"
+
+  /signup:
+    post:
+      tags:
+      - "user"
+      summary: "ユーザー登録"
+      description: |
+        isubankidを用いて登録をします
+        ISUBANK API の Check を用いてisubankidの存在チェックを行うことができます
+      operationId: "Singup"
+
+      parameters:
+      - in: formData
+        name: "name"
+        description: "ISUCOIN上で利用するユーザー名"
+        required: true
+        type: string
+        example: 鈴木 明
+      - in: formData
+        name: bank_id
+        description: |
+          ISUBANK ID
+          ユニークである必要があります
+        required: true
+        type: string
+        example: isubankuser123
+      - in: formData
+        name: password 
+        description: Password
+        required: true
+        type: string
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "ok"
+        400:
+          description: "Invalid parameters"
+        404:
+          description: "bank id not found"
+        409:
+          description: "bank_id conflict"
+      x-logs:
+        on_success:
+          tag: signup
+          parameters:
+            - name: "name"
+              description: name
+              schema:
+                type: string
+            - name: "bank_id"
+              description: ISUBANKID
+              schema:
+                type: string
+            - name: "user_id"
+              description: 登録したISUCOIN上でのuser_id
+              schema:
+                type: integer
+  /signin:
+    post:
+      tags:
+      - "user"
+      summary: "ログイン"
+      description: |
+        isubankidを用いてログインします
+      operationId: "Singin"
+
+      parameters:
+      - in: formData
+        name: bank_id
+        description: |
+          ISUBANK ID
+          ユニークである必要があります
+        required: true
+        type: string
+        example: isubankuser123
+      - in: formData
+        name: password 
+        description: Password
+        required: true
+        type: string
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "ok"
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        400:
+          description: "Invalid parameters"
+        404:
+          description: "bank id or password not match"
+      x-logs:
+        on_success:
+          tag: signin
+          parameters:
+            - name: "user_id"
+              schema:
+                type: integer
+
+  /info:
+    get:
+      tags:
+      - "info"
+      summary: "ページ情報取得"
+      description: |
+        クライアントはこのAPIをポーリングして情報を取得します
+      operationId: "getInfo"
+
+      parameters:
+      - in: query
+        name: cursor
+        description: 前回リクエスト時に返却されたcursorを指定
+        type: integer
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: ok
+          schema:
+            type: object
+            properties:
+              cursor:
+                type: integer
+                description: 次アクセス時にcursorに指定する値
+              lowest_sell_price:
+                type: integer
+                description: 現在の最低売り注文単価
+              highest_buy_price:
+                type: integer
+                description: 現在の最高買い注文単価
+              chart_by_sec:
+                description: 秒単位のロウソクチャート用の取引データ
+                type: array
+                items:
+                  $ref: "#/definitions/CandlestickData"
+              chart_by_min:
+                description: 分単位のロウソクチャート用の取引データ
+                type: array
+                items:
+                  $ref: "#/definitions/CandlestickData"
+              chart_by_hour:
+                description: 時間単位のロウソクチャート用の取引データ
+                type: array
+                items:
+                  $ref: "#/definitions/CandlestickData"
+        401:
+          description: "Unauthorized"
+
+  /orders:
+    get:
+      tags:
+      - "order"
+      summary: "自分の注文履歴"
+      description: |
+        自分が行ったすべての注文履歴を取得します
+        注文履歴には成立した注文は含まれますが、キャンセルした注文は含まれません
+      operationId: "getOrders"
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "自分の注文リスト"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/Order"
+        401:
+          description: "Unauthorized"
+
+    post:
+      tags:
+      - "order"
+      summary: "注文"
+      description: |
+        新規に注文を行います
+        買い注文を行う場合、ISUBANKの口座に注文金額に対して残高が不足している場合はエラーとなります
+      operationId: "addOrders"
+
+      parameters:
+      - in: formData
+        name: type 
+        description: |
+          注文種別
+          売り注文の場合=sell
+          買い注文=buy
+        required: true
+        type: string
+        enum: ['buy', 'sell']
+        example: isubankuser123
+      - in: formData
+        name: amount
+        description: 注文脚数
+        required: true
+        type: integer
+        minimum: 1
+      - in: formData
+        name: price
+        description: |
+          1脚あたりの単価
+          ISUCOINでは指値注文のみに対応しています。
+          したがって、売り注文の場合は最低単価、買い注文の場合は最高単価となります
+        required: true
+        type: integer
+        minimum: 1
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "自分の注文リスト"
+          schema:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                description: 注文番号
+        400:
+          description: "Invalid parameters or Credit Insufficient"
+        401:
+          description: "Unauthorized"
+
+      x-logs:
+        on_success__buy:
+          description: 買い注文成功時
+          tag: buy.order
+          schema:
+            $ref: "#/definitions/OrderLog"
+        on_success__sell:
+          description: 売り注文成功時
+          tag: sell.order
+          schema:
+            $ref: "#/definitions/OrderLog"
+        on_error__insuffisient:
+          description: 残高不足によるエラー時
+          tag: buy.error
+          parameters:
+            error:
+              type: string
+            user_id:
+              type: integer
+            amount:
+              type: integer
+            price:
+              type: integer
+
+  /order/{id}:
+    delete:
+      tags:
+      - "order"
+      summary: "注文のキャンセル"
+      description: |
+        注文をキャンセルします
+      operationId: "deleteOrders"
+
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "キャンセル成功した注文ID"
+          schema:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                description: 注文番号
+        400:
+          description: "Unauthorized"
+        404:
+          description: "No Order or already closed"
+
+      x-logs:
+        on_success__buy:
+          description: 買い注文キャンセル時
+          tag: buy.delete
+          parameters:
+            order_id:
+              type: integer
+            reason:
+              type: string
+              value: canceled
+        on_success__sell:
+          description: 売り注文キャンセル時
+          tag: sell.delete
+          parameters:
+            order_id:
+              type: integer
+            reason:
+              type: string
+              value: canceled
+
+definitions:
+  User:
+    type: object
+    properties:
+      id:
+        type: integer
+        description: ISUCOINアプリケーションで払い出したユーザーの一意なID
+      name:
+        type: string
+
+  Trade:
+    type: object
+    properties:
+      id:
+        type: integer
+        description: 成立した取引ごとにユニークなID
+      amount:
+        type: integer
+        description: 取引した総脚数
+      price:
+        type: integer
+        description: 1脚あたりの成立した単価
+      created_at:
+        type: string
+        format: date-time
+        description: 取引成立時間
+
+  Order:
+    type: "object"
+    properties:
+      id:
+        type: integer
+        description: 一意な注文番号
+      type:
+        type: string
+        enum: ['sell', 'buy']
+        description: |
+          sell=売却
+          buy=購入
+      user_id:
+        type: integer
+      amount:
+        type: integer
+        description: 注文脚数
+      price:
+        type: integer
+        description: 1脚あたりの注文単価
+      created_at:
+        type: string
+        format: date-time
+        description: 注文時間
+      user:
+        $ref: "#/definitions/User"
+        description: 注文者情報
+      trade:
+        $ref: "#/definitions/Trade"
+        description: 取引が成立した場合設定される
+
+  CandlestickData:
+    type: object
+    properties:
+      time:
+        type: string
+        format: date-time
+      open:
+        type: integer
+        description: 初値
+      close:
+        type: integer
+        description: 終値
+      high:
+        type: integer
+        description: 高値
+      low:
+        type: integer
+        description: 安値
+  OrderLog:
+    type: "object"
+    properties:
+      order_id:
+        type: integer
+      user_id:
+        type: integer
+      amount:
+        type: integer
+      price:
+        type: integer
