@@ -48,6 +48,14 @@ type Order struct {
 	Trade     *Trade     `json:"trade,omitempty"`
 }
 
+type CandlestickData struct {
+	Time  time.Time `json:"time"`
+	Open  int64     `json:"open"`
+	Close int64     `json:"close"`
+	High  int64     `json:"high"`
+	Low   int64     `json:"low"`
+}
+
 type Session struct {
 	User *User
 }
@@ -257,59 +265,99 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.P
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	s, _ := h.auth(r)
-	var lastTradeID int64
-	if _lastInsertID := r.URL.Query().Get("last_trade_id"); _lastInsertID != "" {
-		var err error
-		lastTradeID, err = strconv.ParseInt(_lastInsertID, 10, 64)
+	var (
+		err         error
+		lastTradeID int64
+		lt          = time.Unix(0, 0)
+		res         = make(map[string]interface{}, 10)
+	)
+	if _cursor := r.URL.Query().Get("cursor"); _cursor != "" {
+		lastTradeID, err = strconv.ParseInt(_cursor, 10, 64)
 		if err != nil {
-			h.handleError(w, errors.Wrap(err, "last_trade_id parse failed"), http.StatusBadRequest)
+			h.handleError(w, errors.Wrap(err, "cursor parse failed"), http.StatusBadRequest)
 			return
 		}
+		trade, err := getTradeByID(h.db, lastTradeID)
+		if err != nil && err != sql.ErrNoRows {
+			h.handleError(w, errors.Wrap(err, "getTradeByID failed"), http.StatusInternalServerError)
+			return
+		}
+		if trade != nil {
+			lt = trade.CreatedAt
+		}
 	}
+	res["cursor"] = lastTradeID
 	trades, err := getTrades(h.db, lastTradeID)
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "getTrades failed"), http.StatusInternalServerError)
 		return
 	}
-	lowestSellOrder, err := getLowestSellOrder(h.db)
-	switch {
-	case err == sql.ErrNoRows:
-		lowestSellOrder = &Order{Price: 0}
-	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), http.StatusInternalServerError)
-		return
-	}
-	highestBuyOrder, err := getHighestBuyOrder(h.db)
-	switch {
-	case err == sql.ErrNoRows:
-		highestBuyOrder = &Order{Price: 0}
-	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), http.StatusInternalServerError)
-		return
-	}
-	res := map[string]interface{}{
-		"trades":            trades,
-		"lowest_sell_price": lowestSellOrder.Price,
-		"highest_buy_price": highestBuyOrder.Price,
-	}
-	if s != nil {
-		tradeIDs := make([]int64, len(trades))
-		for i, trade := range trades {
-			tradeIDs[i] = trade.ID
-		}
-		orders, err := getOrdersByUserIDAndTradeIds(h.db, s.User.ID, tradeIDs)
-		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
-			return
-		}
-		for _, order := range orders {
-			if err = fetchOrderRelation(h.db, order); err != nil {
+	if l := len(trades); l > 0 {
+		res["cursor"] = trades[l-1].ID
+		if s != nil {
+			tradeIDs := make([]int64, len(trades))
+			for i, trade := range trades {
+				tradeIDs[i] = trade.ID
+			}
+			orders, err := getOrdersByUserIDAndTradeIds(h.db, s.User.ID, tradeIDs)
+			if err != nil {
 				h.handleError(w, err, http.StatusInternalServerError)
 				return
 			}
+			for _, order := range orders {
+				if err = fetchOrderRelation(h.db, order); err != nil {
+					h.handleError(w, err, http.StatusInternalServerError)
+					return
+				}
+			}
+			res["traded_orders"] = orders
 		}
-		res["traded_orders"] = orders
 	}
+
+	bySecTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
+	chartBySec, err := getCandlestickData(h.db, bySecTime, "%Y-%m-%d %H:%i:%s")
+	if err != nil {
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by sec"), http.StatusInternalServerError)
+		return
+	}
+	res["chart_by_sec"] = chartBySec
+
+	byMinTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
+	chartByMin, err := getCandlestickData(h.db, byMinTime, "%Y-%m-%d %H:%i:00")
+	if err != nil {
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by min"), http.StatusInternalServerError)
+		return
+	}
+	res["chart_by_min"] = chartByMin
+
+	byHourTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
+	chartByHour, err := getCandlestickData(h.db, byHourTime, "%Y-%m-%d %H:00:00")
+	if err != nil {
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by hour"), http.StatusInternalServerError)
+		return
+	}
+	res["chart_by_hour"] = chartByHour
+
+	lowestSellOrder, err := getLowestSellOrder(h.db)
+	switch {
+	case err == sql.ErrNoRows:
+	case err != nil:
+		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), http.StatusInternalServerError)
+		return
+	default:
+		res["lowest_sell_price"] = lowestSellOrder.Price
+	}
+
+	highestBuyOrder, err := getHighestBuyOrder(h.db)
+	switch {
+	case err == sql.ErrNoRows:
+	case err != nil:
+		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), http.StatusInternalServerError)
+		return
+	default:
+		res["highest_buy_price"] = highestBuyOrder.Price
+	}
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(res)
 }
@@ -683,6 +731,43 @@ func getTrades(d QueryExecuter, lastID int64) ([]*Trade, error) {
 		return nil, errors.Wrapf(err, "rows.Err failed.")
 	}
 	return trades, nil
+}
+
+func getCandlestickData(d QueryExecuter, mt time.Time, tf string) ([]CandlestickData, error) {
+	query := fmt.Sprintf(`
+		SELECT m.t, a.price, b.price, m.h, m.l
+		FROM (
+			SELECT
+				STR_TO_DATE(DATE_FORMAT(created_at, '%s'), '%s') AS t,
+				MIN(id) AS min_id,
+				MAX(id) AS max_id,
+				MAX(price) AS h,
+				MIN(price) AS l
+			FROM trade
+			WHERE created_at >= ?
+			GROUP BY t
+		) m
+		JOIN trade a ON a.id = m.min_id
+		JOIN trade b ON b.id = m.max_id
+		ORDER BY m.t
+	`, tf, "%Y-%m-%d %H:%i:%s")
+	rows, err := d.Query(query, mt)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Query failed. query:%s, starttime:%s", query, mt)
+	}
+	defer rows.Close()
+	datas := []CandlestickData{}
+	for rows.Next() {
+		var cd CandlestickData
+		if err = rows.Scan(&cd.Time, &cd.Open, &cd.Close, &cd.High, &cd.Low); err != nil {
+			return nil, errors.Wrapf(err, "Scan failed.")
+		}
+		datas = append(datas, cd)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, errors.Wrapf(err, "rows.Err failed.")
+	}
+	return datas, nil
 }
 
 func queryInt64(d QueryExecuter, q string, args ...interface{}) ([]int64, error) {

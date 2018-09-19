@@ -35,46 +35,42 @@ type Investor interface {
 }
 
 type investorBase struct {
-	c               *Client
-	defcredit       int64
-	credit          int64
-	resvedCredit    int64
-	defisu          int64
-	isu             int64
-	resvedIsu       int64
-	orders          []*Order
-	latestTrades    []*Trade
-	lowestSellPrice int64
-	highestBuyPrice int64
-	isSignin        bool
-	isStarted       bool
-	lastID          int64
-	nextCheck       time.Time
-	lastOrder       time.Time
-	mux             sync.Mutex
-	taskLock        sync.Mutex
-	taskStack       []Task
-	timeoutCount    int
+	c                *Client
+	defcredit        int64
+	credit           int64
+	resvedCredit     int64
+	defisu           int64
+	isu              int64
+	resvedIsu        int64
+	orders           []*Order
+	lowestSellPrice  int64
+	highestBuyPrice  int64
+	isSignin         bool
+	isStarted        bool
+	lastCursor       int64
+	nextCheck        time.Time
+	lastOrder        time.Time
+	mux              sync.Mutex
+	taskLock         sync.Mutex
+	taskStack        []Task
+	timeoutCount     int
+	latestTradePrice int64
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
 	return &investorBase{
-		c:            c,
-		defcredit:    credit,
-		credit:       credit,
-		defisu:       isu,
-		isu:          isu,
-		orders:       make([]*Order, 0, OrderCap),
-		latestTrades: make([]*Trade, 0, TradeHistrySize),
-		taskStack:    make([]Task, 0, 5),
+		c:         c,
+		defcredit: credit,
+		credit:    credit,
+		defisu:    isu,
+		isu:       isu,
+		orders:    make([]*Order, 0, OrderCap),
+		taskStack: make([]Task, 0, 5),
 	}
 }
 
 func (i *investorBase) LatestTradePrice() int64 {
-	if len(i.latestTrades) == 0 {
-		return 0
-	}
-	return i.latestTrades[0].Price
+	return i.latestTradePrice
 }
 
 func (i *investorBase) pushNextTask(task Task) {
@@ -177,27 +173,19 @@ func (i *investorBase) Info() Task {
 			//log.Printf("[INFO] skip info() next: %s now: %s", i.nextCheck, now)
 			return 0, nil
 		}
-		info, err := i.c.Info(i.lastID)
+		info, err := i.c.Info(i.lastCursor)
 		if err != nil {
 			return 0, err
 		}
 		i.nextCheck = time.Now().Add(PollingInterval)
 		var score int64 = GetInfoScore
-		if i.lastID == 0 {
-			i.latestTrades = i.latestTrades[:0]
-		}
-		for _, trade := range info.Trades {
-			if trade.ID < i.lastID {
-				return score, errors.Errorf("trades sort is broken? lastID:%d, tradeID:%d, trades:%#v", i.lastID, trade.ID, info.Trades)
-			}
-			if len(i.latestTrades) == cap(i.latestTrades) {
-				i.latestTrades = i.latestTrades[1:]
-			}
-			i.latestTrades = append(i.latestTrades, &trade)
-			i.lastID = trade.ID
-		}
+		// TODO CandlestickData のチェック
 		i.lowestSellPrice = info.LowestSellPrice
 		i.highestBuyPrice = info.HighestBuyPrice
+		i.lastCursor = info.Cursor
+		if l := len(info.ChartByHour); l > 0 {
+			i.latestTradePrice = info.ChartByHour[l-1].Close
+		}
 
 		for _, order := range info.TradedOrders {
 			o := i.removeOrder(order.ID)

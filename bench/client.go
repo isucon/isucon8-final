@@ -91,11 +91,22 @@ type Order struct {
 	Trade     *Trade     `json:"trade,omitempty"`
 }
 
+type CandlestickData struct {
+	Time  time.Time `json:"time"`
+	Open  int64     `json:"open"`
+	Close int64     `json:"close"`
+	High  int64     `json:"high"`
+	Low   int64     `json:"low"`
+}
+
 type InfoResponse struct {
-	TradedOrders    []Order `json:"traded_orders"`
-	Trades          []Trade `json:"trades"`
-	LowestSellPrice int64   `json:"lowest_sell_price"`
-	HighestBuyPrice int64   `json:"highest_buy_price"`
+	Cursor          int64             `json:"cursor"`
+	TradedOrders    []Order           `json:"traded_orders"`
+	LowestSellPrice int64             `json:"lowest_sell_price"`
+	HighestBuyPrice int64             `json:"highest_buy_price"`
+	ChartBySec      []CandlestickData `json:"chart_by_sec"`
+	ChartByMin      []CandlestickData `json:"chart_by_min"`
+	ChartByHour     []CandlestickData `json:"chart_by_hour"`
 }
 
 type OrderActionResponse struct {
@@ -292,10 +303,10 @@ func (c *Client) Top() error {
 	return errorWithStatus(errors.Errorf("GET / failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Info(lastID int64) (*InfoResponse, error) {
+func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	path := "/info"
 	v := url.Values{}
-	v.Set("last_trade_id", strconv.FormatInt(lastID, 10))
+	v.Set("cursor", strconv.FormatInt(cursor, 10))
 	res, err := c.get(path, v)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
