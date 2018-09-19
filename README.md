@@ -3,7 +3,21 @@
 #### 起動方法
 
     cd webapp
-    docker-compose up [-d] go
+    docker-compose up [-d] isucoin-go
+
+### mockserviceの利用
+
+blackbox APIを利用するためmockserverを利用する方法です。
+
+※ 尚、本番では初期状態でローカルに立てているmockserverを使うようにしたい
+
+上記のdocker-composeでappを起動している場合mockserviceは一緒に起動しますが `/initialize` でmockserviceを使うように指定する必要があります。
+
+    curl http://127.0.0.1:12510/initialize \
+        -d bank_endpoint=http://mockservice:14809 \
+        -d bank_appid=mockbank \
+        -d log_endpoint=http://mockservice:14690 \
+        -log_appid=mocklog
 
 ## blackbox
 
@@ -19,4 +33,8 @@ benchマーカーと対になるように用意したい
 
 ## bench
 
-    go run ./bench/cmd/bench/main.go -appep=http://127.0.0.1:12510 -bankep=http://172.17.0.1:5515 -logep=http://172.17.0.1:5516 -internalbank=http://127.0.0.1:5515
+    go run ./bench/cmd/bench/main.go \
+        -appep=http://127.0.0.1:12510 \
+        -bankep=http://172.17.0.1:5515 \
+        -logep=http://172.17.0.1:5516 \
+        -internalbank=http://127.0.0.1:5515
