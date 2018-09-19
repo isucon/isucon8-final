@@ -67,6 +67,7 @@ func NewServer(db *sql.DB) http.Handler {
 	h := &Handler{db}
 	server.HandleFunc("/register", h.Register)
 	server.HandleFunc("/add_credit", h.AddCredit)
+	server.HandleFunc("/credit", h.GetCredit)
 	server.HandleFunc("/check", sleepHandle(h.Check, 50*time.Millisecond))
 	server.HandleFunc("/reserve", sleepHandle(h.Reserve, 70*time.Millisecond))
 	server.HandleFunc("/commit", sleepHandle(h.Commit, 300*time.Millisecond))
@@ -205,6 +206,23 @@ func (s *Handler) AddCredit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Success(w)
+}
+
+// GetCredit は Get /credit を処理
+// ユーザーの残高をこっそり確認できます
+func (s *Handler) GetCredit(w http.ResponseWriter, r *http.Request) {
+	bankID := r.URL.Query().Get("bank_id")
+	userID := s.filterBankID(w, bankID)
+	if userID <= 0 {
+		return
+	}
+	var credit int64
+	if err := s.db.QueryRow(`SELECT credit FROM user WHERE id = ? LIMIT 1`, userID).Scan(&credit); err != nil {
+		Error(w, fmt.Sprintf("select credit failed. err:%s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintln(w, fmt.Sprintf(`{"credit":%d}`, credit))
 }
 
 // Check は POST /check を処理

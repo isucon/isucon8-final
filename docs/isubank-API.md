@@ -47,8 +47,8 @@ reserveの有効期限は1分間
 - request: application/json
     - bank_id
     - price
-        - >0 の場合は振込
-        - <0 の場合は引き落とし
+        - `>0` の場合は振込
+        - `<0` の場合は引き落とし
 - response: application/json
     - status: 200
         - reserve_id: bigint
@@ -88,3 +88,27 @@ reserve APIで予約した決済を取り消します
         - error: app_id not found
     - status: 404
         - error: reserve_id not found
+
+### `POST /register` (secret API)
+
+*ユーザー登録API*
+
+- request: application/json
+    - bank_id
+
+### `POST /add_credit` (secret API)
+
+*入金API*
+
+- request: application/json
+    - bank_id
+    - price
+
+### `GET /credit` (secret API)
+
+*残高API*
+
+- request: query
+    - bank_id
+- response: application/json
+    - credit
