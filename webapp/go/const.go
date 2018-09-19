@@ -1,7 +1,6 @@
 package main
 
 const (
-	MySQLDatetime = "2006-01-02 15:04:05"
 	SessionSecret = "tonymoris"
 	SessionName   = "isucoin_session"
 
@@ -10,5 +9,6 @@ const (
 	LogEndpoint  = "log_endpoint"
 	LogAppid     = "log_appid"
 
-	ListLimit = 1000
+	OrderTypeBuy  = "buy"
+	OrderTypeSell = "sell"
 )

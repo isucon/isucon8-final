@@ -18,10 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const (
-	OrderTypeBuy  = "buy"
-	OrderTypeSell = "sell"
-)
+// structs
 
 type User struct {
 	ID        int64     `json:"id"`
@@ -55,6 +52,14 @@ type Session struct {
 	User *User
 }
 
+// errors
+
+var (
+	errClosedOrder  = errors.New("closed order")
+	errNoOrder      = errors.New("no order")
+	errPriceUnmatch = errors.New("price unmatch")
+)
+
 type errWithCode struct {
 	StatusCode int
 	Err        error
@@ -78,12 +83,6 @@ func errcode(err string, code int) error {
 	return errcodeWrap(errors.New(err), code)
 }
 
-var (
-	errClosedOrder  = errors.New("closed order")
-	errNoOrder      = errors.New("no order")
-	errPriceUnmatch = errors.New("price unmatch")
-)
-
 func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler {
 
 	h := &Handler{
@@ -97,8 +96,8 @@ func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler 
 	router.POST("/signin", h.Signin)
 	router.POST("/signout", h.Signout)
 	router.GET("/info", h.Info)
-	router.GET("/orders", h.GetOrders)
 	router.POST("/orders", h.AddOrders)
+	router.GET("/orders", h.GetOrders)
 	router.DELETE("/order/:id", h.DeleteOrders)
 	router.NotFound = http.FileServer(http.Dir(publicdir))
 
@@ -251,7 +250,9 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.P
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/signin", http.StatusFound)
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintln(w, "{}")
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -529,6 +530,8 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 	http.Error(w, err.Error(), code)
 }
 
+// helpers
+
 func formvalInt64(r *http.Request, key string) (int64, error) {
 	v := r.FormValue(key)
 	if v == "" {
@@ -561,6 +564,8 @@ func txScorp(db *sql.DB, f func(*sql.Tx) error) (err error) {
 	err = f(tx)
 	return
 }
+
+// databases
 
 const (
 	userColumns   = "id,bank_id,name,password,created_at"
