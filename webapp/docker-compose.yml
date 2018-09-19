@@ -1,5 +1,16 @@
 version: '2'
 services:
+  mockservice:
+    image: golang:1.10
+    working_dir: /go/src/mockservice
+    volumes:
+      - gopath:/go
+      - ./mockservice:/go/src/mockservice
+    ports:
+      - "14690:14690"
+      - "14809:14809"
+    command: sh ./docker-run.sh
+
   isucoin-go:
     image: golang:1.10
     command: bash -c "go get ./... && go run main.go const.go handler.go isubank.go logger.go"
@@ -15,6 +26,7 @@ services:
       ISU_PUBLIC_DIR:  '/public'
     links:
       - mysql
+      - mockservice
     working_dir: /go/src/webapp
     volumes:
       - gopath:/go
