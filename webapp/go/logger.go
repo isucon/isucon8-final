@@ -14,18 +14,8 @@ import (
 
 type Log struct {
 	Tag  string      `json:"tag"`
-	Time int64       `json:"time"`
+	Time time.Time   `json:"time"`
 	Data interface{} `json:"data"`
-}
-
-type BulkLog struct {
-	AppID string `json:"app_id"`
-	Logs  []Log  `json:"logs"`
-}
-
-type SoloLog struct {
-	Log
-	AppID string `json:"app_id"`
 }
 
 type LogDataSignup struct {
@@ -88,15 +78,11 @@ func NewLogger(endpoint, appID string) (*Logger, error) {
 }
 
 func (b *Logger) Send(tag string, data interface{}) error {
-	v := SoloLog{
-		AppID: b.appID,
-		Log: Log{
-			Tag:  tag,
-			Time: time.Now().Unix(),
-			Data: data,
-		},
-	}
-	return b.request("/send", v)
+	return b.request("/send", Log{
+		Tag:  tag,
+		Time: time.Now(),
+		Data: data,
+	})
 }
 
 func (b *Logger) request(p string, v interface{}) error {
@@ -108,7 +94,15 @@ func (b *Logger) request(p string, v interface{}) error {
 	if err := json.NewEncoder(body).Encode(v); err != nil {
 		return errors.Wrap(err, "logger json encode failed")
 	}
-	res, err := http.Post(u.String(), "application/json", body)
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), body)
+	if err != nil {
+		return errors.Wrap(err, "logger new request failed")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "app_id "+b.appID)
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "logger request failed")
 	}

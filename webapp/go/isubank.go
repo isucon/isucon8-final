@@ -123,17 +123,23 @@ func (b *Isubank) Cancel(reserveIDs []int64) error {
 	return nil
 }
 
-func (b *Isubank) request(p string, v map[string]interface{}, r isubankResponse) error {
+func (b *Isubank) request(p string, v interface{}, r isubankResponse) error {
 	u := new(url.URL)
 	*u = *b.endpoint
 	u.Path = path.Join(u.Path, p)
 
-	v["app_id"] = b.appID
 	body := &bytes.Buffer{}
 	if err := json.NewEncoder(body).Encode(v); err != nil {
 		return errors.Wrap(err, "isubank json encode failed")
 	}
-	res, err := http.Post(u.String(), "application/json", body)
+	req, err := http.NewRequest(http.MethodPost, u.String(), body)
+	if err != nil {
+		return errors.Wrap(err, "isubank new request failed")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "app_id "+b.appID)
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "isubank request failed")
 	}

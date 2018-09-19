@@ -4,6 +4,17 @@
 
 ## End Points
 
+#### baseurl
+
+baseurlは各アプリケーションごとにユニークなURLを払い出す
+
+#### Authorization
+
+アプリケーションへの認証は Authorization にユニークなappidをしてする
+```
+Authorization: app_id APP_ID
+```
+
 ### `POST /check`
 
 *与信API*
@@ -12,7 +23,6 @@
 ※ ただし予約分を含みません
 
 - request: application/json
-    - app_id
     - bank_id
     - price
 - response: application/json
@@ -35,7 +45,6 @@ reserveの有効期限は1分間
 1分以内のcommitは保証されます
 
 - request: application/json
-    - app_id
     - bank_id
     - price
         - >0 の場合は振込
@@ -57,7 +66,6 @@ reserveの有効期限は1分間
 reserve APIで予約した決済を確定します
 
 - request: application/json
-    - app_id
     - reserve_ids
 - response: application/json
     - status: 200
@@ -73,7 +81,6 @@ reserve APIで予約した決済を確定します
 reserve APIで予約した決済を取り消します
 
 - request: application/json
-    - app_id
     - reserve_ids
 - response: application/json
     - status: 200

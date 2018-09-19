@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -19,6 +20,7 @@ const (
 	ResError     = `{"error":"%s"}`
 	LocationName = "Asia/Tokyo"
 	AxLog        = false
+	AppIDCtxKey  = "appid"
 )
 
 func main() {
@@ -59,23 +61,15 @@ func main() {
 	}
 }
 
-func NewServer(db *sql.DB) *http.ServeMux {
+func NewServer(db *sql.DB) http.Handler {
 	server := http.NewServeMux()
 
 	h := &Handler{db}
-
-	sleepHandle := func(f http.HandlerFunc, sleep time.Duration) http.HandlerFunc {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(sleep)
-			f.ServeHTTP(w, r)
-		})
-	}
-
 	server.HandleFunc("/register", h.Register)
 	server.HandleFunc("/add_credit", h.AddCredit)
 	server.HandleFunc("/check", sleepHandle(h.Check, 50*time.Millisecond))
 	server.HandleFunc("/reserve", sleepHandle(h.Reserve, 70*time.Millisecond))
-	server.HandleFunc("/commit", sleepHandle(h.Commit, 100*time.Millisecond))
+	server.HandleFunc("/commit", sleepHandle(h.Commit, 300*time.Millisecond))
 	server.HandleFunc("/cancel", sleepHandle(h.Cancel, 80*time.Millisecond))
 
 	// default 404
@@ -83,7 +77,41 @@ func NewServer(db *sql.DB) *http.ServeMux {
 		log.Printf("[INFO] request not found %s", r.URL.RawPath)
 		Error(w, "Not found", 404)
 	})
-	return server
+
+	return authHandler(server)
+}
+
+func authHandler(f http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		as := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+		if len(as) == 2 {
+			switch as[0] {
+			case "app_id":
+				ctx = context.WithValue(ctx, AppIDCtxKey, as[1])
+			}
+		}
+		f.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func sleepHandle(f http.HandlerFunc, sleep time.Duration) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(sleep)
+		f.ServeHTTP(w, r)
+	})
+}
+
+func appID(r *http.Request) (string, error) {
+	v := r.Context().Value(AppIDCtxKey)
+	if v == nil {
+		return "", errors.Errorf("Authorization failed (no header)")
+	}
+	id, ok := v.(string)
+	if !ok {
+		return "", errors.Errorf("Authorization failed (cast appid)")
+	}
+	return id, nil
 }
 
 var (
@@ -186,8 +214,12 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	_, err := appID(r)
+	if err != nil {
+		Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	type ReqPram struct {
-		AppID  string `json:"app_id"`
 		BankID string `json:"bank_id"`
 		Price  int64  `json:"price"`
 	}
@@ -208,7 +240,7 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Success(w)
 		return
 	}
-	err := s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScorp(func(tx *sql.Tx) error {
 		var credit int64
 		if err := tx.QueryRow(`SELECT credit FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID).Scan(&credit); err != nil {
 			return errors.Wrap(err, "select credit failed")
@@ -236,8 +268,12 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	appid, err := appID(r)
+	if err != nil {
+		Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	type ReqPram struct {
-		AppID  string `json:"app_id"`
 		BankID string `json:"bank_id"`
 		Price  int64  `json:"price"`
 	}
@@ -256,8 +292,8 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 	}
 	var rsvID int64
 	price := req.Price
-	memo := fmt.Sprintf("app:%s, price:%d", req.AppID, req.Price)
-	err := s.txScorp(func(tx *sql.Tx) error {
+	memo := fmt.Sprintf("app:%s, price:%d", appid, req.Price)
+	err = s.txScorp(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
 			return errors.Wrap(err, "select lock failed")
 		}
@@ -304,8 +340,12 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	_, err := appID(r)
+	if err != nil {
+		Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	type ReqPram struct {
-		AppID      string  `json:"app_id"`
 		ReserveIDs []int64 `json:"reserve_ids"`
 	}
 	req := &ReqPram{}
@@ -317,7 +357,7 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	err := s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScorp(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
 		rids := make([]interface{}, l)
@@ -403,8 +443,12 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	_, err := appID(r)
+	if err != nil {
+		Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	type ReqPram struct {
-		AppID      string  `json:"app_id"`
 		ReserveIDs []int64 `json:"reserve_ids"`
 	}
 	req := &ReqPram{}
@@ -416,7 +460,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	err := s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScorp(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
 		rids := make([]interface{}, l)

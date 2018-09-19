@@ -14,10 +14,20 @@
 
 ## End Points
 
+#### baseurl
+
+baseurlは各アプリケーションごとにユニークなURLを払い出す
+
+#### Authorization
+
+アプリケーションへの認証は Authorization にユニークなappidをしてする
+```
+Authorization: app_id APP_ID
+```
+
 ### `POST /send`
 
 - request: application/json
-    - app_id
     - tag
     - time
     - data 
@@ -32,8 +42,7 @@
 ### `POST /send_bulk`
 
 - request: application/json
-    - app_id
-    - logs
+    - array
         - tag
         - time
         - data
