@@ -53,3 +53,20 @@ Authorization: app_id APP_ID
     - status: 400
         - error: invalid data
 
+### `GET /logs` (secret API)
+
+- request: query
+    - app_id
+    - user_id
+    - trade_id
+
+- response:
+    - status: 200
+        - array
+            - tag
+            - time
+            - data
+    - status: 401
+        - error: app_id not found
+    - status: 400
+        - error: invalid data

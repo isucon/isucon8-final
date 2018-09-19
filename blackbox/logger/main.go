@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,7 @@ const (
 	MaxAppTime   = 1 * time.Second
 	WorkerPerApp = 2
 	LocationName = "Asia/Tokyo"
-	AxLog        = true
+	AxLog        = false
 	AppIDCtxKey  = "appid"
 )
 
@@ -78,6 +79,7 @@ func NewServer(db *sql.DB) http.Handler {
 
 	server.HandleFunc("/send", h.Send)
 	server.HandleFunc("/send_bulk", h.SendBulk)
+	server.HandleFunc("/logs", h.Logs)
 
 	// default 404
 	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +235,62 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 	} else {
 		Success(w)
 	}
+}
+
+func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
+	where := make([]string, 0, 3)
+	args := make([]interface{}, 0, 3)
+	appid := r.URL.Query().Get("app_id")
+	if appid == "" {
+		Error(w, "app_id required", http.StatusBadRequest)
+		return
+	}
+	where = append(where, "app_id = ?")
+	args = append(args, appid)
+
+	if _userid := r.URL.Query().Get("user_id"); _userid != "" {
+		userid, err := strconv.ParseInt(_userid, 10, 64)
+		if err != nil {
+			Error(w, "parse user_id failed", http.StatusBadRequest)
+			return
+		}
+		where = append(where, "user_id = ?")
+		args = append(args, userid)
+	}
+	if _tradeid := r.URL.Query().Get("trade_id"); _tradeid != "" {
+		tradeid, err := strconv.ParseInt(_tradeid, 10, 64)
+		if err != nil {
+			Error(w, "parse trade_id failed", http.StatusBadRequest)
+			return
+		}
+		where = append(where, "trade_id = ?")
+		args = append(args, tradeid)
+	}
+	query := fmt.Sprintf(`SELECT tag, time, data FROM log WHERE %s ORDER BY time ASC`, strings.Join(where, " AND "))
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		Error(w, fmt.Sprintf("select log failed. err:%s", err), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	logs := []Log{}
+	for rows.Next() {
+		var l Log
+		if err := rows.Scan(&l.Tag, &l.Time, &l.Data); err != nil {
+			Error(w, fmt.Sprintf("scan error. err:%s", err), http.StatusInternalServerError)
+			return
+		}
+		logs = append(logs, l)
+	}
+
+	if err = rows.Err(); err != nil {
+		Error(w, fmt.Sprintf("rows error. err:%s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(logs)
 }
 
 func (s *Handler) putLog(l Log, appID string) error {
