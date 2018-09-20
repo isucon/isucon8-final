@@ -7,12 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -21,10 +19,6 @@ import (
 
 const (
 	MaxBodySize  = 1024 * 1024 // 1MB
-	RTT          = 100 * time.Millisecond
-	MinAppTime   = 20 * time.Millisecond
-	MaxAppTime   = 1 * time.Second
-	WorkerPerApp = 2
 	LocationName = "Asia/Tokyo"
 	AxLog        = false
 	AppIDCtxKey  = "appid"
@@ -87,10 +81,7 @@ func NewServer(db *sql.DB) http.Handler {
 		Error(w, "Not found", 404)
 	})
 	s := authHandler(server)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(RTT)
-		s.ServeHTTP(w, r)
-	})
+	return http.HandlerFunc(s.ServeHTTP)
 }
 
 func authHandler(f http.Handler) http.Handler {
@@ -157,31 +148,6 @@ type Handler struct {
 	mux     sync.Mutex
 }
 
-func (s *Handler) lock(appid string) func() {
-	func() {
-		s.mux.Lock()
-		defer s.mux.Unlock()
-		if _, ok := s.guard[appid]; !ok {
-			s.guard[appid] = make(chan struct{}, WorkerPerApp)
-		}
-		if _, ok := s.waiting[appid]; !ok {
-			var i int64
-			s.waiting[appid] = &i
-		}
-	}()
-	w := atomic.AddInt64(s.waiting[appid], 1)
-	s.guard[appid] <- struct{}{}
-	return func() {
-		wt := time.Duration(int64(math.Floor(math.Pow(2.0, float64(w)/2.0)*2.0))) + MinAppTime
-		if wt > MaxAppTime {
-			wt = MaxAppTime
-		}
-		time.Sleep(wt)
-		atomic.AddInt64(s.waiting[appid], -1)
-		<-s.guard[appid]
-	}
-}
-
 func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	appid, err := appID(r)
 	if err != nil {
@@ -193,8 +159,6 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	unlock := s.lock(appid)
-	defer unlock()
 	if err = s.putLog(l, appid); err != nil {
 		if _, ok := err.(*badRequestErr); ok {
 			Error(w, err.Error(), http.StatusBadRequest)
@@ -218,8 +182,6 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	unlock := s.lock(appid)
-	defer unlock()
 	errors := make([]error, 0, len(logs))
 	for _, l := range logs {
 		err := s.putLog(l, appid)
