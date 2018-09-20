@@ -27,7 +27,7 @@ services:
 
   logger:
     image: golang:1.10
-    command: bash -c "go get ./... && go run main.go -port=5516 -dbhost=mysql -dbuser=root -dbpass=root"
+    command: bash -c "go get ./... && go run main.go -port=5516"
     links:
       - mysql
     working_dir: /go/src/logger

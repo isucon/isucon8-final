@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 )
 
@@ -23,7 +22,7 @@ const (
 	AxLog                  = false
 	AppIDCtxKey            = "appid"
 	initialStorageCapacity = 100000
-	sendDelay              = 10 * time.Millisecond
+	sendDelay              = 100 * time.Millisecond
 )
 
 var logStorage = NewStorage()
@@ -31,28 +30,13 @@ var mu sync.Mutex
 
 func main() {
 	var (
-		port   = flag.Int("port", 5516, "log app ranning port")
-		dbhost = flag.String("dbhost", "127.0.0.1", "database host")
-		dbport = flag.Int("dbport", 3306, "database port")
-		dbuser = flag.String("dbuser", "root", "database user")
-		dbpass = flag.String("dbpass", "", "database pass")
-		dbname = flag.String("dbname", "isulog", "database name")
+		port = flag.Int("port", 5516, "log app ranning port")
 	)
 
 	flag.Parse()
 
 	addr := fmt.Sprintf(":%d", *port)
-	dbup := *dbuser
-	if *dbpass != "" {
-		dbup += ":" + *dbpass
-	}
-
-	dsn := fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&loc=Local&charset=utf8mb4", dbup, *dbhost, *dbport, *dbname)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		log.Fatalf("mysql connect failed. err: %s", err)
-	}
-	server := NewServer(db)
+	server := NewServer()
 
 	log.Printf("[INFO] start server %s", addr)
 	if AxLog {
@@ -67,11 +51,10 @@ func main() {
 	}
 }
 
-func NewServer(db *sql.DB) http.Handler {
+func NewServer() http.Handler {
 	server := http.NewServeMux()
 
 	h := &Handler{
-		db:      db,
 		guard:   make(map[string]chan struct{}, 1000),
 		waiting: make(map[string]*int64, 1000),
 	}
@@ -129,6 +112,7 @@ func (e *badRequestErr) Error() string {
 }
 
 func Error(w http.ResponseWriter, err string, code int) {
+	log.Println(code, err)
 	http.Error(w, err, code)
 }
 
@@ -137,14 +121,9 @@ func Success(w http.ResponseWriter) {
 }
 
 type Log struct {
-	Tag  string    `json:"tag"`
-	Time time.Time `json:"time"`
-	Data LogData   `json:"data"`
-}
-
-type LogData struct {
-	UserID  int64 `json:"user_id"`
-	TradeID int64 `json:"trade_id"`
+	Tag  string                 `json:"tag"`
+	Time time.Time              `json:"time"`
+	Data map[string]interface{} `json:"data"`
 }
 
 type Handler struct {
@@ -184,12 +163,21 @@ func (s *Storage) Search(appid string, userid, tradeid int64) []Log {
 		return []Log{}
 	}
 	ret := make([]Log, 0, len(logs))
+LOGS:
 	for _, l := range logs {
-		if userid != 0 && userid != l.Data.UserID {
-			continue
+		if userid != 0 {
+			if v, ok := l.Data["user_id"].(float64); ok {
+				if float64(userid) != v {
+					continue LOGS
+				}
+			}
 		}
-		if tradeid != 0 && tradeid != l.Data.TradeID {
-			continue
+		if tradeid != 0 {
+			if v, ok := l.Data["trade_id"].(float64); ok {
+				if float64(tradeid) != v {
+					continue LOGS
+				}
+			}
 		}
 		ret = append(ret, l)
 	}
@@ -284,7 +272,7 @@ func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Handler) putLog(l Log, appID string) error {
-	if l.Data.TradeID == 0 || l.Data.UserID == 0 {
+	if len(l.Data) == 0 {
 		return BadRequestErrorf("%s data is invalid", l.Tag)
 	}
 	logStorage.Append(appID, l)
