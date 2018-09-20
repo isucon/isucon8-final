@@ -23,6 +23,7 @@ const (
 	AxLog                  = false
 	AppIDCtxKey            = "appid"
 	initialStorageCapacity = 100000
+	sendDelay              = 10 * time.Millisecond
 )
 
 var logStorage = NewStorage()
@@ -215,6 +216,7 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	time.Sleep(sendDelay)
 	Success(w)
 }
 
@@ -239,6 +241,8 @@ func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
 			errors = append(errors, err)
 		}
 	}
+
+	time.Sleep(sendDelay)
 	if len(errors) > 0 {
 		Error(w, "internal server error", http.StatusInternalServerError)
 	} else {
@@ -282,9 +286,6 @@ func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 func (s *Handler) putLog(l Log, appID string) error {
 	if l.Data.TradeID == 0 || l.Data.UserID == 0 {
 		return BadRequestErrorf("%s data is invalid", l.Tag)
-	}
-	if time.Now().Sub(l.Time) > time.Second*10 {
-		return BadRequestErrorf("%s time is too old", l.Time)
 	}
 	logStorage.Append(appID, l)
 	return nil
