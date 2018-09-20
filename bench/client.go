@@ -118,16 +118,17 @@ type OrderActionResponse struct {
 }
 
 type Client struct {
-	base    *url.URL
-	hc      *http.Client
-	bankid  string
-	pass    string
-	name    string
-	cache   *CacheStore
-	retired bool
+	base     *url.URL
+	hc       *http.Client
+	bankid   string
+	pass     string
+	name     string
+	cache    *CacheStore
+	retired  bool
+	retireto time.Duration
 }
 
-func NewClient(base, bankid, name, password string, timout time.Duration) (*Client, error) {
+func NewClient(base, bankid, name, password string, timout, retire time.Duration) (*Client, error) {
 	b, err := url.Parse(base)
 	if err != nil {
 		return nil, errors.Wrapf(err, "base url parse Failed.")
@@ -145,12 +146,13 @@ func NewClient(base, bankid, name, password string, timout time.Duration) (*Clie
 		Timeout: timout,
 	}
 	return &Client{
-		base:   b,
-		hc:     hc,
-		bankid: bankid,
-		name:   name,
-		pass:   password,
-		cache:  NewCacheStore(),
+		base:     b,
+		hc:       hc,
+		bankid:   bankid,
+		name:     name,
+		pass:     password,
+		cache:    NewCacheStore(),
+		retireto: retire,
 	}, nil
 }
 
@@ -174,7 +176,7 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 			return nil, err
 		}
 		elapsedTime := time.Now().Sub(start)
-		if RetireTimeout < elapsedTime {
+		if c.retireto < elapsedTime {
 			if err = res.Body.Close(); err != nil {
 				log.Printf("[WARN] body close failed. %s", err)
 			}

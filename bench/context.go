@@ -154,7 +154,7 @@ func (c *Context) FindInvestor(bankID string) Investor {
 }
 
 func (c *Context) NewClient() (*Client, error) {
-	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout)
+	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
 }
 
 func (c *Context) Logger() *log.Logger {
@@ -165,7 +165,7 @@ func (c *Context) Start() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	guest, err := NewClient(c.appep, "", "", "", InitTimeout)
+	guest, err := NewClient(c.appep, "", "", "", InitTimeout, InitTimeout)
 	if err != nil {
 		return nil, err
 	}
