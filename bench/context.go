@@ -130,6 +130,20 @@ func (c *Context) TotalScore() int64 {
 	return score - demerit*c.ErrorCount()
 }
 
+func (c *Context) AllInvestors() int {
+	return len(c.investors)
+}
+
+func (c *Context) ActiveInvestors() int {
+	var i int
+	for _, in := range c.investors {
+		if !in.IsRetired() {
+			i++
+		}
+	}
+	return i
+}
+
 func (c *Context) FindInvestor(bankID string) Investor {
 	for _, i := range c.investors {
 		if i.BankID() == bankID {

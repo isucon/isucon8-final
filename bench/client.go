@@ -17,12 +17,8 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var (
-	UserAgent      = "Isutrader/0.0.1"
-	createdAtUpper = time.Now().Add(24 * time.Hour).Unix()
-)
-
 const (
+	UserAgent     = "Isutrader/0.0.1"
 	TradeTypeSell = "sell"
 	TradeTypeBuy  = "buy"
 )
@@ -39,6 +35,14 @@ func init() {
 type ResponseWithElapsedTime struct {
 	*http.Response
 	ElapsedTime time.Duration
+}
+
+type ErrElapsedTimeOverRetire struct {
+	s string
+}
+
+func (e *ErrElapsedTimeOverRetire) Error() string {
+	return e.s
 }
 
 type ErrorWithStatus struct {
@@ -114,12 +118,13 @@ type OrderActionResponse struct {
 }
 
 type Client struct {
-	base   *url.URL
-	hc     *http.Client
-	bankid string
-	pass   string
-	name   string
-	cache  *CacheStore
+	base    *url.URL
+	hc      *http.Client
+	bankid  string
+	pass    string
+	name    string
+	cache   *CacheStore
+	retired bool
 }
 
 func NewClient(base, bankid, name, password string, timout time.Duration) (*Client, error) {
@@ -149,15 +154,41 @@ func NewClient(base, bankid, name, password string, timout time.Duration) (*Clie
 	}, nil
 }
 
+func (c *Client) IsRetired() bool {
+	return c.retired
+}
+
 func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
 	req.Header.Set("User-Agent", UserAgent)
 	start := time.Now()
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
+	var retry float64 = 0.0
+	for {
+		res, err := c.hc.Do(req)
+		if err != nil {
+			if e, ok := err.(*url.Error); ok {
+				if e.Timeout() {
+					c.retired = true
+					return nil, &ErrElapsedTimeOverRetire{e.Error()}
+				}
+			}
+			return nil, err
+		}
+		elapsedTime := time.Now().Sub(start)
+		if RetireTimeout < elapsedTime {
+			if err = res.Body.Close(); err != nil {
+				log.Printf("[WARN] body close failed. %s", err)
+			}
+			c.retired = true
+			return nil, &ErrElapsedTimeOverRetire{
+				s: fmt.Sprintf("user retired brawsing because response time is too long. [%.5f s]", elapsedTime.Seconds()),
+			}
+		}
+		if res.StatusCode < 500 {
+			return &ResponseWithElapsedTime{res, elapsedTime}, nil
+		}
+		time.Sleep(RetryInterval)
+		retry++
 	}
-	elapsedTime := time.Now().Sub(start)
-	return &ResponseWithElapsedTime{res, elapsedTime}, nil
 }
 
 func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, error) {
