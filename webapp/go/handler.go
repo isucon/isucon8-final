@@ -370,6 +370,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 	}
 
 	var id int64
+	var tradeChance bool
 	err = txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
@@ -412,9 +413,24 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 				}
 				return errors.Wrap(err, "isubank check failed")
 			}
+			lowestSellOrder, err := getLowestSellOrder(tx)
+			switch {
+			case err == sql.ErrNoRows:
+			case err != nil:
+				return errors.Wrap(err, "find lowest sell order failed")
+			default:
+				tradeChance = lowestSellOrder.Price <= price
+			}
 		case OrderTypeSell:
-			// 売却のときは残高チェックは不要
 			// TODO 椅子の保有チェック
+			highestBuyOrder, err := getHighestBuyOrder(tx)
+			switch {
+			case err == sql.ErrNoRows:
+			case err != nil:
+				return errors.Wrap(err, "find highest buy order failed")
+			default:
+				tradeChance = price <= highestBuyOrder.Price
+			}
 		default:
 			return errcode("type must be sell or buy", 400)
 		}
@@ -446,9 +462,11 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		h.handleError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := runTrade(h.db); err != nil {
-		// トレードに失敗してもエラーにはしない
-		log.Printf("runTrade err:%s", err)
+	if tradeChance {
+		if err := runTrade(h.db); err != nil {
+			// トレードに失敗してもエラーにはしない
+			log.Printf("runTrade err:%s", err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	fmt.Fprintf(w, `{"id":%d}`, id)
