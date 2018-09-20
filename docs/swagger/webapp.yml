@@ -147,6 +147,8 @@ paths:
       responses:
         200:
           description: "ok"
+          schema:
+            $ref: "#/definitions/User"
           headers:
             Set-Cookie:
               schema:
@@ -197,7 +199,7 @@ paths:
                 description: 現在の最高買い注文単価
               traded_orders:
                 type: array 
-                description: 取引成立した注文
+                description: curor以降で取引が成立した自分の注文
                 items:
                   $ref: "#/definitions/Order"
               chart_by_sec:
@@ -389,7 +391,7 @@ definitions:
         type: string
         format: date-time
         description: 取引成立時間
-        example: 2018-10-20T12:34:56.123456+09:00
+        example: "2018-10-20T12:34:56.123456+09:00"
   Order:
     type: "object"
     properties:
@@ -414,7 +416,7 @@ definitions:
         type: string
         format: date-time
         description: 注文時間
-        example: 2018-10-20T12:34:56.123456+09:00
+        example: "2018-10-20T12:34:56.123456+09:00"
       user:
         $ref: "#/definitions/User"
         description: 注文者情報
@@ -428,7 +430,7 @@ definitions:
       time:
         type: string
         format: date-time
-        example: 2018-10-20T12:34:56+09:00
+        example: "2018-10-20T12:34:56+09:00"
       open:
         type: integer
         description: 初値
