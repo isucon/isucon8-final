@@ -2,58 +2,41 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 )
 
 const (
 	MaxBodySize  = 1024 * 1024 // 1MB
-	RTT          = 100 * time.Millisecond
-	MinAppTime   = 20 * time.Millisecond
-	MaxAppTime   = 1 * time.Second
-	WorkerPerApp = 2
 	LocationName = "Asia/Tokyo"
 	AxLog        = false
-	AppIDCtxKey  = "appid"
+
+	AppIDCtxKey            = "appid"
+	initialStorageCapacity = 100000
+	sendDelay              = 100 * time.Millisecond
 )
+
+var logStorage = NewStorage()
+var mu sync.Mutex
 
 func main() {
 	var (
-		port   = flag.Int("port", 5516, "log app ranning port")
-		dbhost = flag.String("dbhost", "127.0.0.1", "database host")
-		dbport = flag.Int("dbport", 3306, "database port")
-		dbuser = flag.String("dbuser", "root", "database user")
-		dbpass = flag.String("dbpass", "", "database pass")
-		dbname = flag.String("dbname", "isulog", "database name")
+		port = flag.Int("port", 5516, "log app ranning port")
 	)
 
 	flag.Parse()
 
 	addr := fmt.Sprintf(":%d", *port)
-	dbup := *dbuser
-	if *dbpass != "" {
-		dbup += ":" + *dbpass
-	}
-
-	dsn := fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&loc=Local&charset=utf8mb4", dbup, *dbhost, *dbport, *dbname)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		log.Fatalf("mysql connect failed. err: %s", err)
-	}
-	server := NewServer(db)
+	server := NewServer()
 
 	log.Printf("[INFO] start server %s", addr)
 	if AxLog {
@@ -68,11 +51,10 @@ func main() {
 	}
 }
 
-func NewServer(db *sql.DB) http.Handler {
+func NewServer() http.Handler {
 	server := http.NewServeMux()
 
 	h := &Handler{
-		db:      db,
 		guard:   make(map[string]chan struct{}, 1000),
 		waiting: make(map[string]*int64, 1000),
 	}
@@ -80,6 +62,7 @@ func NewServer(db *sql.DB) http.Handler {
 	server.HandleFunc("/send", h.Send)
 	server.HandleFunc("/send_bulk", h.SendBulk)
 	server.HandleFunc("/logs", h.Logs)
+	server.HandleFunc("/initialize", h.Initialize)
 
 	// default 404
 	server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -87,10 +70,7 @@ func NewServer(db *sql.DB) http.Handler {
 		Error(w, "Not found", 404)
 	})
 	s := authHandler(server)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(RTT)
-		s.ServeHTTP(w, r)
-	})
+	return http.HandlerFunc(s.ServeHTTP)
 }
 
 func authHandler(f http.Handler) http.Handler {
@@ -132,6 +112,7 @@ func (e *badRequestErr) Error() string {
 }
 
 func Error(w http.ResponseWriter, err string, code int) {
+	log.Println(code, err)
 	http.Error(w, err, code)
 }
 
@@ -140,52 +121,97 @@ func Success(w http.ResponseWriter) {
 }
 
 type Log struct {
-	Tag  string          `json:"tag"`
-	Time time.Time       `json:"time"`
-	Data json.RawMessage `json:"data"`
+	Tag  string                 `json:"tag"`
+	Time time.Time              `json:"time"`
+	Data map[string]interface{} `json:"data"`
 }
 
-type LogData struct {
-	UserID  int64 `json:"user_id"`
-	TradeID int64 `json:"trade_id"`
+func (l Log) validate() error {
+	if l.Tag == "" {
+		return errors.New("empty tag")
+	}
+	if len(l.Data) == 0 {
+		return errors.New("empty data")
+	}
+	return nil
 }
 
 type Handler struct {
-	db      *sql.DB
 	guard   map[string]chan struct{}
 	waiting map[string]*int64
 	mux     sync.Mutex
 }
 
-func (s *Handler) lock(appid string) func() {
-	func() {
-		s.mux.Lock()
-		defer s.mux.Unlock()
-		if _, ok := s.guard[appid]; !ok {
-			s.guard[appid] = make(chan struct{}, WorkerPerApp)
-		}
-		if _, ok := s.waiting[appid]; !ok {
-			var i int64
-			s.waiting[appid] = &i
-		}
-	}()
-	w := atomic.AddInt64(s.waiting[appid], 1)
-	s.guard[appid] <- struct{}{}
-	return func() {
-		wt := time.Duration(int64(math.Floor(math.Pow(2.0, float64(w)/2.0)*2.0))) + MinAppTime
-		if wt > MaxAppTime {
-			wt = MaxAppTime
-		}
-		time.Sleep(wt)
-		atomic.AddInt64(s.waiting[appid], -1)
-		<-s.guard[appid]
+type Storage struct {
+	mu   sync.Mutex
+	logs map[string][]Log
+}
+
+func NewStorage() *Storage {
+	return &Storage{
+		logs: make(map[string][]Log),
 	}
 }
 
+func (s *Storage) Append(appid string, l Log) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	logs, ok := s.logs[appid]
+	if !ok {
+		s.logs[appid] = []Log{l}
+	} else {
+		s.logs[appid] = append(logs, l)
+	}
+}
+
+func (s *Storage) AppendBulk(appid string, ls []Log) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	logs, ok := s.logs[appid]
+	if !ok {
+		s.logs[appid] = ls
+	} else {
+		s.logs[appid] = append(logs, ls...)
+	}
+}
+
+func (s *Storage) Search(appid string, userid, tradeid int64) []Log {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	logs, ok := s.logs[appid]
+	if !ok {
+		return []Log{}
+	}
+	ret := make([]Log, 0, len(logs))
+LOGS:
+	for _, l := range logs {
+		if userid != 0 {
+			if v, ok := l.Data["user_id"].(float64); ok {
+				if float64(userid) != v {
+					continue LOGS
+				}
+			}
+		}
+		if tradeid != 0 {
+			if v, ok := l.Data["trade_id"].(float64); ok {
+				if float64(tradeid) != v {
+					continue LOGS
+				}
+			}
+		}
+		ret = append(ret, l)
+	}
+	return ret
+}
+
 func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
 	appid, err := appID(r)
 	if err != nil {
-		Error(w, err.Error(), http.StatusForbidden)
+		Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	l := Log{}
@@ -193,122 +219,97 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	unlock := s.lock(appid)
-	defer unlock()
-	if err = s.putLog(l, appid); err != nil {
-		if _, ok := err.(*badRequestErr); ok {
-			Error(w, err.Error(), http.StatusBadRequest)
-		} else {
-			log.Printf("[WARN] %s", err)
-			Error(w, "internal server error", http.StatusInternalServerError)
-		}
+	if err := l.validate(); err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	logStorage.Append(appid, l)
+	time.Sleep(sendDelay)
 	Success(w)
 }
 
 func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
 	appid, err := appID(r)
 	if err != nil {
-		Error(w, err.Error(), http.StatusForbidden)
+		Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	logs := []Log{}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodySize)).Decode(&logs); err != nil {
-		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
+	size, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
+	if err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	unlock := s.lock(appid)
-	defer unlock()
-	errors := make([]error, 0, len(logs))
+	if size > MaxBodySize {
+		Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodySize)).Decode(&logs); err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	for _, l := range logs {
-		err := s.putLog(l, appid)
-		switch err {
-		case nil:
-		default:
-			log.Printf("[WARN] %s", err)
-			errors = append(errors, err)
+		if err := l.validate(); err != nil {
+			Error(w, fmt.Sprintf("invalid log. err:%s", err), http.StatusBadRequest)
+			return
 		}
 	}
-	if len(errors) > 0 {
-		Error(w, "internal server error", http.StatusInternalServerError)
-	} else {
-		Success(w)
-	}
+	logStorage.AppendBulk(appid, logs)
+	time.Sleep(sendDelay)
+	Success(w)
 }
 
 func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
-	where := make([]string, 0, 3)
 	args := make([]interface{}, 0, 3)
+	var userid, tradeid int64
+
 	appid := r.URL.Query().Get("app_id")
 	if appid == "" {
 		Error(w, "app_id required", http.StatusBadRequest)
 		return
 	}
-	where = append(where, "app_id = ?")
-	args = append(args, appid)
 
 	if _userid := r.URL.Query().Get("user_id"); _userid != "" {
-		userid, err := strconv.ParseInt(_userid, 10, 64)
+		var err error
+		userid, err = strconv.ParseInt(_userid, 10, 64)
 		if err != nil {
 			Error(w, "parse user_id failed", http.StatusBadRequest)
 			return
 		}
-		where = append(where, "user_id = ?")
 		args = append(args, userid)
 	}
 	if _tradeid := r.URL.Query().Get("trade_id"); _tradeid != "" {
-		tradeid, err := strconv.ParseInt(_tradeid, 10, 64)
+		var err error
+		tradeid, err = strconv.ParseInt(_tradeid, 10, 64)
 		if err != nil {
 			Error(w, "parse trade_id failed", http.StatusBadRequest)
 			return
 		}
-		where = append(where, "trade_id = ?")
 		args = append(args, tradeid)
 	}
-	query := fmt.Sprintf(`SELECT tag, time, data FROM log WHERE %s ORDER BY time ASC`, strings.Join(where, " AND "))
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		Error(w, fmt.Sprintf("select log failed. err:%s", err), http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	logs := []Log{}
-	for rows.Next() {
-		var l Log
-		if err := rows.Scan(&l.Tag, &l.Time, &l.Data); err != nil {
-			Error(w, fmt.Sprintf("scan error. err:%s", err), http.StatusInternalServerError)
-			return
-		}
-		logs = append(logs, l)
-	}
-
-	if err = rows.Err(); err != nil {
-		Error(w, fmt.Sprintf("rows error. err:%s", err), http.StatusInternalServerError)
-		return
-	}
-
+	logs := logStorage.Search(appid, userid, tradeid)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(logs)
 }
 
-func (s *Handler) putLog(l Log, appID string) error {
-	if len(l.Data) == 0 {
-		return BadRequestErrorf("%s data is required", l.Tag)
+func (s *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		Error(w, "", http.StatusMethodNotAllowed)
+		return
 	}
-	if time.Now().Sub(l.Time) > time.Second*10 {
-		return BadRequestErrorf("%s time is too old", l.Time)
-	}
-	data := &LogData{}
-	if err := json.Unmarshal(l.Data, data); err != nil {
-		return errors.Wrapf(err, "%s parse data failed", l.Tag)
-	}
-	query := `INSERT INTO log (app_id, tag, time, user_id, trade_id, data) VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.Exec(query, appID, l.Tag, l.Time, data.UserID, data.TradeID, string(l.Data)); err != nil {
-		return errors.Wrap(err, "insert log failed")
-	}
-	return nil
+
+	mu.Lock()
+	logStorage = NewStorage()
+	mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	fmt.Fprintln(w, `{"ok":true}`)
 }
 
 func init() {
