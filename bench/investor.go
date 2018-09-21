@@ -173,6 +173,10 @@ func (i *investorBase) Info() Task {
 	return NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.mux.Lock()
 		defer i.mux.Unlock()
+		if i.IsRetired() {
+			// already retired
+			return 0, nil
+		}
 		now := time.Now()
 		if now.Before(i.nextCheck) {
 			//log.Printf("[INFO] skip info() next: %s now: %s", i.nextCheck, now)
@@ -393,6 +397,9 @@ func (i *RandomInvestor) Start() Task {
 }
 
 func (i *RandomInvestor) Next() Task {
+	if i.IsRetired() {
+		return nil
+	}
 	task := i.investorBase.Next()
 	if t, ok := task.(*SerialTask); ok {
 		t.Add(i.FixNextTask())
@@ -414,6 +421,9 @@ func (i *RandomInvestor) FixNextTask() Task {
 func (i *RandomInvestor) UpdateOrderTask() Task {
 	i.mux.Lock()
 	defer i.mux.Unlock()
+	if i.IsRetired() {
+		return nil
+	}
 	now := time.Now()
 	update := len(i.orders) == 0 || i.lastOrder.Add(OrderUpdateInterval).After(now)
 

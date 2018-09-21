@@ -80,6 +80,9 @@ func (t *SerialTask) Run(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			if err := task.Run(ctx); err != nil {
+				if err == ErrAlreadyRetired {
+					return nil
+				}
 				return err
 			}
 			t.score += task.Score()

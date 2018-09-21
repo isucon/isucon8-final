@@ -209,6 +209,9 @@ func (c *Context) Next() ([]Task, error) {
 		if !investor.IsSignin() {
 			continue
 		}
+		if investor.IsRetired() {
+			continue
+		}
 		if task := investor.Next(); task != nil {
 			tasks = append(tasks, task)
 		}

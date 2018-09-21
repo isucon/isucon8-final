@@ -24,6 +24,10 @@ const (
 	TradeTypeBuy  = "buy"
 )
 
+var (
+	ErrAlreadyRetired = errors.New("alreay retired client")
+)
+
 func init() {
 	var err error
 	loc, err := time.LoadLocation("Asia/Tokyo")
@@ -168,7 +172,7 @@ func (c *Client) UserID() int64 {
 
 func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
 	if c.retired {
-		return nil, errors.New("alreay retired client")
+		return nil, ErrAlreadyRetired
 	}
 	req.Header.Set("User-Agent", UserAgent)
 	var reqbody []byte
@@ -323,6 +327,9 @@ func (c *Client) Signup() error {
 	v.Set("password", c.pass)
 	res, err := c.post("/signup", v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrap(err, "POST /signup request failed")
 	}
 	defer res.Body.Close()
@@ -342,6 +349,9 @@ func (c *Client) Signin() error {
 	v.Set("password", c.pass)
 	res, err := c.post("/signin", v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrap(err, "POST /signin request failed")
 	}
 	defer res.Body.Close()
@@ -369,6 +379,9 @@ func (c *Client) Signin() error {
 func (c *Client) Signout() error {
 	res, err := c.post("/signout", url.Values{})
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrap(err, "POST /signout request failed")
 	}
 	defer res.Body.Close()
@@ -397,6 +410,9 @@ func (c *Client) Top() error {
 		err := func(path string) error {
 			res, err := c.get(path, url.Values{})
 			if err != nil {
+				if err == ErrAlreadyRetired {
+					return err
+				}
 				return errors.Wrapf(err, "GET %s request failed", path)
 			}
 			defer res.Body.Close()
@@ -422,6 +438,9 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	v.Set("cursor", strconv.FormatInt(cursor, 10))
 	res, err := c.get(path, v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -447,6 +466,9 @@ func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) 
 	v.Set("price", strconv.FormatInt(price, 10))
 	res, err := c.post(path, v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "POST %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -477,6 +499,9 @@ func (c *Client) GetOrders() ([]Order, error) {
 	path := "/orders"
 	res, err := c.get(path, url.Values{})
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -512,6 +537,9 @@ func (c *Client) DeleteOrders(id int64) error {
 	path := fmt.Sprintf("/order/%d", id)
 	res, err := c.del(path, url.Values{})
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrapf(err, "DELETE %s request failed", path)
 	}
 	defer res.Body.Close()
