@@ -1,11 +1,12 @@
-// copy from https://raw.githubusercontent.com/isucon/isucon7-qualify/master/bench/src/bench/urlcache/cache.go
 package bench
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/marcw/cachecontrol"
 )
@@ -50,37 +51,27 @@ type URLCache struct {
 	LastModified string
 	Etag         string
 	CacheControl *cachecontrol.CacheControl
-	Expire       time.Time
+	MD5          string
 }
 
-func NewURLCache(res *http.Response) (*URLCache, bool) {
+func NewURLCache(res *http.Response, body *bytes.Buffer) (*URLCache, string) {
+	md5Sum := md5.Sum(body.Bytes())
+	hash := hex.EncodeToString(md5Sum[:])
 	ccs := res.Header["Cache-Control"]
 	directive := strings.Join(ccs, " ")
 	cc := cachecontrol.Parse(directive)
+	noCache, _ := cc.NoCache()
 
-	if cc.NoStore() {
-		return nil, false
+	if len(directive) == 0 || noCache || cc.NoStore() {
+		return nil, hash
 	}
 
 	return &URLCache{
 		LastModified: res.Header.Get("Last-Modified"),
 		Etag:         res.Header.Get("ETag"),
 		CacheControl: &cc,
-		Expire:       time.Now().Add(cc.MaxAge()),
-	}, true
-}
-
-func (c *URLCache) CanUseCache() bool {
-	if c.CacheControl.NoStore() {
-		return false
-	}
-	if noCache, _ := c.CacheControl.NoCache(); noCache {
-		return false
-	}
-	if c.Expire.Before(time.Now()) {
-		return false
-	}
-	return true
+		MD5:          hash,
+	}, hash
 }
 
 func (c *URLCache) ApplyRequest(req *http.Request) {

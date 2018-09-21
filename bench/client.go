@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -120,6 +121,7 @@ type OrderActionResponse struct {
 type Client struct {
 	base     *url.URL
 	hc       *http.Client
+	userID   int64
 	bankid   string
 	pass     string
 	name     string
@@ -158,6 +160,10 @@ func NewClient(base, bankid, name, password string, timout, retire time.Duration
 
 func (c *Client) IsRetired() bool {
 	return c.retired
+}
+
+func (c *Client) UserID() int64 {
+	return c.userID
 }
 
 func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
@@ -209,23 +215,30 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	}
 	if cache, found := c.cache.Get(us); found {
 		// no-storeを外しかつcache-controlをつければOK
-		if cache.CanUseCache() {
-			return &ResponseWithElapsedTime{
-				Response: &http.Response{
-					StatusCode: http.StatusNotModified,
-					Body:       ioutil.NopCloser(&bytes.Buffer{}),
-				},
-				ElapsedTime: 0,
-			}, nil
-		}
+		// if cache.CanUseCache() {
+		// 	return &ResponseWithElapsedTime{
+		// 		Response: &http.Response{
+		// 			StatusCode: http.StatusNotModified,
+		// 			Body:       ioutil.NopCloser(&bytes.Buffer{}),
+		// 		},
+		// 		ElapsedTime: 0,
+		// 	}, nil
+		// }
 		cache.ApplyRequest(req)
 	}
 	res, err := c.doRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	if cache, ok := NewURLCache(res.Response); ok {
-		c.cache.Set(us, cache)
+	if res.StatusCode == 200 {
+		body := &bytes.Buffer{}
+		if _, err = io.Copy(body, res.Body); err != nil {
+			return nil, err
+		}
+		if cache, _ := NewURLCache(res.Response, body); cache != nil {
+			c.cache.Set(us, cache)
+		}
+		res.Body = ioutil.NopCloser(body)
 	}
 	return res, nil
 }
@@ -309,31 +322,75 @@ func (c *Client) Signin() error {
 		return errors.Wrap(err, "POST /signin request failed")
 	}
 	defer res.Body.Close()
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return errors.Wrap(err, "POST /signin body read failed")
+	if res.StatusCode != 200 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return errors.Wrapf(err, "POST /signin body read failed")
+		}
+		return errorWithStatus(errors.Errorf("POST /signin failed."), res.StatusCode, string(b))
 	}
-	if res.StatusCode == http.StatusOK {
-		return nil
+	r := &User{}
+	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
+		return errors.Wrapf(err, "POST /signin body decode failed")
 	}
-	return errorWithStatus(errors.Errorf("POST /signin failed."), res.StatusCode, string(b))
+	if r.Name != c.name {
+		return errors.Errorf("POST /signin returned different name [%s] my name is [%s]", r.Name, c.name)
+	}
+	if r.ID == 0 {
+		return errors.Errorf("POST /signin returned zero id")
+	}
+	c.userID = r.ID
+	return nil
 }
 
-func (c *Client) Top() error {
-	res, err := c.get("/", url.Values{})
+func (c *Client) Signout() error {
+	res, err := c.post("/signout", url.Values{})
 	if err != nil {
-		return errors.Wrap(err, "GET / request failed")
+		return errors.Wrap(err, "POST /signout request failed")
 	}
 	defer res.Body.Close()
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "GET / body read failed")
+		return errors.Wrap(err, "POST /signout body read failed")
 	}
 	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	// TODO top HTML の不正チェック
-	return errorWithStatus(errors.Errorf("GET / failed."), res.StatusCode, string(b))
+	return errorWithStatus(errors.Errorf("POST /signout failed."), res.StatusCode, string(b))
+}
+
+func (c *Client) Top() error {
+	for _, path := range []string{
+		"/",
+		// TODO static files
+		"/css/bootstrap-grid.min.css",
+		"/css/bootstrap-reboot.min.css",
+		"/css/bootstrap.min.css",
+		"/js/bootstrap.bundle.min.js",
+		"/js/bootstrap.min.js",
+		"/js/jquery-3.3.1.slim.min.js",
+		"/js/popper.min.js",
+	} {
+		err := func(path string) error {
+			res, err := c.get(path, url.Values{})
+			if err != nil {
+				return errors.Wrapf(err, "GET %s request failed", path)
+			}
+			defer res.Body.Close()
+			b, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				return errors.Wrapf(err, "GET %s body read failed", path)
+			}
+			if res.StatusCode >= 400 {
+				return errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
+			}
+			return nil
+		}(path)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Client) Info(cursor int64) (*InfoResponse, error) {
@@ -407,11 +464,25 @@ func (c *Client) GetOrders() ([]Order, error) {
 		}
 		return nil, errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
 	}
-	r := []Order{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+	orders := []Order{}
+	if err := json.NewDecoder(res.Body).Decode(&orders); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	return r, nil
+	for _, order := range orders {
+		if order.UserID != c.userID {
+			return nil, errors.Wrapf(err, "GET %s returned not my order [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User == nil {
+			return nil, errors.Wrapf(err, "GET %s returned not filled user [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User.Name != c.name {
+			return nil, errors.Wrapf(err, "GET %s returned filled user.name is not my name [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.TradeID != 0 && order.Trade == nil {
+			return nil, errors.Wrapf(err, "GET %s returned not filled trade [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+	}
+	return orders, nil
 }
 
 func (c *Client) DeleteOrders(id int64) error {
