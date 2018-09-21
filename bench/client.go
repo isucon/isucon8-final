@@ -167,18 +167,23 @@ func (c *Client) UserID() int64 {
 }
 
 func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
+	if c.retired {
+		return nil, errors.New("alreay retired client")
+	}
 	req.Header.Set("User-Agent", UserAgent)
 	start := time.Now()
 	var retry float64 = 0.0
 	for {
 		res, err := c.hc.Do(req)
 		if err != nil {
+			elapsedTime := time.Now().Sub(start)
 			if e, ok := err.(*url.Error); ok {
 				if e.Timeout() {
 					c.retired = true
 					return nil, &ErrElapsedTimeOverRetire{e.Error()}
 				}
 			}
+			log.Printf("err: %s, [%.5f] req.len:%d", err, elapsedTime.Seconds(), req.ContentLength)
 			return nil, err
 		}
 		elapsedTime := time.Now().Sub(start)
