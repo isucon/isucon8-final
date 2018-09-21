@@ -70,3 +70,8 @@ Authorization: app_id APP_ID
         - error: app_id not found
     - status: 400
         - error: invalid data
+
+### `POST /initialize` (secret API)
+
+- response:
+    - status: 200

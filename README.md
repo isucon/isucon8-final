@@ -35,6 +35,6 @@ benchマーカーと対になるように用意したい
 
     go run ./bench/cmd/bench/main.go \
         -appep=http://127.0.0.1:12510 \
-        -bankep=http://172.17.0.1:5515 \
-        -logep=http://172.17.0.1:5516 \
-        -internalbank=http://127.0.0.1:5515
+        -bankep=https://compose.isucon8.flying-chair.net:5515 \
+        -logep=https://compose.isucon8.flying-chair.net:5516 \
+        -internalbank=https://localhost.isucon8.flying-chair.net:5515
