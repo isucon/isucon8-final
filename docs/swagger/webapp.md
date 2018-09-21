@@ -73,11 +73,11 @@ ISUBANK API の Check を用いてisubankidの存在チェックを行うこと�
 
 **Responses**
 
-| Code | Description |
-| ---- | ----------- |
-| 200 | ok |
-| 400 | Invalid parameters |
-| 404 | bank id or password not match |
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | ok | [User](#user) |
+| 400 | Invalid parameters |  |
+| 404 | bank id or password not match |  |
 
 ### /info
 ---

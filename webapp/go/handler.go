@@ -243,7 +243,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	})
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintln(w, "{}")
+	json.NewEncoder(w).Encode(user)
 }
 
 func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {

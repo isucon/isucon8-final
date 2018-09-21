@@ -50,6 +50,8 @@
 
 - request: application/form-url-encoded
     - bank_id : ISUBANKのid
+        - id:   $user.id
+        - name: $user.name
     - password 
 
 - response
