@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	appep        = flag.String("appep", "http://127.0.0.1:12510", "app endpoint")
-	bankep       = flag.String("bankep", "http://127.0.0.1:5515", "isubank endpoint")
-	logep        = flag.String("logep", "http://127.0.0.1:5516", "isulog endpoint")
-	internalbank = flag.String("internalbank", "http://127.0.0.1:5515", "isubank endpoint")
+	appep        = flag.String("appep", "https://localhost.isucon8.flying-chair.net", "app endpoint")
+	bankep       = flag.String("bankep", "https://compose.isucon8.flying-chair.net:5515", "isubank endpoint")
+	logep        = flag.String("logep", "https://compose.isucon8.flying-chair.net:5516", "isulog endpoint")
+	internalbank = flag.String("internalbank", "https://localhost.isucon8.flying-chair.net:5515", "isubank endpoint")
 	log          = bench.NewLogger(os.Stderr)
 )
 
