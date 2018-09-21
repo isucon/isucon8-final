@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -17,9 +16,10 @@ import (
 )
 
 const (
-	MaxBodySize            = 1024 * 1024 // 1MB
-	LocationName           = "Asia/Tokyo"
-	AxLog                  = false
+	MaxBodySize  = 1024 * 1024 // 1MB
+	LocationName = "Asia/Tokyo"
+	AxLog        = false
+
 	AppIDCtxKey            = "appid"
 	initialStorageCapacity = 100000
 	sendDelay              = 100 * time.Millisecond
@@ -126,8 +126,17 @@ type Log struct {
 	Data map[string]interface{} `json:"data"`
 }
 
+func (l Log) validate() error {
+	if l.Tag == "" {
+		return errors.New("empty tag")
+	}
+	if len(l.Data) == 0 {
+		return errors.New("empty data")
+	}
+	return nil
+}
+
 type Handler struct {
-	db      *sql.DB
 	guard   map[string]chan struct{}
 	waiting map[string]*int64
 	mux     sync.Mutex
@@ -152,6 +161,17 @@ func (s *Storage) Append(appid string, l Log) {
 		s.logs[appid] = []Log{l}
 	} else {
 		s.logs[appid] = append(logs, l)
+	}
+}
+
+func (s *Storage) AppendBulk(appid string, ls []Log) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	logs, ok := s.logs[appid]
+	if !ok {
+		s.logs[appid] = ls
+	} else {
+		s.logs[appid] = append(logs, ls...)
 	}
 }
 
@@ -185,9 +205,13 @@ LOGS:
 }
 
 func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
 	appid, err := appID(r)
 	if err != nil {
-		Error(w, err.Error(), http.StatusForbidden)
+		Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	l := Log{}
@@ -195,47 +219,50 @@ func (s *Handler) Send(w http.ResponseWriter, r *http.Request) {
 		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	if err = s.putLog(l, appid); err != nil {
-		if _, ok := err.(*badRequestErr); ok {
-			Error(w, err.Error(), http.StatusBadRequest)
-		} else {
-			log.Printf("[WARN] %s", err)
-			Error(w, "internal server error", http.StatusInternalServerError)
-		}
+	if err := l.validate(); err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	logStorage.Append(appid, l)
 	time.Sleep(sendDelay)
 	Success(w)
 }
 
 func (s *Handler) SendBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		Error(w, "", http.StatusMethodNotAllowed)
+		return
+	}
 	appid, err := appID(r)
 	if err != nil {
-		Error(w, err.Error(), http.StatusForbidden)
+		Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	logs := []Log{}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodySize)).Decode(&logs); err != nil {
-		Error(w, fmt.Sprintf("can't parse body. err:%s", err.Error()), http.StatusBadRequest)
+	size, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
+	if err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	errors := make([]error, 0, len(logs))
-	for _, l := range logs {
-		err := s.putLog(l, appid)
-		switch err {
-		case nil:
-		default:
-			log.Printf("[WARN] %s", err)
-			errors = append(errors, err)
-		}
+	if size > MaxBodySize {
+		Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
 	}
 
-	time.Sleep(sendDelay)
-	if len(errors) > 0 {
-		Error(w, "internal server error", http.StatusInternalServerError)
-	} else {
-		Success(w)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodySize)).Decode(&logs); err != nil {
+		Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+
+	for _, l := range logs {
+		if err := l.validate(); err != nil {
+			Error(w, fmt.Sprintf("invalid log. err:%s", err), http.StatusBadRequest)
+			return
+		}
+	}
+	logStorage.AppendBulk(appid, logs)
+	time.Sleep(sendDelay)
+	Success(w)
 }
 
 func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
@@ -269,14 +296,6 @@ func (s *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 	logs := logStorage.Search(appid, userid, tradeid)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(logs)
-}
-
-func (s *Handler) putLog(l Log, appID string) error {
-	if len(l.Data) == 0 {
-		return BadRequestErrorf("%s data is invalid", l.Tag)
-	}
-	logStorage.Append(appID, l)
-	return nil
 }
 
 func (s *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
