@@ -233,11 +233,11 @@ func (c *Context) Next() ([]Task, error) {
 			latestTradePrice = 100
 		}
 		c.level++
-		c.Logger().Printf("ワーカーレベルが上がります")
+		log.Printf("[INFO] ユーザーが増えます")
 
-		// 10人追加
+		// 2人追加
 		unitamount := int64(c.level * 5)
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 2; i++ {
 			cl, err := c.NewClient()
 			if err != nil {
 				return nil, err
