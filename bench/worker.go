@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime"
 )
 
 type Task interface {
@@ -35,6 +36,14 @@ func (w *Worker) Run(ctx context.Context, tasks []Task) error {
 						err, ok := r.(error)
 						if !ok {
 							err = fmt.Errorf("task panic: %v", r)
+						}
+						log.Printf("[WARN] %s", err)
+						for depth := 0; depth < 10; depth++ {
+							_, file, line, ok := runtime.Caller(depth)
+							if !ok {
+								break
+							}
+							log.Printf("======> %d: %v:%d", depth, file, line)
 						}
 						t.WriteError(err)
 					}

@@ -210,7 +210,7 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 			}
 			c.retired = true
 			return nil, &ErrElapsedTimeOverRetire{
-				s: fmt.Sprintf("user retired brawsing because response time is too long. [%.5f s]", elapsedTime.Seconds()),
+				s: fmt.Sprintf("this user gave up browsing because response time is too long. [%.5f s]", elapsedTime.Seconds()),
 			}
 		}
 		if res.StatusCode < 500 {
