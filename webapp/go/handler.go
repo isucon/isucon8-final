@@ -360,7 +360,6 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 	}
 
 	var id int64
-	var tradeChance bool
 	err = txScorp(h.db, func(tx *sql.Tx) error {
 		if _, err := getUserByIDWithLock(tx, user.ID); err != nil {
 			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", user.ID)
@@ -403,24 +402,8 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 				}
 				return errors.Wrap(err, "isubank check failed")
 			}
-			lowestSellOrder, err := getLowestSellOrder(tx)
-			switch {
-			case err == sql.ErrNoRows:
-			case err != nil:
-				return errors.Wrap(err, "find lowest sell order failed")
-			default:
-				tradeChance = lowestSellOrder.Price <= price
-			}
 		case OrderTypeSell:
 			// TODO 椅子の保有チェック
-			highestBuyOrder, err := getHighestBuyOrder(tx)
-			switch {
-			case err == sql.ErrNoRows:
-			case err != nil:
-				return errors.Wrap(err, "find highest buy order failed")
-			default:
-				tradeChance = price <= highestBuyOrder.Price
-			}
 		default:
 			return errcode("type must be sell or buy", 400)
 		}
@@ -443,6 +426,12 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		}
 		return nil
 	})
+	if err != nil {
+		h.handleError(w, err, 500)
+		return
+	}
+
+	tradeChance, err := hasTradeChanceByOrder(h.db, id)
 	if err != nil {
 		h.handleError(w, err, 500)
 		return
@@ -849,6 +838,11 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 	return orders, nil
 }
 
+func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
+	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ?", ordersColumns)
+	return scanOrder(d.QueryRow(query, id))
+}
+
 func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ? FOR UPDATE", ordersColumns)
 	return scanOrder(tx.QueryRow(query, id))
@@ -864,11 +858,39 @@ func getHighestBuyOrder(d QueryExecuter) (*Order, error) {
 	return scanOrder(d.QueryRow(q, OrderTypeBuy))
 }
 
+func hasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
+	order, err := getOrderByID(d, orderID)
+	if err != nil {
+		return false, err
+	}
+	lowest, err := getLowestSellOrder(d)
+	if err != nil {
+		return false, errors.Wrap(err, "getLowestSellOrder")
+	}
+	highest, err := getHighestBuyOrder(d)
+	if err != nil {
+		return false, errors.Wrap(err, "getHighestBuyOrder")
+	}
+	switch order.Type {
+	case OrderTypeBuy:
+		if lowest.Price <= order.Price {
+			return true, nil
+		}
+	case OrderTypeSell:
+		if order.Price <= highest.Price {
+			return true, nil
+		}
+	default:
+		return false, errors.Errorf("other type [%s]", order.Type)
+	}
+	return false, nil
+}
+
 func fetchOrderRelation(d QueryExecuter, order *Order) error {
 	var err error
 	order.User, err = getUserByID(d, order.UserID)
 	if err != nil {
-		return errors.Wrapf(err, "getOrderByID failed. id")
+		return errors.Wrapf(err, "getUserByID failed. id")
 	}
 	if order.TradeID > 0 {
 		order.Trade, err = getTradeByID(d, order.TradeID)
@@ -986,9 +1008,9 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	var targetIDs []int64
 	switch order.Type {
 	case OrderTypeBuy:
-		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, id ASC`, OrderTypeSell, order.Price)
+		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, created_at ASC, id ASC`, OrderTypeSell, order.Price)
 	case OrderTypeSell:
-		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, id ASC`, OrderTypeBuy, order.Price)
+		targetIDs, err = queryInt64(tx, `SELECT id FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, created_at ASC, id ASC`, OrderTypeBuy, order.Price)
 	}
 	if err != nil {
 		return errors.Wrap(err, "find target orders")
@@ -1038,40 +1060,51 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 }
 
 func runTrade(db *sql.DB) error {
-	for {
-		lowestSellOrder, err := getLowestSellOrder(db)
-		switch {
-		case err == sql.ErrNoRows:
-			return errNoOrder
-		case err != nil:
-			return errors.Wrap(err, "find lowest sell order failed")
-		}
-		highestBuyOrder, err := getHighestBuyOrder(db)
-		switch {
-		case err == sql.ErrNoRows:
-			return errNoOrder
-		case err != nil:
-			return errors.Wrap(err, "find highest buy order failed")
-		}
+	lowestSellOrder, err := getLowestSellOrder(db)
+	switch {
+	case err == sql.ErrNoRows:
+		// 売り注文が無いため成立しない
+		return nil
+	case err != nil:
+		return errors.Wrap(err, "getLowestSellOrder")
+	}
 
-		if lowestSellOrder.Price > highestBuyOrder.Price {
-			// 売値が買値よりも高い
-			return errPriceUnmatch
-		}
+	highestBuyOrder, err := getHighestBuyOrder(db)
+	switch {
+	case err == sql.ErrNoRows:
+		// 買い注文が無いため成立しない
+		return nil
+	case err != nil:
+		return errors.Wrap(err, "getHighestBuyOrder")
+	}
 
-		for _, orderID := range []int64{lowestSellOrder.ID, highestBuyOrder.ID} {
-			err = txScorp(db, func(tx *sql.Tx) error {
-				return tryTrade(tx, orderID)
-			})
-			switch err {
-			case nil:
-				break
-			case errNoOrder, errClosedOrder:
-				err = nil
-				continue
-			default:
-				return err
-			}
+	if lowestSellOrder.Price > highestBuyOrder.Price {
+		// 最安の売値が最高の買値よりも高いため成立しない
+		return nil
+	}
+
+	candidates := make([]int64, 0, 2)
+	if lowestSellOrder.Amount > highestBuyOrder.Amount {
+		candidates = append(candidates, lowestSellOrder.ID, highestBuyOrder.ID)
+	} else {
+		candidates = append(candidates, highestBuyOrder.ID, lowestSellOrder.ID)
+	}
+
+	for _, orderID := range candidates {
+		err := txScorp(db, func(tx *sql.Tx) error {
+			return tryTrade(tx, orderID)
+		})
+		switch err {
+		case nil:
+			// トレード成立したため次の取引を行う
+			return runTrade(db)
+		case errNoOrder, errClosedOrder:
+			// 注文個数の多い方で成立しなかったので少ない方で試す
+			continue
+		default:
+			return err
 		}
 	}
+	// 個数のが不足していて不成立
+	return nil
 }
