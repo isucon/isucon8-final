@@ -32,6 +32,7 @@ type Investor interface {
 	IsStarted() bool
 
 	LatestTradePrice() int64
+	IsRetired() bool
 }
 
 type investorBase struct {
@@ -67,6 +68,10 @@ func newInvestorBase(c *Client, credit, isu int64) *investorBase {
 		orders:    make([]*Order, 0, OrderCap),
 		taskStack: make([]Task, 0, 5),
 	}
+}
+
+func (i *investorBase) IsRetired() bool {
+	return i.c.IsRetired()
 }
 
 func (i *investorBase) LatestTradePrice() int64 {
@@ -168,6 +173,10 @@ func (i *investorBase) Info() Task {
 	return NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.mux.Lock()
 		defer i.mux.Unlock()
+		if i.IsRetired() {
+			// already retired
+			return 0, nil
+		}
 		now := time.Now()
 		if now.Before(i.nextCheck) {
 			//log.Printf("[INFO] skip info() next: %s now: %s", i.nextCheck, now)
@@ -304,9 +313,6 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) Task {
 			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
 				return nil
 			}
-			if strings.Index(err.Error(), "Client.Timeout") > -1 {
-				i.timeoutCount++
-			}
 			return err
 		}
 		i.pushOrder(order)
@@ -327,9 +333,6 @@ func (i *investorBase) RemoveOrder(order *Order) Task {
 				// 404エラーはしょうがないのでerrにはしないが加点しない
 				log.Printf("[INFO] delete 404 %s", er)
 				return 0, nil
-			}
-			if strings.Index(err.Error(), "Client.Timeout") > -1 {
-				i.timeoutCount++
 			}
 			return 0, err
 		}
@@ -352,6 +355,9 @@ func (i *investorBase) Start() Task {
 func (i *investorBase) Next() Task {
 	i.taskLock.Lock()
 	defer i.taskLock.Unlock()
+	if i.IsRetired() {
+		return nil
+	}
 	task := NewSerialTask(2 + len(i.taskStack))
 	task.Add(i.Info())
 	for _, t := range i.taskStack {
@@ -391,6 +397,9 @@ func (i *RandomInvestor) Start() Task {
 }
 
 func (i *RandomInvestor) Next() Task {
+	if i.IsRetired() {
+		return nil
+	}
 	task := i.investorBase.Next()
 	if t, ok := task.(*SerialTask); ok {
 		t.Add(i.FixNextTask())
@@ -412,6 +421,9 @@ func (i *RandomInvestor) FixNextTask() Task {
 func (i *RandomInvestor) UpdateOrderTask() Task {
 	i.mux.Lock()
 	defer i.mux.Unlock()
+	if i.IsRetired() {
+		return nil
+	}
 	now := time.Now()
 	update := len(i.orders) == 0 || i.lastOrder.Add(OrderUpdateInterval).After(now)
 

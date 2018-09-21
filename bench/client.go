@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -17,14 +18,14 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-var (
-	UserAgent      = "Isutrader/0.0.1"
-	createdAtUpper = time.Now().Add(24 * time.Hour).Unix()
-)
-
 const (
+	UserAgent     = "Isutrader/0.0.1"
 	TradeTypeSell = "sell"
 	TradeTypeBuy  = "buy"
+)
+
+var (
+	ErrAlreadyRetired = errors.New("alreay retired client")
 )
 
 func init() {
@@ -39,6 +40,14 @@ func init() {
 type ResponseWithElapsedTime struct {
 	*http.Response
 	ElapsedTime time.Duration
+}
+
+type ErrElapsedTimeOverRetire struct {
+	s string
+}
+
+func (e *ErrElapsedTimeOverRetire) Error() string {
+	return e.s
 }
 
 type ErrorWithStatus struct {
@@ -114,15 +123,18 @@ type OrderActionResponse struct {
 }
 
 type Client struct {
-	base   *url.URL
-	hc     *http.Client
-	bankid string
-	pass   string
-	name   string
-	cache  *CacheStore
+	base     *url.URL
+	hc       *http.Client
+	userID   int64
+	bankid   string
+	pass     string
+	name     string
+	cache    *CacheStore
+	retired  bool
+	retireto time.Duration
 }
 
-func NewClient(base, bankid, name, password string, timout time.Duration) (*Client, error) {
+func NewClient(base, bankid, name, password string, timout, retire time.Duration) (*Client, error) {
 	b, err := url.Parse(base)
 	if err != nil {
 		return nil, errors.Wrapf(err, "base url parse Failed.")
@@ -140,24 +152,78 @@ func NewClient(base, bankid, name, password string, timout time.Duration) (*Clie
 		Timeout: timout,
 	}
 	return &Client{
-		base:   b,
-		hc:     hc,
-		bankid: bankid,
-		name:   name,
-		pass:   password,
-		cache:  NewCacheStore(),
+		base:     b,
+		hc:       hc,
+		bankid:   bankid,
+		name:     name,
+		pass:     password,
+		cache:    NewCacheStore(),
+		retireto: retire,
 	}, nil
 }
 
+func (c *Client) IsRetired() bool {
+	return c.retired
+}
+
+func (c *Client) UserID() int64 {
+	return c.userID
+}
+
 func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
-	req.Header.Set("User-Agent", UserAgent)
-	start := time.Now()
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
+	if c.retired {
+		return nil, ErrAlreadyRetired
 	}
-	elapsedTime := time.Now().Sub(start)
-	return &ResponseWithElapsedTime{res, elapsedTime}, nil
+	req.Header.Set("User-Agent", UserAgent)
+	var reqbody []byte
+	if req.Body != nil {
+		var err error
+		reqbody, err = ioutil.ReadAll(req.Body) // for retry
+		if err != nil {
+			return nil, errors.Wrapf(err, "reqbody read faild")
+		}
+	}
+	start := time.Now()
+	for {
+		if reqbody != nil {
+			req.Body = ioutil.NopCloser(bytes.NewBuffer(reqbody))
+		}
+		res, err := c.hc.Do(req)
+		if err != nil {
+			elapsedTime := time.Now().Sub(start)
+			if e, ok := err.(*url.Error); ok {
+				if e.Timeout() {
+					c.retired = true
+					return nil, &ErrElapsedTimeOverRetire{e.Error()}
+				}
+			}
+			log.Printf("[WARN] err: %s, [%.5f] req.len:%d", err, elapsedTime.Seconds(), req.ContentLength)
+			if elapsedTime < c.retireto {
+				continue
+			}
+			return nil, err
+		}
+		elapsedTime := time.Now().Sub(start)
+		if c.retireto < elapsedTime {
+			if err = res.Body.Close(); err != nil {
+				log.Printf("[WARN] body close failed. %s", err)
+			}
+			c.retired = true
+			return nil, &ErrElapsedTimeOverRetire{
+				s: fmt.Sprintf("this user gave up browsing because response time is too long. [%.5f s]", elapsedTime.Seconds()),
+			}
+		}
+		if res.StatusCode < 500 {
+			return &ResponseWithElapsedTime{res, elapsedTime}, nil
+		}
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Printf("[INFO] retry status code: %d, read body failed: %s", res.StatusCode, err)
+		} else {
+			log.Printf("[INFO] retry status code: %d, body: %s", res.StatusCode, string(body))
+		}
+		time.Sleep(RetryInterval)
+	}
 }
 
 func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, error) {
@@ -176,23 +242,30 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	}
 	if cache, found := c.cache.Get(us); found {
 		// no-storeを外しかつcache-controlをつければOK
-		if cache.CanUseCache() {
-			return &ResponseWithElapsedTime{
-				Response: &http.Response{
-					StatusCode: http.StatusNotModified,
-					Body:       ioutil.NopCloser(&bytes.Buffer{}),
-				},
-				ElapsedTime: 0,
-			}, nil
-		}
+		// if cache.CanUseCache() {
+		// 	return &ResponseWithElapsedTime{
+		// 		Response: &http.Response{
+		// 			StatusCode: http.StatusNotModified,
+		// 			Body:       ioutil.NopCloser(&bytes.Buffer{}),
+		// 		},
+		// 		ElapsedTime: 0,
+		// 	}, nil
+		// }
 		cache.ApplyRequest(req)
 	}
 	res, err := c.doRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	if cache, ok := NewURLCache(res.Response); ok {
-		c.cache.Set(us, cache)
+	if res.StatusCode == 200 {
+		body := &bytes.Buffer{}
+		if _, err = io.Copy(body, res.Body); err != nil {
+			return nil, err
+		}
+		if cache, _ := NewURLCache(res.Response, body); cache != nil {
+			c.cache.Set(us, cache)
+		}
+		res.Body = ioutil.NopCloser(body)
 	}
 	return res, nil
 }
@@ -254,6 +327,9 @@ func (c *Client) Signup() error {
 	v.Set("password", c.pass)
 	res, err := c.post("/signup", v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrap(err, "POST /signup request failed")
 	}
 	defer res.Body.Close()
@@ -273,34 +349,87 @@ func (c *Client) Signin() error {
 	v.Set("password", c.pass)
 	res, err := c.post("/signin", v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrap(err, "POST /signin request failed")
 	}
 	defer res.Body.Close()
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return errors.Wrap(err, "POST /signin body read failed")
+	if res.StatusCode != 200 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return errors.Wrapf(err, "POST /signin body read failed")
+		}
+		return errorWithStatus(errors.Errorf("POST /signin failed."), res.StatusCode, string(b))
 	}
-	if res.StatusCode == http.StatusOK {
-		return nil
+	r := &User{}
+	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
+		return errors.Wrapf(err, "POST /signin body decode failed")
 	}
-	return errorWithStatus(errors.Errorf("POST /signin failed."), res.StatusCode, string(b))
+	if r.Name != c.name {
+		return errors.Errorf("POST /signin returned different name [%s] my name is [%s]", r.Name, c.name)
+	}
+	if r.ID == 0 {
+		return errors.Errorf("POST /signin returned zero id")
+	}
+	c.userID = r.ID
+	return nil
 }
 
-func (c *Client) Top() error {
-	res, err := c.get("/", url.Values{})
+func (c *Client) Signout() error {
+	res, err := c.post("/signout", url.Values{})
 	if err != nil {
-		return errors.Wrap(err, "GET / request failed")
+		if err == ErrAlreadyRetired {
+			return err
+		}
+		return errors.Wrap(err, "POST /signout request failed")
 	}
 	defer res.Body.Close()
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "GET / body read failed")
+		return errors.Wrap(err, "POST /signout body read failed")
 	}
 	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	// TODO top HTML の不正チェック
-	return errorWithStatus(errors.Errorf("GET / failed."), res.StatusCode, string(b))
+	return errorWithStatus(errors.Errorf("POST /signout failed."), res.StatusCode, string(b))
+}
+
+func (c *Client) Top() error {
+	for _, path := range []string{
+		"/",
+		// TODO static files
+		"/css/bootstrap-grid.min.css",
+		"/css/bootstrap-reboot.min.css",
+		"/css/bootstrap.min.css",
+		"/js/bootstrap.bundle.min.js",
+		"/js/bootstrap.min.js",
+		"/js/jquery-3.3.1.slim.min.js",
+		"/js/popper.min.js",
+	} {
+		err := func(path string) error {
+			res, err := c.get(path, url.Values{})
+			if err != nil {
+				if err == ErrAlreadyRetired {
+					return err
+				}
+				return errors.Wrapf(err, "GET %s request failed", path)
+			}
+			defer res.Body.Close()
+			b, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				return errors.Wrapf(err, "GET %s body read failed", path)
+			}
+			if res.StatusCode >= 400 {
+				return errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
+			}
+			return nil
+		}(path)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Client) Info(cursor int64) (*InfoResponse, error) {
@@ -309,6 +438,9 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	v.Set("cursor", strconv.FormatInt(cursor, 10))
 	res, err := c.get(path, v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -334,6 +466,9 @@ func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) 
 	v.Set("price", strconv.FormatInt(price, 10))
 	res, err := c.post(path, v)
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "POST %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -364,6 +499,9 @@ func (c *Client) GetOrders() ([]Order, error) {
 	path := "/orders"
 	res, err := c.get(path, url.Values{})
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return nil, err
+		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -374,17 +512,34 @@ func (c *Client) GetOrders() ([]Order, error) {
 		}
 		return nil, errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
 	}
-	r := []Order{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+	orders := []Order{}
+	if err := json.NewDecoder(res.Body).Decode(&orders); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	return r, nil
+	for _, order := range orders {
+		if order.UserID != c.userID {
+			return nil, errors.Wrapf(err, "GET %s returned not my order [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User == nil {
+			return nil, errors.Wrapf(err, "GET %s returned not filled user [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User.Name != c.name {
+			return nil, errors.Wrapf(err, "GET %s returned filled user.name is not my name [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.TradeID != 0 && order.Trade == nil {
+			return nil, errors.Wrapf(err, "GET %s returned not filled trade [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+	}
+	return orders, nil
 }
 
 func (c *Client) DeleteOrders(id int64) error {
 	path := fmt.Sprintf("/order/%d", id)
 	res, err := c.del(path, url.Values{})
 	if err != nil {
+		if err == ErrAlreadyRetired {
+			return err
+		}
 		return errors.Wrapf(err, "DELETE %s request failed", path)
 	}
 	defer res.Body.Close()

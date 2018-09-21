@@ -23,7 +23,7 @@ func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
 
 func (r *Runner) Result() {
 	c := r.bctx
-	c.Logger().Printf("Score: %d, (level: %d, errors: %d)", c.TotalScore(), c.level, c.ErrorCount())
+	c.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", c.TotalScore(), c.level, c.ErrorCount(), c.ActiveInvestors(), c.AllInvestors())
 }
 
 func (r *Runner) Run(ctx context.Context) error {

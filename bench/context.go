@@ -130,6 +130,20 @@ func (c *Context) TotalScore() int64 {
 	return score - demerit*c.ErrorCount()
 }
 
+func (c *Context) AllInvestors() int {
+	return len(c.investors)
+}
+
+func (c *Context) ActiveInvestors() int {
+	var i int
+	for _, in := range c.investors {
+		if !in.IsRetired() {
+			i++
+		}
+	}
+	return i
+}
+
 func (c *Context) FindInvestor(bankID string) Investor {
 	for _, i := range c.investors {
 		if i.BankID() == bankID {
@@ -140,7 +154,7 @@ func (c *Context) FindInvestor(bankID string) Investor {
 }
 
 func (c *Context) NewClient() (*Client, error) {
-	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout)
+	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
 }
 
 func (c *Context) Logger() *log.Logger {
@@ -151,7 +165,7 @@ func (c *Context) Start() ([]Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	guest, err := NewClient(c.appep, "", "", "", InitTimeout)
+	guest, err := NewClient(c.appep, "", "", "", InitTimeout, InitTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +209,9 @@ func (c *Context) Next() ([]Task, error) {
 		if !investor.IsSignin() {
 			continue
 		}
+		if investor.IsRetired() {
+			continue
+		}
 		if task := investor.Next(); task != nil {
 			tasks = append(tasks, task)
 		}
@@ -216,11 +233,11 @@ func (c *Context) Next() ([]Task, error) {
 			latestTradePrice = 100
 		}
 		c.level++
-		c.Logger().Printf("ワーカーレベルが上がります")
+		log.Printf("[INFO] ユーザーが増えます")
 
-		// 10人追加
+		// 2人追加
 		unitamount := int64(c.level * 5)
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 2; i++ {
 			cl, err := c.NewClient()
 			if err != nil {
 				return nil, err

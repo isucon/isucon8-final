@@ -1,5 +1,7 @@
 # webapp
 
+## API
+
 ### 初期化
 
 #### `POST /initialize`
@@ -152,27 +154,43 @@
     - lowest_sell_price: $price
     - highest_buy_price: $price
 
-### 更新処理
+## 取引処理
 
-#### `runTrade`
+### 仕様
 
-売り注文/買い注文の確定後に実行されるサブルーチン
+#### 基本的な優先順位
 
-- memo
-    - 買い注文の金額内で売り注文をマッチング
-    - 買い注文に対して 引き落としAPIを叩く
-    - 売り注文に対して 振込APIを叩く
-- log
-    - tag:trade
-        - trade_id: $trade_id
-        - amount: $amount
-        - price: $price
-    - tag:{$order.type}.trade
-        - order_id: $order_id
-        - trade_id: $trade_id
-        - user_id: $user_id
-        - amount: $amount
-        - price: $price
-    - tag:{$order.type}.delete
-        - order_id: $order_id
-        - reason: reserve_failed
+1. 単価 
+    - 売り注文の場合は安いほうが優先
+    - 買い注文の場合は高いほうが優先
+2. 注文時間
+
+※ 例外
+- 注文脚数が多く成立対象の椅子が不足している場合に限り、優先順位の繰り上がりを行うことができる
+
+#### 価格の決定
+
+売り注文と買い注文の価格が異なる場合、(例: 売り注文=550、買い注文=560) この場合、550-560の間で矛盾がなければ価格は幾らでも構わない。
+ただし、同一取引における価格はすべて同じでなければならない。(売り注文=550x3, 買い注文1=560x2, 買い注文2=555x1 の場合、550-555 の間の価格で単価は統一しなければならない)
+
+#### 自動キャンセル
+
+いすこん銀行の口座に対する与信に失敗した場合、注文は自動的にキャンセルとし、優先順位が繰り上がる
+
+### Log
+
+下記のログを送らなければならない
+
+- tag:trade
+    - trade_id: $trade_id
+    - amount:   $amount   (取引全体の脚数)
+    - price:    $price    (取引での単価)
+- tag:{$order.type}.trade
+    - order_id: $order_id
+    - trade_id: $trade_id
+    - user_id:  $user_id
+    - amount:   $amount
+    - price:    $price
+- tag:{$order.type}.delete
+    - order_id: $order_id
+    - reason: reserve_failed

@@ -4,8 +4,11 @@ import "time"
 
 const (
 	// Timeouts
-	ClientTimeout = 10 * time.Second
-	InitTimeout   = 10 * time.Second
+	ClientTimeout = 10 * time.Second // HTTP clientのタイムアウト
+	InitTimeout   = 10 * time.Second // Initialize のタイムアウト
+
+	RetireTimeout = 5 * time.Second        // clientが退役するタイムアウト時間
+	RetryInterval = 500 * time.Millisecond // 50x系でエラーになったときのretry間隔
 
 	AddWorkersByLevel = 10
 
