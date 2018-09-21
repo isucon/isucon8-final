@@ -30,7 +30,7 @@ Authorization: app_id APP_ID
 - request: application/json
     - tag
     - time
-    - data 
+    - data
 
 - response:
     - status: 200
@@ -38,6 +38,8 @@ Authorization: app_id APP_ID
         - error: app_id not found
     - status: 400
         - error: invalid data
+    - status: 503
+        - rate limit exceeded
 
 ### `POST /send_bulk`
 
@@ -52,6 +54,10 @@ Authorization: app_id APP_ID
         - error: app_id not found
     - status: 400
         - error: invalid data
+    - status: 413
+        - error: request body too large
+    - status: 503
+        - rate limit exceeded
 
 ### `GET /logs` (secret API)
 
