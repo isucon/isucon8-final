@@ -333,7 +333,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	switch {
 	case err == sql.ErrNoRows:
 	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), 500)
+		h.handleError(w, errors.Wrap(err, "getLowestSellOrder"), 500)
 		return
 	default:
 		res["lowest_sell_price"] = lowestSellOrder.Price
@@ -343,7 +343,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	switch {
 	case err == sql.ErrNoRows:
 	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), 500)
+		h.handleError(w, errors.Wrap(err, "getHighestBuyOrder"), 500)
 		return
 	default:
 		res["highest_buy_price"] = highestBuyOrder.Price
@@ -415,15 +415,12 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		if err != nil {
 			return errors.Wrap(err, "get order_id failed")
 		}
-		err = logger.Send(ot+".order", map[string]interface{}{
+		logger.Send(ot+".order", map[string]interface{}{
 			"order_id": id,
 			"user_id":  user.ID,
 			"amount":   amount,
 			"price":    price,
 		})
-		if err != nil {
-			return errors.Wrap(err, "send log failed")
-		}
 		return nil
 	})
 	if err != nil {
@@ -863,14 +860,23 @@ func hasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	lowest, err := getLowestSellOrder(d)
-	if err != nil {
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
 		return false, errors.Wrap(err, "getLowestSellOrder")
 	}
+
 	highest, err := getHighestBuyOrder(d)
-	if err != nil {
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
 		return false, errors.Wrap(err, "getHighestBuyOrder")
 	}
+
 	switch order.Type {
 	case OrderTypeBuy:
 		if lowest.Price <= order.Price {
