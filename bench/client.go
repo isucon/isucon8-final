@@ -171,9 +171,19 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 		return nil, errors.New("alreay retired client")
 	}
 	req.Header.Set("User-Agent", UserAgent)
+	var reqbody []byte
+	if req.Body != nil {
+		var err error
+		reqbody, err = ioutil.ReadAll(req.Body) // for retry
+		if err != nil {
+			return nil, errors.Wrapf(err, "reqbody read faild")
+		}
+	}
 	start := time.Now()
-	var retry float64 = 0.0
 	for {
+		if reqbody != nil {
+			req.Body = ioutil.NopCloser(bytes.NewBuffer(reqbody))
+		}
 		res, err := c.hc.Do(req)
 		if err != nil {
 			elapsedTime := time.Now().Sub(start)
@@ -183,7 +193,10 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 					return nil, &ErrElapsedTimeOverRetire{e.Error()}
 				}
 			}
-			log.Printf("err: %s, [%.5f] req.len:%d", err, elapsedTime.Seconds(), req.ContentLength)
+			log.Printf("[WARN] err: %s, [%.5f] req.len:%d", err, elapsedTime.Seconds(), req.ContentLength)
+			if elapsedTime < c.retireto {
+				continue
+			}
 			return nil, err
 		}
 		elapsedTime := time.Now().Sub(start)
@@ -199,8 +212,13 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 		if res.StatusCode < 500 {
 			return &ResponseWithElapsedTime{res, elapsedTime}, nil
 		}
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Printf("[INFO] retry status code: %d, read body failed: %s", res.StatusCode, err)
+		} else {
+			log.Printf("[INFO] retry status code: %d, body: %s", res.StatusCode, string(body))
+		}
 		time.Sleep(RetryInterval)
-		retry++
 	}
 }
 
