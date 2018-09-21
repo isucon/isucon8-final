@@ -56,16 +56,13 @@ type CandlestickData struct {
 	Low   int64     `json:"low"`
 }
 
-type Session struct {
-	User *User
-}
-
 // errors
 
 var (
 	errClosedOrder  = errors.New("closed order")
 	errNoOrder      = errors.New("no order")
 	errPriceUnmatch = errors.New("price unmatch")
+	empty           = struct{}{}
 )
 
 type errWithCode struct {
@@ -142,9 +139,9 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		return nil
 	})
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 	} else {
-		fmt.Fprintln(w, "ok")
+		h.handleSuccess(w, empty)
 	}
 }
 
@@ -153,118 +150,111 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
 	if name == "" || bankID == "" || password == "" {
-		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
+		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
 	isubank, err := newIsubank(h.db)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	logger, err := newLogger(h.db)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	// bankIDの検証
 	if err = isubank.Check(bankID, 0); err != nil {
-		h.handleError(w, err, http.StatusNotFound)
+		h.handleError(w, err, 404)
 		return
 	}
 	pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW(6))`, bankID, name, pass); err != nil {
 		if mysqlError, ok := err.(*mysql.MySQLError); ok {
 			if mysqlError.Number == 1062 {
-				h.handleError(w, errors.New("bank_id conflict"), http.StatusConflict)
+				h.handleError(w, errors.New("bank_id conflict"), 409)
 				return
 			}
 		}
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	} else {
 		userID, _ := res.LastInsertId()
-		logger.Send("signup", LogDataSignup{
-			BankID: bankID,
-			UserID: userID,
-			Name:   name,
+		logger.Send("signup", map[string]interface{}{
+			"bank_id": bankID,
+			"user_id": userID,
+			"name":    name,
 		})
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintln(w, "{}")
+	h.handleSuccess(w, empty)
 }
 
 func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
 	if bankID == "" || password == "" {
-		h.handleError(w, errors.New("all paramaters are required"), http.StatusBadRequest)
+		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
 	logger, err := newLogger(h.db)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 
 	user, err := getUserByBankID(h.db, bankID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			h.handleError(w, errors.New("bank_id or password is not match"), http.StatusNotFound)
+			h.handleError(w, errors.New("bank_id or password is not match"), 404)
 			return
 		}
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		if err == bcrypt.ErrMismatchedHashAndPassword {
-			h.handleError(w, errors.New("bank_id or password is not match"), http.StatusNotFound)
+			h.handleError(w, errors.New("bank_id or password is not match"), 404)
 			return
 		}
-		h.handleError(w, err, http.StatusBadRequest)
+		h.handleError(w, err, 400)
 		return
 	}
 	session, err := h.store.Get(r, SessionName)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	session.Values["user_id"] = user.ID
 	if err = session.Save(r, w); err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
-	logger.Send("signin", LogDataSignin{
-		UserID: user.ID,
+	logger.Send("signin", map[string]interface{}{
+		"user_id": user.ID,
 	})
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(user)
+	h.handleSuccess(w, user)
 }
 
 func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	session, err := h.store.Get(r, SessionName)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	session.Values["user_id"] = 0
 	session.Options = &sessions.Options{MaxAge: -1}
 	if err = session.Save(r, w); err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintln(w, "{}")
+	h.handleSuccess(w, empty)
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	s, _ := h.auth(r)
 	var (
 		err         error
 		lastTradeID int64
@@ -274,12 +264,12 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	if _cursor := r.URL.Query().Get("cursor"); _cursor != "" {
 		lastTradeID, err = strconv.ParseInt(_cursor, 10, 64)
 		if err != nil {
-			h.handleError(w, errors.Wrap(err, "cursor parse failed"), http.StatusBadRequest)
+			h.handleError(w, errors.Wrap(err, "cursor parse failed"), 400)
 			return
 		}
 		trade, err := getTradeByID(h.db, lastTradeID)
 		if err != nil && err != sql.ErrNoRows {
-			h.handleError(w, errors.Wrap(err, "getTradeByID failed"), http.StatusInternalServerError)
+			h.handleError(w, errors.Wrap(err, "getTradeByID failed"), 500)
 			return
 		}
 		if trade != nil {
@@ -287,26 +277,27 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		}
 	}
 	res["cursor"] = lastTradeID
-	trades, err := getTrades(h.db, lastTradeID)
+	trades, err := getTradesByLastID(h.db, lastTradeID)
 	if err != nil {
-		h.handleError(w, errors.Wrap(err, "getTrades failed"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "getTradesByLastID failed"), 500)
 		return
 	}
+	user, _ := h.userByRequest(r)
 	if l := len(trades); l > 0 {
 		res["cursor"] = trades[l-1].ID
-		if s != nil {
+		if user != nil {
 			tradeIDs := make([]int64, len(trades))
 			for i, trade := range trades {
 				tradeIDs[i] = trade.ID
 			}
-			orders, err := getOrdersByUserIDAndTradeIds(h.db, s.User.ID, tradeIDs)
+			orders, err := getOrdersByUserIDAndTradeIds(h.db, user.ID, tradeIDs)
 			if err != nil {
-				h.handleError(w, err, http.StatusInternalServerError)
+				h.handleError(w, err, 500)
 				return
 			}
 			for _, order := range orders {
 				if err = fetchOrderRelation(h.db, order); err != nil {
-					h.handleError(w, err, http.StatusInternalServerError)
+					h.handleError(w, err, 500)
 					return
 				}
 			}
@@ -317,7 +308,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	bySecTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
 	chartBySec, err := getCandlestickData(h.db, bySecTime, "%Y-%m-%d %H:%i:%s")
 	if err != nil {
-		h.handleError(w, errors.Wrap(err, "getCandlestickData by sec"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by sec"), 500)
 		return
 	}
 	res["chart_by_sec"] = chartBySec
@@ -325,7 +316,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	byMinTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
 	chartByMin, err := getCandlestickData(h.db, byMinTime, "%Y-%m-%d %H:%i:00")
 	if err != nil {
-		h.handleError(w, errors.Wrap(err, "getCandlestickData by min"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by min"), 500)
 		return
 	}
 	res["chart_by_min"] = chartByMin
@@ -333,7 +324,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	byHourTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
 	chartByHour, err := getCandlestickData(h.db, byHourTime, "%Y-%m-%d %H:00:00")
 	if err != nil {
-		h.handleError(w, errors.Wrap(err, "getCandlestickData by hour"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "getCandlestickData by hour"), 500)
 		return
 	}
 	res["chart_by_hour"] = chartByHour
@@ -342,7 +333,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	switch {
 	case err == sql.ErrNoRows:
 	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "find lowest sell order failed"), 500)
 		return
 	default:
 		res["lowest_sell_price"] = lowestSellOrder.Price
@@ -352,28 +343,27 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	switch {
 	case err == sql.ErrNoRows:
 	case err != nil:
-		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), http.StatusInternalServerError)
+		h.handleError(w, errors.Wrap(err, "find highest buy order failed"), 500)
 		return
 	default:
 		res["highest_buy_price"] = highestBuyOrder.Price
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(res)
+	h.handleSuccess(w, res)
 }
 
 func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	s, err := h.auth(r)
+	user, err := h.userByRequest(r)
 	if err != nil {
-		h.handleError(w, err, http.StatusUnauthorized)
+		h.handleError(w, err, 401)
 		return
 	}
 
 	var id int64
 	var tradeChance bool
 	err = txScorp(h.db, func(tx *sql.Tx) error {
-		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
-			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
+		if _, err := getUserByIDWithLock(tx, user.ID); err != nil {
+			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", user.ID)
 		}
 		logger, err := newLogger(tx)
 		if err != nil {
@@ -401,12 +391,12 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		switch ot {
 		case OrderTypeBuy:
 			totalPrice := price * amount
-			if err = isubank.Check(s.User.BankID, totalPrice); err != nil {
-				logger.Send("buy.error", LogDataBuyError{
-					Error:  err.Error(),
-					UserID: s.User.ID,
-					Amount: amount,
-					Price:  price,
+			if err = isubank.Check(user.BankID, totalPrice); err != nil {
+				logger.Send("buy.error", map[string]interface{}{
+					"error":   err.Error(),
+					"user_id": user.ID,
+					"amount":  amount,
+					"price":   price,
 				})
 				if err == ErrCreditInsufficient {
 					return errcode("銀行残高が足りません", 400)
@@ -434,7 +424,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		default:
 			return errcode("type must be sell or buy", 400)
 		}
-		res, err := tx.Exec(`INSERT INTO orders (type, user_id, amount, price, created_at) VALUES (?, ?, ?, ?, NOW(6))`, ot, s.User.ID, amount, price)
+		res, err := tx.Exec(`INSERT INTO orders (type, user_id, amount, price, created_at) VALUES (?, ?, ?, ?, NOW(6))`, ot, user.ID, amount, price)
 		if err != nil {
 			return errors.Wrap(err, "insert order failed")
 		}
@@ -442,12 +432,11 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		if err != nil {
 			return errors.Wrap(err, "get order_id failed")
 		}
-		tag := ot + ".order"
-		err = logger.Send(tag, LogDataOrder{
-			OrderID: id,
-			UserID:  s.User.ID,
-			Amount:  amount,
-			Price:   price,
+		err = logger.Send(ot+".order", map[string]interface{}{
+			"order_id": id,
+			"user_id":  user.ID,
+			"amount":   amount,
+			"price":    price,
 		})
 		if err != nil {
 			return errors.Wrap(err, "send log failed")
@@ -455,11 +444,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		return nil
 	})
 	if err != nil {
-		if e, ok := err.(*errWithCode); ok {
-			h.handleError(w, e.Err, e.StatusCode)
-			return
-		}
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	if tradeChance {
@@ -468,41 +453,41 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 			log.Printf("runTrade err:%s", err)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintf(w, `{"id":%d}`, id)
+	h.handleSuccess(w, map[string]interface{}{
+		"id": id,
+	})
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	s, err := h.auth(r)
+	user, err := h.userByRequest(r)
 	if err != nil {
-		h.handleError(w, err, http.StatusUnauthorized)
+		h.handleError(w, err, 401)
 		return
 	}
-	orders, err := getOrdersByUserID(h.db, s.User.ID)
+	orders, err := getOrdersByUserID(h.db, user.ID)
 	if err != nil {
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 	for _, order := range orders {
 		if err = fetchOrderRelation(h.db, order); err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
+			h.handleError(w, err, 500)
 			return
 		}
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(orders)
+	h.handleSuccess(w, orders)
 }
 
 func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	s, err := h.auth(r)
+	user, err := h.userByRequest(r)
 	if err != nil {
-		h.handleError(w, err, http.StatusUnauthorized)
+		h.handleError(w, err, 401)
 		return
 	}
 	var id int64
 	err = txScorp(h.db, func(tx *sql.Tx) error {
-		if _, err := getUserByIDWithLock(tx, s.User.ID); err != nil {
-			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", s.User.ID)
+		if _, err := getUserByIDWithLock(tx, user.ID); err != nil {
+			return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", user.ID)
 		}
 		logger, err := newLogger(tx)
 		if err != nil {
@@ -524,7 +509,7 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 			}
 			return err
 		}
-		if order.UserID != s.User.ID {
+		if order.UserID != user.ID {
 			return errcodeWrap(errors.New("not found"), 404)
 		}
 		if order.ClosedAt != nil {
@@ -533,48 +518,44 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 		if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
 			return errors.Wrap(err, "update orders for cancel")
 		}
-		tag := order.Type + ".delete"
-		logger.Send(tag, LogDataOrderDelete{
-			OrderID: id,
-			Reason:  "canceled",
+		logger.Send(order.Type+".delete", map[string]interface{}{
+			"order_id": id,
+			"reason":   "canceled",
 		})
 		return nil
 	})
 
 	if err != nil {
-		if e, ok := err.(*errWithCode); ok {
-			h.handleError(w, e.Err, e.StatusCode)
-			return
-		}
-		h.handleError(w, err, http.StatusInternalServerError)
+		h.handleError(w, err, 500)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	fmt.Fprintf(w, `{"id":%d}`, id)
+	h.handleSuccess(w, map[string]interface{}{
+		"id": id,
+	})
 }
 
 func (h *Handler) commonHandler(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			if err := r.ParseForm(); err != nil {
-				h.handleError(w, err, http.StatusBadRequest)
+				h.handleError(w, err, 400)
 				return
 			}
 		}
 		session, err := h.store.Get(r, SessionName)
 		if err != nil {
-			h.handleError(w, err, http.StatusInternalServerError)
+			h.handleError(w, err, 500)
 			return
 		}
 		if _userID, ok := session.Values["user_id"]; ok {
 			userID := _userID.(int64)
 			user, err := getUserByID(h.db, userID)
 			if err != nil {
-				h.handleError(w, err, http.StatusInternalServerError)
+				h.handleError(w, err, 500)
 				return
 			}
-			ctx := context.WithValue(r.Context(), "session", &Session{user})
+			ctx := context.WithValue(r.Context(), "user_id", user.ID)
 			f.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			f.ServeHTTP(w, r)
@@ -582,18 +563,38 @@ func (h *Handler) commonHandler(f http.Handler) http.Handler {
 	})
 }
 
-func (h *Handler) auth(r *http.Request) (*Session, error) {
-	v := r.Context().Value("session")
-	if s, ok := v.(*Session); ok {
-		return s, nil
+func (h *Handler) userByRequest(r *http.Request) (*User, error) {
+	v := r.Context().Value("user_id")
+	if id, ok := v.(int64); ok {
+		return getUserByID(h.db, id)
 	}
-	return nil, errors.New("Not authenticate")
+	return nil, errors.New("Not userByRequestenticate")
+}
+
+func (h *Handler) handleSuccess(w http.ResponseWriter, data interface{}) {
+	w.WriteHeader(200)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("[WARN] write response json failed. %s", err)
+	}
 }
 
 func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
+	if e, ok := err.(*errWithCode); ok {
+		code = e.StatusCode
+		err = e.Err
+	}
+	w.WriteHeader(code)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	log.Printf("[WARN] err: %s", err.Error())
-	// TODO Error Message
-	http.Error(w, err.Error(), code)
+	data := map[string]interface{}{
+		"code": code,
+		"err":  err.Error(),
+	}
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("[WARN] write error response json failed. %s", err)
+	}
 }
 
 // helpers
@@ -730,7 +731,7 @@ func getTradeByID(d QueryExecuter, id int64) (*Trade, error) {
 	return scanTrade(d.QueryRow(query, id))
 }
 
-func getTrades(d QueryExecuter, lastID int64) ([]*Trade, error) {
+func getTradesByLastID(d QueryExecuter, lastID int64) ([]*Trade, error) {
 	query := fmt.Sprintf("SELECT %s FROM trade WHERE id > ? ORDER BY id ASC", tradeColumns)
 	rows, err := d.Query(query, lastID)
 	if err != nil {
@@ -914,10 +915,9 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 			if _, err = d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
 				return 0, errors.Wrap(err, "update buy_order for cancel")
 			}
-			tag := order.Type + "..delete"
-			logger.Send(tag, LogDataOrderDelete{
-				OrderID: id,
-				Reason:  "reserve_failed",
+			logger.Send(order.Type+".delete", map[string]interface{}{
+				"order_id": id,
+				"reason":   "reserve_failed",
 			})
 			return 0, err
 		}
@@ -944,21 +944,21 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	if err != nil {
 		return errors.Wrap(err, "lastInsertID for trade")
 	}
-	logger.Send("trade", LogDataTrade{
-		TradeID: tradeID,
-		Price:   order.Price,
-		Amount:  order.Amount,
+	logger.Send("trade", map[string]interface{}{
+		"trade_id": tradeID,
+		"price":    order.Price,
+		"amount":   order.Amount,
 	})
 	for _, o := range append(targets, order) {
 		if _, err = tx.Exec(`UPDATE orders SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
 			return errors.Wrap(err, "update order for trade")
 		}
-		logger.Send(o.Type+".trade", LogDataOrderTrade{
-			OrderID: o.ID,
-			Price:   order.Price,
-			Amount:  o.Amount,
-			UserID:  o.UserID,
-			TradeID: tradeID,
+		logger.Send(o.Type+".trade", map[string]interface{}{
+			"order_id": o.ID,
+			"price":    order.Price,
+			"amount":   o.Amount,
+			"user_id":  o.UserID,
+			"trade_id": tradeID,
 		})
 	}
 	if err = isubank.Commit(reserves); err != nil {

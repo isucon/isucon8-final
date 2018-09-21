@@ -18,49 +18,6 @@ type Log struct {
 	Data interface{} `json:"data"`
 }
 
-type LogDataSignup struct {
-	Name   string `json:"name"`
-	BankID string `json:"bank_id"`
-	UserID int64  `json:"user_id"`
-}
-
-type LogDataSignin struct {
-	UserID int64 `json:"user_id"`
-}
-
-type LogDataOrder struct {
-	UserID  int64 `json:"user_id"`
-	OrderID int64 `json:"order_id"`
-	Amount  int64 `json:"amount"`
-	Price   int64 `json:"price"`
-}
-
-type LogDataBuyError struct {
-	UserID int64  `json:"user_id"`
-	Amount int64  `json:"amount"`
-	Price  int64  `json:"price"`
-	Error  string `json:"error"`
-}
-
-type LogDataTrade struct {
-	TradeID int64 `json:"trade_id"`
-	Amount  int64 `json:"amount"`
-	Price   int64 `json:"price"`
-}
-
-type LogDataOrderTrade struct {
-	TradeID int64 `json:"trade_id"`
-	UserID  int64 `json:"user_id"`
-	OrderID int64 `json:"order_id"`
-	Amount  int64 `json:"amount"`
-	Price   int64 `json:"price"`
-}
-
-type LogDataOrderDelete struct {
-	OrderID int64  `json:"order_id"`
-	Reason  string `json:"reason"`
-}
-
 type Logger struct {
 	endpoint *url.URL
 	appID    string
