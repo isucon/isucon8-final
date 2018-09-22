@@ -30,15 +30,6 @@ var (
 	ErrAlreadyRetired = errors.New("alreay retired client")
 )
 
-func init() {
-	var err error
-	loc, err := time.LoadLocation("Asia/Tokyo")
-	if err != nil {
-		log.Panicln(err)
-	}
-	time.Local = loc
-}
-
 type ResponseWithElapsedTime struct {
 	*http.Response
 	ElapsedTime time.Duration

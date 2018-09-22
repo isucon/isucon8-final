@@ -154,7 +154,7 @@ func (c *Manager) FindInvestor(bankID string) Investor {
 	return nil
 }
 
-func (c *Manager) NewClient() (*Client, error) {
+func (c *Manager) newClient() (*Client, error) {
 	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
 }
 
@@ -162,21 +162,35 @@ func (c *Manager) Logger() *log.Logger {
 	return c.logger
 }
 
-func (c *Manager) Start() ([]taskworker.Task, error) {
+func (c *Manager) Initialize() error {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
 	guest, err := NewClient(c.appep, "", "", "", InitTimeout, InitTimeout)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := guest.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
-		return nil, err
+		return err
 	}
+	return nil
+}
+
+func (c *Manager) PreTest() error {
+	return nil
+}
+
+func (c *Manager) PostTest() error {
+	return nil
+}
+
+func (c *Manager) Start() ([]taskworker.Task, error) {
+	c.nextLock.Lock()
+	defer c.nextLock.Unlock()
 
 	tasks := make([]taskworker.Task, 0, AddWorkersByLevel)
 	for i := 0; i < AddWorkersByLevel; i++ {
-		cl, err := c.NewClient()
+		cl, err := c.newClient()
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +255,7 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 		// 2人追加
 		unitamount := int64(c.level * 5)
 		for i := 0; i < 2; i++ {
-			cl, err := c.NewClient()
+			cl, err := c.newClient()
 			if err != nil {
 				return nil, err
 			}

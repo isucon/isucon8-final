@@ -29,38 +29,58 @@ func (r *Runner) Result() {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	c := r.mgr
+	m := r.mgr
 
 	cctx, ccancel := context.WithCancel(ctx)
 	defer ccancel()
-	go c.RunIDFetcher(cctx)
+	go m.RunIDFetcher(cctx)
 
-	c.Logger().Println("# initialize")
-
-	tasks, err := c.Start()
-	if err != nil {
-		c.Logger().Printf("Initialize に失敗しました. err:%s", err)
+	m.Logger().Println("# initialize")
+	if err := m.Initialize(); err != nil {
+		m.Logger().Printf("Initialize に失敗しました. err:%s", err)
 		return err
 	}
 
-	c.Logger().Printf("# benchmark start")
+	m.Logger().Println("# pre test")
+	if err := m.PreTest(); err != nil {
+		m.Logger().Printf("負荷走行前のテストに失敗しました. err:%s", err)
+		return err
+	}
+
+	m.Logger().Printf("# benchmark")
+	if err := r.runBenchmark(ctx); err != nil {
+		m.Logger().Printf("負荷走行 に失敗しました. err:%s", err)
+		return err
+	}
+
+	m.Logger().Printf("# post test")
+	if err := m.PostTest(); err != nil {
+		m.Logger().Printf("負荷走行後のテストに失敗しました. err:%s", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Runner) runBenchmark(ctx context.Context) error {
+	tasks, err := r.mgr.Start()
+	if err != nil {
+		r.mgr.Logger().Printf("初期化に失敗しました。err:%s", err)
+		return err
+	}
+
 	worker := taskworker.NewWorker()
 	go r.handleWorker(worker)
 
 	go r.runTicker(worker)
 
-	mgr, cancel := context.WithTimeout(ctx, r.timeout)
+	wc, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	err = worker.Run(mgr, tasks)
+	err = worker.Run(wc, tasks)
 	if err == context.DeadlineExceeded {
 		err = nil
 	}
 	close(r.done)
-
-	c.Logger().Println("# benchmark success")
-
-	// TODO bench終了後N秒経過してからloggerとbankをチェックしたい
-
 	return err
 }
 
