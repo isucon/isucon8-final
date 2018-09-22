@@ -72,14 +72,17 @@ func (r *Runner) handleWorker(worker *taskworker.Worker) {
 			return
 		case task := <-ch:
 			err := task.Error()
-			if err != nil && err != context.DeadlineExceeded {
+			switch err {
+			case context.DeadlineExceeded, nil:
+				r.bctx.AddScore(task.Score())
+			case ErrAlreadyRetired:
+			default:
 				r.bctx.Logger().Printf("error: %s", err)
 				if e := r.bctx.IncrErr(); e != nil {
 					r.bctx.Logger().Printf("ベンチマークを終了します: %s", e)
 					worker.Finish()
 				}
 			}
-			r.bctx.AddScore(task.Score())
 		}
 	}
 }
