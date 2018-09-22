@@ -86,6 +86,10 @@ func (i *investorBase) pushNextTask(task taskworker.Task) {
 }
 
 func (i *investorBase) pushOrder(o *Order) {
+	if o == nil {
+		log.Printf("[WARN] push order is null")
+		return
+	}
 	//log.Printf("[DEBUG] pushOrder [id:%d]", o.ID)
 	i.orders = append(i.orders, o)
 }
@@ -95,6 +99,9 @@ func (i *investorBase) removeOrder(id int64) *Order {
 	newl := make([]*Order, 0, cap(i.orders))
 	var removed *Order
 	for _, o := range i.orders {
+		if o == nil {
+			continue
+		}
 		if o.ID != id {
 			newl = append(newl, o)
 		} else {
@@ -446,7 +453,7 @@ func (i *RandomInvestor) UpdateOrderTask() taskworker.Task {
 			} else {
 				mdiff = i.lowestSellPrice - order.Price
 			}
-			if df < mdiff {
+			if o == nil || df < mdiff {
 				o = order
 				df = mdiff
 			}
