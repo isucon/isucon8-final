@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Context struct {
+type Manager struct {
 	logger    *log.Logger
 	appep     string
 	bankep    string
@@ -34,7 +34,7 @@ type Context struct {
 	lastTradePorring time.Time
 }
 
-func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Context, error) {
+func NewManager(out io.Writer, appep, bankep, logep, internalbank string) (*Manager, error) {
 	rand, err := NewRandom()
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 	if err != nil {
 		return nil, err
 	}
-	return &Context{
+	return &Manager{
 		logger:    NewLogger(out),
 		appep:     appep,
 		bankep:    bankep,
@@ -59,7 +59,7 @@ func NewContext(out io.Writer, appep, bankep, logep, internalbank string) (*Cont
 }
 
 // benchに影響を与えないようにidは予め用意しておく
-func (c *Context) RunIDFetcher(ctx context.Context) {
+func (c *Manager) RunIDFetcher(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -74,17 +74,17 @@ func (c *Context) RunIDFetcher(ctx context.Context) {
 	}
 }
 
-func (c *Context) FetchNewID() string {
+func (c *Manager) FetchNewID() string {
 	return <-c.idlist
 }
 
-func (c *Context) AddInvestor(i Investor) {
+func (c *Manager) AddInvestor(i Investor) {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	c.investors = append(c.investors, i)
 }
 
-func (c *Context) RemoveInvestor(i Investor) {
+func (c *Manager) RemoveInvestor(i Investor) {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	cleared := make([]Investor, 0, cap(c.investors))
@@ -96,15 +96,15 @@ func (c *Context) RemoveInvestor(i Investor) {
 	c.investors = cleared
 }
 
-func (c *Context) AddScore(score int64) {
+func (c *Manager) AddScore(score int64) {
 	atomic.AddInt64(&c.score, score)
 }
 
-func (c *Context) GetScore() int64 {
+func (c *Manager) GetScore() int64 {
 	return atomic.LoadInt64(&c.score)
 }
 
-func (c *Context) IncrErr() error {
+func (c *Manager) IncrErr() error {
 	ec := atomic.AddInt64(&c.errcount, 1)
 
 	errorLimit := c.GetScore() / 20
@@ -119,11 +119,11 @@ func (c *Context) IncrErr() error {
 	return nil
 }
 
-func (c *Context) ErrorCount() int64 {
+func (c *Manager) ErrorCount() int64 {
 	return atomic.LoadInt64(&c.errcount)
 }
 
-func (c *Context) TotalScore() int64 {
+func (c *Manager) TotalScore() int64 {
 	score := c.GetScore()
 	demerit := score / (AllowErrorMax * 2)
 
@@ -131,11 +131,11 @@ func (c *Context) TotalScore() int64 {
 	return score - demerit*c.ErrorCount()
 }
 
-func (c *Context) AllInvestors() int {
+func (c *Manager) AllInvestors() int {
 	return len(c.investors)
 }
 
-func (c *Context) ActiveInvestors() int {
+func (c *Manager) ActiveInvestors() int {
 	var i int
 	for _, in := range c.investors {
 		if !in.IsRetired() {
@@ -145,7 +145,7 @@ func (c *Context) ActiveInvestors() int {
 	return i
 }
 
-func (c *Context) FindInvestor(bankID string) Investor {
+func (c *Manager) FindInvestor(bankID string) Investor {
 	for _, i := range c.investors {
 		if i.BankID() == bankID {
 			return i
@@ -154,15 +154,15 @@ func (c *Context) FindInvestor(bankID string) Investor {
 	return nil
 }
 
-func (c *Context) NewClient() (*Client, error) {
+func (c *Manager) NewClient() (*Client, error) {
 	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
 }
 
-func (c *Context) Logger() *log.Logger {
+func (c *Manager) Logger() *log.Logger {
 	return c.logger
 }
 
-func (c *Context) Start() ([]taskworker.Task, error) {
+func (c *Manager) Start() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
@@ -193,7 +193,7 @@ func (c *Context) Start() ([]taskworker.Task, error) {
 	return tasks, nil
 }
 
-func (c *Context) Next() ([]taskworker.Task, error) {
+func (c *Manager) Next() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 

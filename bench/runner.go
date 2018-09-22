@@ -8,15 +8,15 @@ import (
 )
 
 type Runner struct {
-	bctx     *Context
+	mgr      *Manager
 	timeout  time.Duration
 	interval time.Duration
 	done     chan struct{}
 }
 
-func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
+func NewRunner(mgr *Manager, timeout, interval time.Duration) *Runner {
 	return &Runner{
-		bctx:     bctx,
+		mgr:      mgr,
 		timeout:  timeout,
 		interval: interval,
 		done:     make(chan struct{}),
@@ -24,12 +24,12 @@ func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
 }
 
 func (r *Runner) Result() {
-	c := r.bctx
+	c := r.mgr
 	c.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", c.TotalScore(), c.level, c.ErrorCount(), c.ActiveInvestors(), c.AllInvestors())
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	c := r.bctx
+	c := r.mgr
 
 	cctx, ccancel := context.WithCancel(ctx)
 	defer ccancel()
@@ -49,9 +49,9 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	go r.runTicker(worker)
 
-	bctx, cancel := context.WithTimeout(ctx, r.timeout)
+	mgr, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	err = worker.Run(bctx, tasks)
+	err = worker.Run(mgr, tasks)
 	if err == context.DeadlineExceeded {
 		err = nil
 	}
@@ -74,12 +74,12 @@ func (r *Runner) handleWorker(worker *taskworker.Worker) {
 			err := task.Error()
 			switch err {
 			case context.DeadlineExceeded, nil:
-				r.bctx.AddScore(task.Score())
+				r.mgr.AddScore(task.Score())
 			case ErrAlreadyRetired:
 			default:
-				r.bctx.Logger().Printf("error: %s", err)
-				if e := r.bctx.IncrErr(); e != nil {
-					r.bctx.Logger().Printf("ベンチマークを終了します: %s", e)
+				r.mgr.Logger().Printf("error: %s", err)
+				if e := r.mgr.IncrErr(); e != nil {
+					r.mgr.Logger().Printf("ベンチマークを終了します: %s", e)
 					worker.Finish()
 				}
 			}
@@ -94,9 +94,9 @@ func (r *Runner) runTicker(worker *taskworker.Worker) {
 			return
 		case <-time.After(r.interval):
 			// nextが終わってから次のloopとしたいのでtickerではない
-			tasks, err := r.bctx.Next()
+			tasks, err := r.mgr.Next()
 			if err != nil {
-				r.bctx.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
+				r.mgr.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
 				worker.Finish()
 			}
 			if tasks != nil {

@@ -28,11 +28,11 @@ func main() {
 }
 
 func run() error {
-	bc, err := bench.NewContext(os.Stderr, *appep, *bankep, *logep, *internalbank)
+	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank)
 	if err != nil {
 		return err
 	}
-	bm := bench.NewRunner(bc, time.Minute, 20*time.Millisecond)
+	bm := bench.NewRunner(mgr, time.Minute, 20*time.Millisecond)
 	if err = bm.Run(context.Background()); err != nil {
 		return err
 	}
