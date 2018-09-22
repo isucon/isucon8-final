@@ -3,6 +3,8 @@ package bench
 import (
 	"context"
 	"time"
+
+	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 )
 
 type Runner struct {
@@ -42,7 +44,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	c.Logger().Printf("# benchmark start")
-	worker := NewWorker()
+	worker := taskworker.NewWorker()
 	go r.handleWorker(worker)
 
 	go r.runTicker(worker)
@@ -62,7 +64,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	return err
 }
 
-func (r *Runner) handleWorker(worker *Worker) {
+func (r *Runner) handleWorker(worker *taskworker.Worker) {
 	ch := worker.TaskEnd()
 	for {
 		select {
@@ -82,7 +84,7 @@ func (r *Runner) handleWorker(worker *Worker) {
 	}
 }
 
-func (r *Runner) runTicker(worker *Worker) {
+func (r *Runner) runTicker(worker *taskworker.Worker) {
 	for {
 		select {
 		case <-r.done:

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
 
@@ -20,10 +21,10 @@ const (
 
 type Investor interface {
 	// 初期処理を実行するTaskを返す
-	Start() Task
+	Start() taskworker.Task
 
 	// tickerで呼ばれる
-	Next() Task
+	Next() taskworker.Task
 
 	BankID() string
 	Credit() int64
@@ -53,7 +54,7 @@ type investorBase struct {
 	lastOrder        time.Time
 	mux              sync.Mutex
 	taskLock         sync.Mutex
-	taskStack        []Task
+	taskStack        []taskworker.Task
 	timeoutCount     int
 	latestTradePrice int64
 }
@@ -66,7 +67,7 @@ func newInvestorBase(c *Client, credit, isu int64) *investorBase {
 		defisu:    isu,
 		isu:       isu,
 		orders:    make([]*Order, 0, OrderCap),
-		taskStack: make([]Task, 0, 5),
+		taskStack: make([]taskworker.Task, 0, 5),
 	}
 }
 
@@ -78,7 +79,7 @@ func (i *investorBase) LatestTradePrice() int64 {
 	return i.latestTradePrice
 }
 
-func (i *investorBase) pushNextTask(task Task) {
+func (i *investorBase) pushNextTask(task taskworker.Task) {
 	i.taskLock.Lock()
 	defer i.taskLock.Unlock()
 	i.taskStack = append(i.taskStack, task)
@@ -133,14 +134,14 @@ func (i *investorBase) IsStarted() bool {
 	return i.isStarted
 }
 
-func (i *investorBase) Top() Task {
-	return NewExecTask(func(_ context.Context) error {
+func (i *investorBase) Top() taskworker.Task {
+	return taskworker.NewExecTask(func(_ context.Context) error {
 		return i.c.Top()
 	}, GetTopScore)
 }
 
-func (i *investorBase) Signup() Task {
-	return NewScoreTask(func(_ context.Context) (int64, error) {
+func (i *investorBase) Signup() taskworker.Task {
+	return taskworker.NewScoreTask(func(_ context.Context) (int64, error) {
 		time.Sleep(time.Millisecond * time.Duration(rand.Int63n(100)))
 		i.mux.Lock()
 		defer i.mux.Unlock()
@@ -157,8 +158,8 @@ func (i *investorBase) Signup() Task {
 	})
 }
 
-func (i *investorBase) Signin() Task {
-	return NewExecTask(func(_ context.Context) error {
+func (i *investorBase) Signin() taskworker.Task {
+	return taskworker.NewExecTask(func(_ context.Context) error {
 		time.Sleep(time.Millisecond * time.Duration(rand.Int63n(100)))
 		if err := i.c.Signin(); err != nil {
 			return err
@@ -169,8 +170,8 @@ func (i *investorBase) Signin() Task {
 	}, SigninScore)
 }
 
-func (i *investorBase) Info() Task {
-	return NewScoreTask(func(ctx context.Context) (int64, error) {
+func (i *investorBase) Info() taskworker.Task {
+	return taskworker.NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.mux.Lock()
 		defer i.mux.Unlock()
 		if i.IsRetired() {
@@ -238,8 +239,8 @@ func (i *investorBase) Info() Task {
 	})
 }
 
-func (i *investorBase) UpdateOrders() Task {
-	return NewExecTask(func(_ context.Context) error {
+func (i *investorBase) UpdateOrders() taskworker.Task {
+	return taskworker.NewExecTask(func(_ context.Context) error {
 		i.mux.Lock()
 		defer i.mux.Unlock()
 		orders, err := i.c.GetOrders()
@@ -303,8 +304,8 @@ func (i *investorBase) UpdateOrders() Task {
 	}, GetOrdersScore)
 }
 
-func (i *investorBase) AddOrder(ot string, amount, price int64) Task {
-	return NewExecTask(func(ctx context.Context) error {
+func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task {
+	return taskworker.NewExecTask(func(ctx context.Context) error {
 		i.mux.Lock()
 		defer i.mux.Unlock()
 		order, err := i.c.AddOrder(ot, amount, price)
@@ -321,8 +322,8 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) Task {
 	}, PostOrdersScore)
 }
 
-func (i *investorBase) RemoveOrder(order *Order) Task {
-	return NewScoreTask(func(ctx context.Context) (int64, error) {
+func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
+	return taskworker.NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.mux.Lock()
 		defer i.mux.Unlock()
 		if !i.hasOrder(order.ID) {
@@ -341,9 +342,9 @@ func (i *investorBase) RemoveOrder(order *Order) Task {
 	})
 }
 
-func (i *investorBase) Start() Task {
+func (i *investorBase) Start() taskworker.Task {
 	i.isStarted = true
-	task := NewSerialTask(6)
+	task := taskworker.NewSerialTask(6)
 	task.Add(i.Top())
 	task.Add(i.Info())
 	task.Add(i.Signup())
@@ -352,13 +353,13 @@ func (i *investorBase) Start() Task {
 	return task
 }
 
-func (i *investorBase) Next() Task {
+func (i *investorBase) Next() taskworker.Task {
 	i.taskLock.Lock()
 	defer i.taskLock.Unlock()
 	if i.IsRetired() {
 		return nil
 	}
-	task := NewSerialTask(2 + len(i.taskStack))
+	task := taskworker.NewSerialTask(2 + len(i.taskStack))
 	task.Add(i.Info())
 	for _, t := range i.taskStack {
 		task.Add(t)
@@ -387,29 +388,29 @@ func NewRandomInvestor(c *Client, credit, isu, unitamount, unitprice int64) *Ran
 	}
 }
 
-func (i *RandomInvestor) Start() Task {
+func (i *RandomInvestor) Start() taskworker.Task {
 	task := i.investorBase.Start()
-	if t, ok := task.(*SerialTask); ok {
+	if t, ok := task.(*taskworker.SerialTask); ok {
 		t.Add(i.FixNextTask())
 		return t
 	}
 	return task
 }
 
-func (i *RandomInvestor) Next() Task {
+func (i *RandomInvestor) Next() taskworker.Task {
 	if i.IsRetired() {
 		return nil
 	}
 	task := i.investorBase.Next()
-	if t, ok := task.(*SerialTask); ok {
+	if t, ok := task.(*taskworker.SerialTask); ok {
 		t.Add(i.FixNextTask())
 		return t
 	}
 	return task
 }
 
-func (i *RandomInvestor) FixNextTask() Task {
-	return NewExecTask(func(_ context.Context) error {
+func (i *RandomInvestor) FixNextTask() taskworker.Task {
+	return taskworker.NewExecTask(func(_ context.Context) error {
 		if task := i.UpdateOrderTask(); task != nil {
 			i.pushNextTask(task)
 			i.pushNextTask(i.UpdateOrders())
@@ -418,7 +419,7 @@ func (i *RandomInvestor) FixNextTask() Task {
 	}, 0)
 }
 
-func (i *RandomInvestor) UpdateOrderTask() Task {
+func (i *RandomInvestor) UpdateOrderTask() taskworker.Task {
 	i.mux.Lock()
 	defer i.mux.Unlock()
 	if i.IsRetired() {

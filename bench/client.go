@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ken39arg/isucon2018-final/bench/urlcache"
+
 	"github.com/pkg/errors"
 	"golang.org/x/net/publicsuffix"
 )
@@ -129,7 +131,7 @@ type Client struct {
 	bankid   string
 	pass     string
 	name     string
-	cache    *CacheStore
+	cache    *urlcache.CacheStore
 	retired  bool
 	retireto time.Duration
 }
@@ -157,7 +159,7 @@ func NewClient(base, bankid, name, password string, timout, retire time.Duration
 		bankid:   bankid,
 		name:     name,
 		pass:     password,
-		cache:    NewCacheStore(),
+		cache:    urlcache.NewCacheStore(),
 		retireto: retire,
 	}, nil
 }
@@ -262,7 +264,7 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 		if _, err = io.Copy(body, res.Body); err != nil {
 			return nil, err
 		}
-		if cache, _ := NewURLCache(res.Response, body); cache != nil {
+		if cache, _ := urlcache.NewURLCache(res.Response, body); cache != nil {
 			c.cache.Set(us, cache)
 		}
 		res.Body = ioutil.NopCloser(body)

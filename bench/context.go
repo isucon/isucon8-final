@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
 
@@ -161,7 +162,7 @@ func (c *Context) Logger() *log.Logger {
 	return c.logger
 }
 
-func (c *Context) Start() ([]Task, error) {
+func (c *Context) Start() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
@@ -173,7 +174,7 @@ func (c *Context) Start() ([]Task, error) {
 		return nil, err
 	}
 
-	tasks := make([]Task, 0, AddWorkersByLevel)
+	tasks := make([]taskworker.Task, 0, AddWorkersByLevel)
 	for i := 0; i < AddWorkersByLevel; i++ {
 		cl, err := c.NewClient()
 		if err != nil {
@@ -192,11 +193,11 @@ func (c *Context) Start() ([]Task, error) {
 	return tasks, nil
 }
 
-func (c *Context) Next() ([]Task, error) {
+func (c *Context) Next() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
-	tasks := []Task{}
+	tasks := []taskworker.Task{}
 	for _, investor := range c.investors {
 		// 初期以外はnextのタイミングで一人づつ投入
 		if !investor.IsStarted() {
@@ -250,7 +251,7 @@ func (c *Context) Next() ([]Task, error) {
 			} else {
 				investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, latestTradePrice+5)
 			}
-			tasks = append(tasks, NewExecTask(func(_ context.Context) error {
+			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
 				c.isubank.AddCredit(investor.BankID(), investor.Credit())
 				c.AddInvestor(investor)
 				return nil
