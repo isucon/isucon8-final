@@ -16,7 +16,7 @@ CREATE TABLE credit (
     note VARCHAR(255) NOT NULL,
     created_at DATETIME(6) NOT NULL,
     PRIMARY KEY (id),
-    INDEX user_id_idx (user_id)
+    INDEX user_id_amount_idx (user_id, amount)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 CREATE TABLE reserve (
@@ -28,5 +28,5 @@ CREATE TABLE reserve (
     created_at DATETIME(6) NOT NULL,
     expire_at DATETIME NOT NULL,
     PRIMARY KEY (id),
-    INDEX user_id_is_minus_expire_at_idx (user_id, is_minus, expire_at)
+    INDEX user_id_is_minus_expire_at_amount_idx (user_id, is_minus, expire_at, amount)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
