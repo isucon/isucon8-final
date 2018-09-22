@@ -1,4 +1,4 @@
-package bench
+package taskworker
 
 import (
 	"context"
@@ -6,13 +6,6 @@ import (
 	"log"
 	"runtime"
 )
-
-type Task interface {
-	Run(context.Context) error
-	WriteError(error)
-	Error() error
-	Score() int64
-}
 
 type Worker struct {
 	taskCh chan Task
@@ -74,7 +67,7 @@ func (w *Worker) TaskEnd() <-chan Task {
 func (w *Worker) Finish() {
 	defer func() {
 		if e := recover(); e != nil {
-			log.Printf("[INFO] maybe multi close. e:%s", e)
+			log.Printf("[WARN] maybe multi close. e:%s", e)
 		}
 	}()
 	close(w.taskCh)

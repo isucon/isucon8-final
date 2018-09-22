@@ -3,18 +3,20 @@ package bench
 import (
 	"context"
 	"time"
+
+	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 )
 
 type Runner struct {
-	bctx     *Context
+	mgr      *Manager
 	timeout  time.Duration
 	interval time.Duration
 	done     chan struct{}
 }
 
-func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
+func NewRunner(mgr *Manager, timeout, interval time.Duration) *Runner {
 	return &Runner{
-		bctx:     bctx,
+		mgr:      mgr,
 		timeout:  timeout,
 		interval: interval,
 		done:     make(chan struct{}),
@@ -22,47 +24,67 @@ func NewRunner(bctx *Context, timeout, interval time.Duration) *Runner {
 }
 
 func (r *Runner) Result() {
-	c := r.bctx
+	c := r.mgr
 	c.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", c.TotalScore(), c.level, c.ErrorCount(), c.ActiveInvestors(), c.AllInvestors())
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	c := r.bctx
+	m := r.mgr
 
 	cctx, ccancel := context.WithCancel(ctx)
 	defer ccancel()
-	go c.RunIDFetcher(cctx)
+	go m.RunIDFetcher(cctx)
 
-	c.Logger().Println("# initialize")
-
-	tasks, err := c.Start()
-	if err != nil {
-		c.Logger().Printf("Initialize に失敗しました. err:%s", err)
+	m.Logger().Println("# initialize")
+	if err := m.Initialize(); err != nil {
+		m.Logger().Printf("Initialize に失敗しました. err:%s", err)
 		return err
 	}
 
-	c.Logger().Printf("# benchmark start")
-	worker := NewWorker()
+	m.Logger().Println("# pre test")
+	if err := m.PreTest(); err != nil {
+		m.Logger().Printf("負荷走行前のテストに失敗しました. err:%s", err)
+		return err
+	}
+
+	m.Logger().Printf("# benchmark")
+	if err := r.runBenchmark(ctx); err != nil {
+		m.Logger().Printf("負荷走行 に失敗しました. err:%s", err)
+		return err
+	}
+
+	m.Logger().Printf("# post test")
+	if err := m.PostTest(); err != nil {
+		m.Logger().Printf("負荷走行後のテストに失敗しました. err:%s", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Runner) runBenchmark(ctx context.Context) error {
+	tasks, err := r.mgr.Start()
+	if err != nil {
+		r.mgr.Logger().Printf("初期化に失敗しました。err:%s", err)
+		return err
+	}
+
+	worker := taskworker.NewWorker()
 	go r.handleWorker(worker)
 
 	go r.runTicker(worker)
 
-	bctx, cancel := context.WithTimeout(ctx, r.timeout)
+	wc, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	err = worker.Run(bctx, tasks)
+	err = worker.Run(wc, tasks)
 	if err == context.DeadlineExceeded {
 		err = nil
 	}
 	close(r.done)
-
-	c.Logger().Println("# benchmark success")
-
-	// TODO bench終了後N秒経過してからloggerとbankをチェックしたい
-
 	return err
 }
 
-func (r *Runner) handleWorker(worker *Worker) {
+func (r *Runner) handleWorker(worker *taskworker.Worker) {
 	ch := worker.TaskEnd()
 	for {
 		select {
@@ -70,28 +92,31 @@ func (r *Runner) handleWorker(worker *Worker) {
 			return
 		case task := <-ch:
 			err := task.Error()
-			if err != nil && err != context.DeadlineExceeded {
-				r.bctx.Logger().Printf("error: %s", err)
-				if e := r.bctx.IncrErr(); e != nil {
-					r.bctx.Logger().Printf("ベンチマークを終了します: %s", e)
+			switch err {
+			case context.DeadlineExceeded, nil:
+				r.mgr.AddScore(task.Score())
+			case ErrAlreadyRetired:
+			default:
+				r.mgr.Logger().Printf("error: %s", err)
+				if e := r.mgr.IncrErr(); e != nil {
+					r.mgr.Logger().Printf("ベンチマークを終了します: %s", e)
 					worker.Finish()
 				}
 			}
-			r.bctx.AddScore(task.Score())
 		}
 	}
 }
 
-func (r *Runner) runTicker(worker *Worker) {
+func (r *Runner) runTicker(worker *taskworker.Worker) {
 	for {
 		select {
 		case <-r.done:
 			return
 		case <-time.After(r.interval):
 			// nextが終わってから次のloopとしたいのでtickerではない
-			tasks, err := r.bctx.Next()
+			tasks, err := r.mgr.Next()
 			if err != nil {
-				r.bctx.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
+				r.mgr.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
 				worker.Finish()
 			}
 			if tasks != nil {

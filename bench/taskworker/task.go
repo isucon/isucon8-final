@@ -1,4 +1,4 @@
-package bench
+package taskworker
 
 import (
 	"context"
@@ -6,6 +6,13 @@ import (
 )
 
 var ErrNoScore = fmt.Errorf("no score")
+
+type Task interface {
+	Run(context.Context) error
+	WriteError(error)
+	Error() error
+	Score() int64
+}
 
 type taskBase struct {
 	score int64
@@ -80,9 +87,6 @@ func (t *SerialTask) Run(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			if err := task.Run(ctx); err != nil {
-				if err == ErrAlreadyRetired {
-					return nil
-				}
 				return err
 			}
 			t.score += task.Score()

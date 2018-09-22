@@ -13,7 +13,7 @@ type timeWriter struct {
 }
 
 func (w *timeWriter) Write(p []byte) (n int, err error) {
-	d := fmt.Sprintf("[%.5f]", time.Now().Sub(w.start).Seconds())
+	d := fmt.Sprintf("[%.5f] ", time.Now().Sub(w.start).Seconds())
 	n, err = w.out.Write([]byte(d))
 	if err != nil {
 		return n, err
