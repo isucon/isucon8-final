@@ -25,7 +25,7 @@ const (
 
 func main() {
 	var (
-		port   = flag.Int("port", 5515, "bank app ranning port")
+		port   = flag.Int("port", 5515, "bank app running port")
 		dbhost = flag.String("dbhost", "127.0.0.1", "database host")
 		dbport = flag.Int("dbport", 3306, "database port")
 		dbuser = flag.String("dbuser", "root", "database user")
@@ -432,8 +432,8 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 
 		// 予約のcreditへの適用
 		for _, rsv := range reserves {
-			if err := s.modyfyCredit(tx, rsv.UserID, rsv.Amount, rsv.Note); err != nil {
-				return errors.Wrapf(err, "modyfyCredit failed %#v", rsv)
+			if err := s.modifyCredit(tx, rsv.UserID, rsv.Amount, rsv.Note); err != nil {
+				return errors.Wrapf(err, "modifyCredit failed %#v", rsv)
 			}
 		}
 
@@ -585,7 +585,7 @@ func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	return
 }
 
-func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) error {
+func (s *Handler) modifyCredit(tx *sql.Tx, userID, price int64, memo string) error {
 	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW(6))`, userID, price, memo); err != nil {
 		return errors.Wrap(err, "insert credit failed")
 	}
