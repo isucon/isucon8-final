@@ -93,7 +93,7 @@ func authHandler(f http.Handler) http.Handler {
 		as := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(as) == 2 {
 			switch as[0] {
-			case "app_id":
+			case "app_id", "Bearer":
 				ctx = context.WithValue(ctx, AppIDCtxKey, as[1])
 			}
 		}
