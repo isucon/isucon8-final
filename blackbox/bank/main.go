@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -22,6 +23,9 @@ const (
 	AxLog        = false
 	AppIDCtxKey  = "appid"
 )
+
+var cacheBankID = make(map[string]int64, 1000)
+var cacheBankIDMutex sync.RWMutex
 
 func main() {
 	var (
@@ -198,7 +202,7 @@ func (s *Handler) AddCredit(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
 			return errors.Wrap(err, "select lock failed")
 		}
-		return s.modyfyCredit(tx, userID, req.Price, "by add credit API")
+		return s.modifyCredit(tx, userID, req.Price, "by add credit API")
 	})
 	if err != nil {
 		log.Printf("[WARN] addCredit failed. err: %s", err)
@@ -550,11 +554,19 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	Success(w)
 }
 
-func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) {
+func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) int64 {
 	if bankID == "" {
 		Error(w, "bank_id is required", http.StatusBadRequest)
-		return
+		return 0
 	}
+	cacheBankIDMutex.RLock()
+	if id, ok := cacheBankID[bankID]; ok {
+		cacheBankIDMutex.RUnlock()
+		return id
+	}
+	cacheBankIDMutex.RUnlock()
+
+	var id int64
 	err := s.db.QueryRow(`SELECT id FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id)
 	switch {
 	case err == sql.ErrNoRows:
@@ -562,8 +574,12 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) 
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
+		return 0 // クエリ失敗の時は cache しないで返る
 	}
-	return
+	cacheBankIDMutex.Lock()
+	cacheBankID[bankID] = id
+	cacheBankIDMutex.Unlock()
+	return id
 }
 
 func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
