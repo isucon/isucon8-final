@@ -72,6 +72,7 @@ func NewServer(db *sql.DB) http.Handler {
 	server.HandleFunc("/register", h.Register)
 	server.HandleFunc("/add_credit", h.AddCredit)
 	server.HandleFunc("/credit", h.GetCredit)
+	server.HandleFunc("/initialize", h.Initialize)
 	server.HandleFunc("/check", sleepHandle(h.Check, 50*time.Millisecond))
 	server.HandleFunc("/reserve", sleepHandle(h.Reserve, 70*time.Millisecond))
 	server.HandleFunc("/commit", sleepHandle(h.Commit, 300*time.Millisecond))
@@ -613,6 +614,26 @@ func (s *Handler) modifyCredit(tx *sql.Tx, userID, price int64, memo string) err
 		return errors.Wrap(err, "update user.credit failed")
 	}
 	return nil
+}
+
+func (s *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	queries := []string{
+		`TRUNCATE user`,
+		`TRUNCATE credit`,
+		`TRUNCATE reserve`,
+	}
+	for _, query := range queries {
+		log.Println("initialize", query)
+		if _, err := s.db.Exec(query); err != nil {
+			Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	Success(w)
 }
 
 func init() {
