@@ -1,4 +1,4 @@
-package bench
+package isubank
 
 import (
 	"bytes"

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ken39arg/isucon2018-final/bench/isubank"
 	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
@@ -20,7 +21,7 @@ type Manager struct {
 	bankappid string
 	logappid  string
 	rand      *Random
-	isubank   *Isubank
+	isubank   *isubank.Isubank
 	idlist    chan string
 	closed    chan struct{}
 	investors []Investor
@@ -39,7 +40,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank string) (*Mana
 	if err != nil {
 		return nil, err
 	}
-	isubank, err := NewIsubank(internalbank)
+	bank, err := isubank.NewIsubank(internalbank)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank string) (*Mana
 		bankappid: rand.ID(),
 		logappid:  rand.ID(),
 		rand:      rand,
-		isubank:   isubank,
+		isubank:   bank,
 		idlist:    make(chan string, 10),
 		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
