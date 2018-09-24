@@ -309,24 +309,8 @@ paths:
           description: "No Order or already closed"
 
       x-logs:
-        on_success__buy:
-          description: 買い注文キャンセル時
-          tag: buy.delete
-          parameters:
-            order_id:
-              type: integer
-            reason:
-              type: string
-              value: canceled
-        on_success__sell:
-          description: 売り注文キャンセル時
-          tag: sell.delete
-          parameters:
-            order_id:
-              type: integer
-            reason:
-              type: string
-              value: canceled
+        - $ref: "#/logs/BuyDelete"
+        - $ref: "#/logs/SellDelete"
 
 definitions:
   User:
