@@ -280,7 +280,7 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case err == CreditIsInsufficient:
-		Error(w, "credit is insufficient", http.StatusOK)
+		Error(w, "credit is insufficient", http.StatusBadRequest)
 	case err != nil:
 		log.Printf("[WARN] check failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
@@ -353,7 +353,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case err == CreditIsInsufficient:
-		Error(w, "credit is insufficient", http.StatusOK)
+		Error(w, "credit is insufficient", http.StatusBadRequest)
 	case err != nil:
 		log.Printf("[WARN] reserve failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
