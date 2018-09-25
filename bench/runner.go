@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/taskworker"
+	"github.com/pkg/errors"
 )
 
 type Runner struct {
@@ -37,26 +38,22 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	m.Logger().Println("# initialize")
 	if err := m.Initialize(); err != nil {
-		m.Logger().Printf("Initialize に失敗しました. err:%s", err)
-		return err
+		return errors.Wrap(err, "Initialize に失敗しました")
 	}
 
 	m.Logger().Println("# pre test")
 	if err := m.PreTest(); err != nil {
-		m.Logger().Printf("負荷走行前のテストに失敗しました. err:%s", err)
-		return err
+		return errors.Wrap(err, "負荷走行前のテストに失敗しました")
 	}
 
 	m.Logger().Printf("# benchmark")
 	if err := r.runBenchmark(ctx); err != nil {
-		m.Logger().Printf("負荷走行 に失敗しました. err:%s", err)
-		return err
+		return errors.Wrap(err, "負荷走行 に失敗しました")
 	}
 
 	m.Logger().Printf("# post test")
 	if err := m.PostTest(); err != nil {
-		m.Logger().Printf("負荷走行後のテストに失敗しました. err:%s", err)
-		return err
+		return errors.Wrap(err, "負荷走行後のテストに失敗しました")
 	}
 
 	return nil
