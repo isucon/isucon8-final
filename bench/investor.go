@@ -13,10 +13,7 @@ import (
 )
 
 const (
-	OrderCap            = 5
-	TradeHistrySize     = 10
-	PollingInterval     = 500 * time.Millisecond
-	OrderUpdateInterval = 2 * time.Second
+	OrderCap = 5
 )
 
 type Investor interface {

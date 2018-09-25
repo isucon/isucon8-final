@@ -186,16 +186,22 @@ func (d *OrderDelete) Validate() error {
 
 type Isulog struct {
 	endpoint *url.URL
+	appid    string
 }
 
-func NewIsulog(endpoint string) (*Isulog, error) {
+func NewIsulog(endpoint, appid string) (*Isulog, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	return &Isulog{
 		endpoint: u,
+		appid:    appid,
 	}, nil
+}
+
+func (b *Isulog) AppID() string {
+	return b.appid
 }
 
 func (b *Isulog) Initialize() error {
@@ -217,16 +223,16 @@ func (b *Isulog) Initialize() error {
 
 }
 
-func (b *Isulog) GetUserLogs(appID string, userID int64) ([]*Log, error) {
+func (b *Isulog) GetUserLogs(userID int64) ([]*Log, error) {
 	v := url.Values{}
-	v.Set("app_id", appID)
+	v.Set("app_id", b.AppID())
 	v.Set("user_id", strconv.FormatInt(userID, 10))
 	return b.getLogs(v)
 }
 
-func (b *Isulog) GetTradeLogs(appID string, tradeID int64) ([]*Log, error) {
+func (b *Isulog) GetTradeLogs(tradeID int64) ([]*Log, error) {
 	v := url.Values{}
-	v.Set("app_id", appID)
+	v.Set("app_id", b.AppID())
 	v.Set("trade_id", strconv.FormatInt(tradeID, 10))
 	return b.getLogs(v)
 }

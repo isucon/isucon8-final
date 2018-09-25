@@ -19,8 +19,6 @@ type Manager struct {
 	appep     string
 	bankep    string
 	logep     string
-	bankappid string
-	logappid  string
 	rand      *Random
 	isubank   *isubank.Isubank
 	isulog    *isulog.Isulog
@@ -42,11 +40,11 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 	if err != nil {
 		return nil, err
 	}
-	bank, err := isubank.NewIsubank(internalbank)
+	bank, err := isubank.NewIsubank(internalbank, rand.ID())
 	if err != nil {
 		return nil, err
 	}
-	isulog, err := isulog.NewIsulog(internallog)
+	isulog, err := isulog.NewIsulog(internallog, rand.ID())
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +53,6 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		appep:     appep,
 		bankep:    bankep,
 		logep:     logep,
-		bankappid: rand.ID(),
-		logappid:  rand.ID(),
 		rand:      rand,
 		isubank:   bank,
 		isulog:    isulog,
@@ -181,7 +177,7 @@ func (c *Manager) Initialize() error {
 	if err != nil {
 		return err
 	}
-	if err := guest.Initialize(c.bankep, c.bankappid, c.logep, c.logappid); err != nil {
+	if err := guest.Initialize(c.bankep, c.isubank.AppID(), c.logep, c.isulog.AppID()); err != nil {
 		return err
 	}
 	return nil

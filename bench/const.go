@@ -10,6 +10,12 @@ const (
 	RetireTimeout = 5 * time.Second        // clientが退役するタイムアウト時間
 	RetryInterval = 500 * time.Millisecond // 50x系でエラーになったときのretry間隔
 
+	TestTradeTimeout = 5 * time.Second  // testでのtradeは成立までの時間
+	LogAllowedDelay  = 10 * time.Second // logの遅延が許される時間
+
+	PollingInterval     = 500 * time.Millisecond // clientのポーリング感覚
+	OrderUpdateInterval = 2 * time.Second        // 注文間隔
+
 	AddWorkersByLevel = 10
 
 	// Scores
