@@ -188,11 +188,12 @@ func (c *Manager) Initialize() error {
 }
 
 func (c *Manager) PreTest() error {
-	return nil
+	return NewPreTester(c.appep, c.isulog, c.isubank).Run()
 }
 
 func (c *Manager) PostTest() error {
-	return nil
+	// PostTesterは多分このままにはならない
+	return NewPostTester(c.appep, c.isulog, c.isubank).Run()
 }
 
 func (c *Manager) Start() ([]taskworker.Task, error) {

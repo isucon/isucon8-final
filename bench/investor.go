@@ -277,10 +277,10 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 				if !i.hasOrder(order.ID) {
 					if i.timeoutCount == 0 {
 						return errors.Errorf("fined removed order [orderID:%d]", order.ID)
-						if len(i.orders) < cap(i.orders) {
-							i.pushOrder(&order)
-							//i.timeoutCount--
-						}
+						//if len(i.orders) < cap(i.orders) {
+						//	i.pushOrder(&order)
+						//	//i.timeoutCount--
+						//}
 					}
 				}
 			case order.Type == TradeTypeBuy:
@@ -289,10 +289,10 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 				if !i.hasOrder(order.ID) {
 					if i.timeoutCount == 0 {
 						return errors.Errorf("fined removed order [orderID:%d]", order.ID)
-						if len(i.orders) < cap(i.orders) {
-							i.pushOrder(&order)
-							//i.timeoutCount--
-						}
+						//if len(i.orders) < cap(i.orders) {
+						//	i.pushOrder(&order)
+						//	//i.timeoutCount--
+						//}
 					}
 				}
 			}
