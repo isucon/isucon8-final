@@ -120,7 +120,7 @@ func newRequest(base string, s Spec) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("Authorization", "app_id "+s.AppID)
+	req.Header.Add("Authorization", "Bearer "+s.AppID)
 	if s.RequestContentType != "" {
 		req.Header.Add("Content-Type", s.RequestContentType)
 	}

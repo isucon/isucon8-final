@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -23,9 +24,12 @@ const (
 	AppIDCtxKey  = "appid"
 )
 
+var cacheBankID = make(map[string]int64, 1000)
+var cacheBankIDMutex sync.RWMutex
+
 func main() {
 	var (
-		port   = flag.Int("port", 5515, "bank app ranning port")
+		port   = flag.Int("port", 5515, "bank app running port")
 		dbhost = flag.String("dbhost", "127.0.0.1", "database host")
 		dbport = flag.Int("dbport", 3306, "database port")
 		dbuser = flag.String("dbuser", "root", "database user")
@@ -68,6 +72,7 @@ func NewServer(db *sql.DB) http.Handler {
 	server.HandleFunc("/register", h.Register)
 	server.HandleFunc("/add_credit", h.AddCredit)
 	server.HandleFunc("/credit", h.GetCredit)
+	server.HandleFunc("/initialize", h.Initialize)
 	server.HandleFunc("/check", sleepHandle(h.Check, 50*time.Millisecond))
 	server.HandleFunc("/reserve", sleepHandle(h.Reserve, 70*time.Millisecond))
 	server.HandleFunc("/commit", sleepHandle(h.Commit, 300*time.Millisecond))
@@ -88,7 +93,7 @@ func authHandler(f http.Handler) http.Handler {
 		as := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(as) == 2 {
 			switch as[0] {
-			case "app_id":
+			case "app_id", "Bearer":
 				ctx = context.WithValue(ctx, AppIDCtxKey, as[1])
 			}
 		}
@@ -198,7 +203,7 @@ func (s *Handler) AddCredit(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
 			return errors.Wrap(err, "select lock failed")
 		}
-		return s.modyfyCredit(tx, userID, req.Price, "by add credit API")
+		return s.modifyCredit(tx, userID, req.Price, "by add credit API")
 	})
 	if err != nil {
 		log.Printf("[WARN] addCredit failed. err: %s", err)
@@ -432,8 +437,8 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 
 		// 予約のcreditへの適用
 		for _, rsv := range reserves {
-			if err := s.modyfyCredit(tx, rsv.UserID, rsv.Amount, rsv.Note); err != nil {
-				return errors.Wrapf(err, "modyfyCredit failed %#v", rsv)
+			if err := s.modifyCredit(tx, rsv.UserID, rsv.Amount, rsv.Note); err != nil {
+				return errors.Wrapf(err, "modifyCredit failed %#v", rsv)
 			}
 		}
 
@@ -550,11 +555,19 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	Success(w)
 }
 
-func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) {
+func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) int64 {
 	if bankID == "" {
 		Error(w, "bank_id is required", http.StatusBadRequest)
-		return
+		return 0
 	}
+	cacheBankIDMutex.RLock()
+	if id, ok := cacheBankID[bankID]; ok {
+		cacheBankIDMutex.RUnlock()
+		return id
+	}
+	cacheBankIDMutex.RUnlock()
+
+	var id int64
 	err := s.db.QueryRow(`SELECT id FROM user WHERE bank_id = ? LIMIT 1`, bankID).Scan(&id)
 	switch {
 	case err == sql.ErrNoRows:
@@ -562,8 +575,12 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) (id int64) 
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
+		return 0 // クエリ失敗の時は cache しないで返る
 	}
-	return
+	cacheBankIDMutex.Lock()
+	cacheBankID[bankID] = id
+	cacheBankIDMutex.Unlock()
+	return id
 }
 
 func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
@@ -585,7 +602,7 @@ func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	return
 }
 
-func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) error {
+func (s *Handler) modifyCredit(tx *sql.Tx, userID, price int64, memo string) error {
 	if _, err := tx.Exec(`INSERT INTO credit (user_id, amount, note, created_at) VALUES (?, ?, ?, NOW(6))`, userID, price, memo); err != nil {
 		return errors.Wrap(err, "insert credit failed")
 	}
@@ -597,6 +614,26 @@ func (s *Handler) modyfyCredit(tx *sql.Tx, userID, price int64, memo string) err
 		return errors.Wrap(err, "update user.credit failed")
 	}
 	return nil
+}
+
+func (s *Handler) Initialize(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	queries := []string{
+		`TRUNCATE user`,
+		`TRUNCATE credit`,
+		`TRUNCATE reserve`,
+	}
+	for _, query := range queries {
+		log.Println("initialize", query)
+		if _, err := s.db.Exec(query); err != nil {
+			Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	Success(w)
 }
 
 func init() {
