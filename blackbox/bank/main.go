@@ -7,6 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
+	//	"encoding/json"
+	//	"flag"
+	//	"fmt"
+	//	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -572,6 +577,7 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) int64 {
 	switch {
 	case err == sql.ErrNoRows:
 		Error(w, "bank_id not found", http.StatusNotFound)
+		return 0
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
