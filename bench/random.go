@@ -1,19 +1,17 @@
 package bench
 
-import "github.com/Songmu/strrand"
+import (
+	"github.com/Songmu/strrand"
+	"github.com/ken39arg/isucon2018-final/bench/randnameja"
+)
 
 type Random struct {
 	passGen strrand.Generator
-	nameGen strrand.Generator
 	idGen   strrand.Generator
 }
 
 func NewRandom() (*Random, error) {
 	passGen, err := strrand.New().CreateGenerator(`[abcdefghjkmnpqrstuvwxyz23456789]{12,16}`)
-	if err != nil {
-		return nil, err
-	}
-	nameGen, err := strrand.New().CreateGenerator(`[あ-んア-ンa-zA-Z0-9]{5,10}`)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +21,6 @@ func NewRandom() (*Random, error) {
 	}
 	return &Random{
 		passGen: passGen,
-		nameGen: nameGen,
 		idGen:   idGen,
 	}, nil
 }
@@ -33,7 +30,7 @@ func (b *Random) Password() string {
 }
 
 func (b *Random) Name() string {
-	return b.nameGen.Generate()
+	return randnameja.Generate()
 }
 
 func (b *Random) ID() string {
