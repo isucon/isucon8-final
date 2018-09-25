@@ -16,7 +16,8 @@ var (
 	appep        = flag.String("appep", "https://localhost.isucon8.flying-chair.net", "app endpoint")
 	bankep       = flag.String("bankep", "https://compose.isucon8.flying-chair.net:5515", "isubank endpoint")
 	logep        = flag.String("logep", "https://compose.isucon8.flying-chair.net:5516", "isulog endpoint")
-	internalbank = flag.String("internalbank", "https://localhost.isucon8.flying-chair.net:5515", "isubank endpoint")
+	internalbank = flag.String("internalbank", "https://localhost.isucon8.flying-chair.net:5515", "isubank endpoint (for internal)")
+	internallog  = flag.String("internallog", "https://localhost.isucon8.flying-chair.net:5516", "isulog endpoint (for internal)")
 	log          = bench.NewLogger(os.Stderr)
 )
 
@@ -28,7 +29,7 @@ func main() {
 }
 
 func run() error {
-	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank)
+	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}

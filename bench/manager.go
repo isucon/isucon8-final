@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
+	"github.com/ken39arg/isucon2018-final/bench/isulog"
 	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
@@ -22,6 +23,7 @@ type Manager struct {
 	logappid  string
 	rand      *Random
 	isubank   *isubank.Isubank
+	isulog    *isulog.Isulog
 	idlist    chan string
 	closed    chan struct{}
 	investors []Investor
@@ -35,12 +37,16 @@ type Manager struct {
 	lastTradePorring time.Time
 }
 
-func NewManager(out io.Writer, appep, bankep, logep, internalbank string) (*Manager, error) {
+func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
 	rand, err := NewRandom()
 	if err != nil {
 		return nil, err
 	}
 	bank, err := isubank.NewIsubank(internalbank)
+	if err != nil {
+		return nil, err
+	}
+	isulog, err := isulog.NewIsulog(internallog)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +59,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank string) (*Mana
 		logappid:  rand.ID(),
 		rand:      rand,
 		isubank:   bank,
+		isulog:    isulog,
 		idlist:    make(chan string, 10),
 		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
@@ -166,6 +173,9 @@ func (c *Manager) Logger() *log.Logger {
 func (c *Manager) Initialize() error {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
+	if err := c.isulog.Initialize(); err != nil {
+		return errors.Wrap(err, "isuloggerの初期化に失敗しました。運営に連絡してください")
+	}
 
 	guest, err := NewClient(c.appep, "", "", "", InitTimeout, InitTimeout)
 	if err != nil {
