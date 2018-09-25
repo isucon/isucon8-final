@@ -184,11 +184,14 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		return
 	} else {
 		userID, _ := res.LastInsertId()
-		logger.Send("signup", map[string]interface{}{
+		err := logger.Send("signup", map[string]interface{}{
 			"bank_id": bankID,
 			"user_id": userID,
 			"name":    name,
 		})
+		if err != nil {
+			log.Printf("[WARN] logger.Send failed. err:%s", err)
+		}
 	}
 	h.handleSuccess(w, empty)
 }
@@ -233,9 +236,12 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, err, 500)
 		return
 	}
-	logger.Send("signin", map[string]interface{}{
+	err = logger.Send("signin", map[string]interface{}{
 		"user_id": user.ID,
 	})
+	if err != nil {
+		log.Printf("[WARN] logger.Send failed. err:%s", err)
+	}
 	h.handleSuccess(w, user)
 }
 
@@ -391,12 +397,15 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		case OrderTypeBuy:
 			totalPrice := price * amount
 			if err = isubank.Check(user.BankID, totalPrice); err != nil {
-				logger.Send("buy.error", map[string]interface{}{
+				le := logger.Send("buy.error", map[string]interface{}{
 					"error":   err.Error(),
 					"user_id": user.ID,
 					"amount":  amount,
 					"price":   price,
 				})
+				if le != nil {
+					log.Printf("[WARN] logger.Send failed. err:%s", le)
+				}
 				if err == ErrCreditInsufficient {
 					return errcode("銀行残高が足りません", 400)
 				}
@@ -415,12 +424,15 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		if err != nil {
 			return errors.Wrap(err, "get order_id failed")
 		}
-		logger.Send(ot+".order", map[string]interface{}{
+		le := logger.Send(ot+".order", map[string]interface{}{
 			"order_id": id,
 			"user_id":  user.ID,
 			"amount":   amount,
 			"price":    price,
 		})
+		if le != nil {
+			log.Printf("[WARN] logger.Send failed. err:%s", le)
+		}
 		return nil
 	})
 	if err != nil {
@@ -504,10 +516,13 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 		if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
 			return errors.Wrap(err, "update orders for cancel")
 		}
-		logger.Send(order.Type+".delete", map[string]interface{}{
+		le := logger.Send(order.Type+".delete", map[string]interface{}{
 			"order_id": id,
 			"reason":   "canceled",
 		})
+		if le != nil {
+			log.Printf("[WARN] logger.Send failed. err:%s", le)
+		}
 		return nil
 	})
 
@@ -943,10 +958,13 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 			if _, err = d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
 				return 0, errors.Wrap(err, "update buy_order for cancel")
 			}
-			logger.Send(order.Type+".delete", map[string]interface{}{
+			le := logger.Send(order.Type+".delete", map[string]interface{}{
 				"order_id": id,
 				"reason":   "reserve_failed",
 			})
+			if le != nil {
+				log.Printf("[WARN] logger.Send failed. err:%s", le)
+			}
 			return 0, err
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
@@ -972,22 +990,28 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	if err != nil {
 		return errors.Wrap(err, "lastInsertID for trade")
 	}
-	logger.Send("trade", map[string]interface{}{
+	le := logger.Send("trade", map[string]interface{}{
 		"trade_id": tradeID,
 		"price":    order.Price,
 		"amount":   order.Amount,
 	})
+	if le != nil {
+		log.Printf("[WARN] logger.Send failed. err:%s", le)
+	}
 	for _, o := range append(targets, order) {
 		if _, err = tx.Exec(`UPDATE orders SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
 			return errors.Wrap(err, "update order for trade")
 		}
-		logger.Send(o.Type+".trade", map[string]interface{}{
+		le := logger.Send(o.Type+".trade", map[string]interface{}{
 			"order_id": o.ID,
 			"price":    order.Price,
 			"amount":   o.Amount,
 			"user_id":  o.UserID,
 			"trade_id": tradeID,
 		})
+		if le != nil {
+			log.Printf("[WARN] logger.Send failed. err:%s", le)
+		}
 	}
 	if err = isubank.Commit(reserves); err != nil {
 		return errors.Wrap(err, "commit")
