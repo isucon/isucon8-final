@@ -46,13 +46,7 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
-	//log.Fatal(http.ListenAndServe(addr, server))
-	log.Fatal(http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		server.ServeHTTP(w, r)
-		elasped := time.Now().Sub(start)
-		log.Printf("%s\t%s\t%s\t%.5f", start.Format("2006-01-02T15:04:05.000"), r.Method, r.URL.Path, elasped.Seconds())
-	})))
+	log.Fatal(http.ListenAndServe(addr, server))
 }
 
 func getEnv(key, def string) string {
