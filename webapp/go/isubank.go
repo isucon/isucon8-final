@@ -137,7 +137,7 @@ func (b *Isubank) request(p string, v interface{}, r isubankResponse) error {
 		return errors.Wrap(err, "isubank new request failed")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "app_id "+b.appID)
+	req.Header.Set("Authorization", "Bearer "+b.appID)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
