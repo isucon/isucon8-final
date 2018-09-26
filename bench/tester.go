@@ -211,11 +211,11 @@ func (t *PreTester) Run() error {
 				return err
 			}
 			for _, ap := range [][]int64{
-				{5, 100},
+				{5, 100}, // キャンセルされる
 				{2, 80},
 				{1, 90},
-				{3, 99},
-				{2, 100},
+				{3, 99},  // 足りない
+				{2, 100}, // 99とマッチング
 			} {
 				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
@@ -238,16 +238,15 @@ func (t *PreTester) Run() error {
 				for {
 					select {
 					case <-timeout:
-						return errors.Errorf("成立すべき取引が成立しませんでした")
+						return errors.Errorf("成立すべき取引が成立しませんでした(c1)")
 					case <-next:
 						info, err := c1.Info(0)
 						if err != nil {
 							return err
 						}
-						if len(info.TradedOrders) == 2 {
+						if len(info.TradedOrders) == 1 {
 							return nil
 						}
-						log.Printf("traded_orders: %d", len(info.TradedOrders))
 						time.Sleep(PollingInterval)
 						next <- true
 					}
@@ -256,7 +255,7 @@ func (t *PreTester) Run() error {
 			if err != nil {
 				return err
 			}
-			log.Printf("[INFO] trade sucess OK")
+			log.Printf("[INFO] trade sucess OK(c1)")
 
 			orders, err := c1.GetOrders()
 			if err != nil {
@@ -265,13 +264,10 @@ func (t *PreTester) Run() error {
 			if g, w := len(orders), 4; g != w {
 				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
-			if orders[2].Trade == nil {
-				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
-			}
 			if orders[3].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			buyed := orders[2].Trade.Price*3 + orders[3].Trade.Price*2
+			buyed := orders[3].Trade.Price * 2
 			rest, err := t.isubank.GetCredit(account1)
 			if err != nil {
 				return err
@@ -279,7 +275,8 @@ func (t *PreTester) Run() error {
 			if rest+buyed != 550 {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
-			log.Printf("[INFO] 残高チェック OK")
+			log.Printf("[INFO] 残高チェック OK(c1)")
+
 			return func() error {
 				timeout := time.After(LogAllowedDelay)
 				next := make(chan bool, 1)
@@ -288,7 +285,7 @@ func (t *PreTester) Run() error {
 				for {
 					select {
 					case <-timeout:
-						return errors.Errorf("ログが送信されていません")
+						return errors.Errorf("ログが送信されていません(c1)")
 					case <-next:
 						logs, err := t.isulog.GetUserLogs(c1.UserID())
 						if err != nil {
@@ -322,7 +319,7 @@ func (t *PreTester) Run() error {
 								return false, nil
 							}
 							fl = filetrLogs(logs, isulog.TagBuyTrade)
-							if len(fl) < 2 {
+							if len(fl) < 1 {
 								return false, nil
 							}
 							return true, nil
@@ -331,7 +328,7 @@ func (t *PreTester) Run() error {
 							return err
 						}
 						if ok {
-							log.Printf("[INFO] ログチェック OK")
+							log.Printf("[INFO] ログチェック OK(c1)")
 							return nil
 						}
 						time.Sleep(PollingInterval)
@@ -345,10 +342,10 @@ func (t *PreTester) Run() error {
 			for _, ap := range [][]int64{
 				{6, 100},
 				{2, 105},
-				{3, 100}, // ok
-				{7, 99},  // 足りない
-				{1, 99},  // ok
-				{1, 99},  // ok
+				{3, 100},
+				{7, 99}, // 足りない
+				{1, 99}, // - 2, 100
+				{1, 99}, // -
 			} {
 				order, err := c2.AddOrder(TradeTypeSell, ap[0], ap[1])
 				if err != nil {
@@ -370,16 +367,15 @@ func (t *PreTester) Run() error {
 				for {
 					select {
 					case <-timeout:
-						return errors.Errorf("成立すべき取引が成立しませんでした")
+						return errors.Errorf("成立すべき取引が成立しませんでした(c2)")
 					case <-next:
 						info, err := c2.Info(0)
 						if err != nil {
 							return err
 						}
-						if len(info.TradedOrders) == 1 {
-							break
+						if len(info.TradedOrders) == 2 {
+							return nil
 						}
-						log.Printf("traded_orders: %d", len(info.TradedOrders))
 						time.Sleep(PollingInterval)
 						next <- true
 					}
@@ -388,6 +384,8 @@ func (t *PreTester) Run() error {
 			if err != nil {
 				return err
 			}
+			log.Printf("[INFO] trade sucess OK(c2)")
+
 			orders, err := c2.GetOrders()
 			if err != nil {
 				return err
@@ -395,23 +393,22 @@ func (t *PreTester) Run() error {
 			if g, w := len(orders), 6; g != w {
 				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
-			if orders[2].Trade == nil {
-				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
-			}
 			if orders[4].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
 			if orders[5].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			buyed := orders[2].Trade.Price*3 + orders[4].Trade.Price + orders[5].Trade.Price
-			rest, err := t.isubank.GetCredit(account1)
+			buyed := orders[4].Trade.Price + orders[5].Trade.Price
+			rest, err := t.isubank.GetCredit(account2)
 			if err != nil {
 				return err
 			}
 			if rest != buyed {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
+			log.Printf("[INFO] 残高チェック OK(c2)")
+
 			return func() error {
 				timeout := time.After(LogAllowedDelay)
 				next := make(chan bool, 1)
@@ -420,9 +417,9 @@ func (t *PreTester) Run() error {
 				for {
 					select {
 					case <-timeout:
-						return errors.Errorf("ログが送信されていません")
+						return errors.Errorf("ログが送信されていません(c2)")
 					case <-next:
-						logs, err := t.isulog.GetUserLogs(c1.UserID())
+						logs, err := t.isulog.GetUserLogs(c2.UserID())
 						if err != nil {
 							return errors.Wrap(err, "isulog get user logs failed")
 						}
@@ -447,7 +444,7 @@ func (t *PreTester) Run() error {
 								return false, nil
 							}
 							fl = filetrLogs(logs, isulog.TagSellTrade)
-							if len(fl) < 3 {
+							if len(fl) < 2 {
 								return false, nil
 							}
 							return true, nil
@@ -456,6 +453,7 @@ func (t *PreTester) Run() error {
 							return err
 						}
 						if ok {
+							log.Printf("[INFO] ログチェック OK(c1)")
 							return nil
 						}
 						time.Sleep(PollingInterval)
