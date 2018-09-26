@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# TODO: docker-compose 用の暫定対応
 apt-get update
 apt-get -y install mysql-client
 
