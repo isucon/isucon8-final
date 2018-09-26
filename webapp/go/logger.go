@@ -57,7 +57,7 @@ func (b *Logger) request(p string, v interface{}) error {
 		return errors.Wrap(err, "logger new request failed")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "app_id "+b.appID)
+	req.Header.Set("Authorization", "Bearer "+b.appID)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
