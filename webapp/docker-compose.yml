@@ -31,6 +31,7 @@ services:
       ISU_DB_PASSWORD: 'root'
       ISU_DB_NAME:     'isucoin'
       ISU_PUBLIC_DIR:  '/public'
+      ISU_DATA_DIR:    '/data'
     links:
       - mysql
       - mockservice
@@ -39,6 +40,7 @@ services:
       - gopath:/go
       - ./go:/go/src/webapp
       - ./public:/public
+      - ./sql:/data
 
   mysql:
     image: mysql:8

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -88,11 +89,12 @@ func errcode(err string, code int) error {
 	return errcodeWrap(errors.New(err), code)
 }
 
-func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler {
+func NewServer(db *sql.DB, store sessions.Store, publicdir, datadir string) http.Handler {
 
 	h := &Handler{
-		db:    db,
-		store: store,
+		db:      db,
+		store:   store,
+		datadir: datadir,
 	}
 
 	router := httprouter.New()
@@ -110,12 +112,31 @@ func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler 
 }
 
 type Handler struct {
-	db    *sql.DB
-	store sessions.Store
+	db      *sql.DB
+	store   sessions.Store
+	datadir string
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if err := exec.Command("sh", h.datadir+"/init.sh").Run(); err != nil {
+		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
+		return
+	}
 	err := txScorp(h.db, func(tx *sql.Tx) error {
+		var dt time.Time
+		if err := tx.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
+			return errors.Wrap(err, "get last traded")
+		}
+		diffmin := int64(time.Now().Sub(dt).Minutes())
+		if _, err := tx.Exec("update trade set created_at = (created_at + interval ? minute)", diffmin); err != nil {
+			return errors.Wrap(err, "update trade.created_at")
+		}
+		if _, err := tx.Exec("update orders set created_at = (created_at + interval ? minute)", diffmin); err != nil {
+			return errors.Wrap(err, "update orders.created_at")
+		}
+		if _, err := tx.Exec("update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null", diffmin); err != nil {
+			return errors.Wrap(err, "update orders.closed_at")
+		}
 		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
 			BankEndpoint,
@@ -125,15 +146,6 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		} {
 			if _, err := tx.Exec(query, k, r.FormValue(k)); err != nil {
 				return errors.Wrapf(err, "set setting failed. %s", k)
-			}
-		}
-		for _, q := range []string{
-			"DELETE FROM user",
-			"DELETE FROM orders",
-			"DELETE FROM trade",
-		} {
-			if _, err := tx.Exec(q); err != nil {
-				return errors.Wrapf(err, "query failed. %s", q)
 			}
 		}
 		return nil
