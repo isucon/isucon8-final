@@ -165,7 +165,7 @@ func (t *PreTester) Run() error {
 
 	// 売り注文は成功する
 	{
-		o, err := c1.AddOrder(TradeTypeSell, 1, 2000)
+		o, err := c1.AddOrder(TradeTypeSell, 1, 6000)
 		if err != nil {
 			return err
 		}
@@ -207,15 +207,15 @@ func (t *PreTester) Run() error {
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
 			log.Printf("[INFO] run c1 tasks")
-			if err := t.isubank.AddCredit(account1, 550); err != nil {
+			if err := t.isubank.AddCredit(account1, 29000); err != nil {
 				return err
 			}
 			for _, ap := range [][]int64{
-				{5, 100}, // キャンセルされる
-				{2, 80},
-				{1, 90},
-				{3, 99},  // 足りない
-				{2, 100}, // 99とマッチング
+				{5, 5105}, // キャンセルされる
+				{2, 5100},
+				{1, 5099},
+				{3, 5104}, // 足りない
+				{2, 5105}, // 99とマッチング
 			} {
 				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
@@ -272,7 +272,7 @@ func (t *PreTester) Run() error {
 			if err != nil {
 				return err
 			}
-			if rest+buyed != 550 {
+			if rest+buyed != 29000 {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK(c1)")
@@ -340,12 +340,12 @@ func (t *PreTester) Run() error {
 		eg.Go(func() error {
 			log.Printf("[INFO] run c2 tasks")
 			for _, ap := range [][]int64{
-				{6, 100},
-				{2, 105},
-				{3, 100},
-				{7, 99}, // 足りない
-				{1, 99}, // - 2, 100
-				{1, 99}, // -
+				{6, 5106},
+				{2, 5110},
+				{3, 5106},
+				{7, 5104}, // 足りない
+				{1, 5104}, // - 2, 100
+				{1, 5104}, // -
 			} {
 				order, err := c2.AddOrder(TradeTypeSell, ap[0], ap[1])
 				if err != nil {
