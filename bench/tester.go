@@ -35,12 +35,13 @@ func (t *PreTester) Run() error {
 	now := time.Now()
 	account1 := fmt.Sprintf("asuzuki%d@isucon.net", now.Unix())
 	account2 := fmt.Sprintf("tmorris%d@isucon.net", now.Unix())
+	name1, name2 := "鈴木 明", "トニー モリス"
 
-	c1, err := NewClient(t.appep, account1, "鈴木 明", "1234567890abc", ClientTimeout, RetireTimeout)
+	c1, err := NewClient(t.appep, account1, name1, "1234567890abc", ClientTimeout, RetireTimeout)
 	if err != nil {
 		return errors.Wrap(err, "create new client failed")
 	}
-	c2, err := NewClient(t.appep, account2, "トニー モリス", "234567890abcd", ClientTimeout, RetireTimeout)
+	c2, err := NewClient(t.appep, account2, name2, "234567890abcd", ClientTimeout, RetireTimeout)
 	if err != nil {
 		return errors.Wrap(err, "create new client failed")
 	}
@@ -229,22 +230,31 @@ func (t *PreTester) Run() error {
 				}
 			}
 			log.Printf("[INFO] send order finish")
-			timeout := time.After(TestTradeTimeout)
-			for {
-				select {
-				case <-timeout:
-					return errors.Errorf("成立すべき取引が成立しませんでした")
-				default:
-					info, err := c1.Info(0)
-					if err != nil {
-						return err
+			err := func() error {
+				timeout := time.After(TestTradeTimeout)
+				next := make(chan bool, 1)
+				defer close(next)
+				next <- true
+				for {
+					select {
+					case <-timeout:
+						return errors.Errorf("成立すべき取引が成立しませんでした")
+					case <-next:
+						info, err := c1.Info(0)
+						if err != nil {
+							return err
+						}
+						if len(info.TradedOrders) == 2 {
+							return nil
+						}
+						log.Printf("traded_orders: %d", len(info.TradedOrders))
+						time.Sleep(PollingInterval)
+						next <- true
 					}
-					if len(info.TradedOrders) == 2 {
-						break
-					}
-					log.Printf("traded_orders: %d", len(info.TradedOrders))
-					time.Sleep(PollingInterval)
 				}
+			}()
+			if err != nil {
+				return err
 			}
 			log.Printf("[INFO] trade sucess OK")
 
@@ -252,8 +262,8 @@ func (t *PreTester) Run() error {
 			if err != nil {
 				return err
 			}
-			if len(orders) != 4 {
-				return errors.Errorf("GET /orders 件数が会いません")
+			if g, w := len(orders), 4; g != w {
+				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
 			if orders[2].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
@@ -270,60 +280,65 @@ func (t *PreTester) Run() error {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK")
-			timeout = time.After(LogAllowedDelay)
-			for {
-				select {
-				case <-timeout:
-					return errors.Errorf("ログが送信されていません")
-				default:
-					logs, err := t.isulog.GetUserLogs(c1.UserID())
-					if err != nil {
-						return errors.Wrap(err, "isulog get user logs failed")
+			return func() error {
+				timeout := time.After(LogAllowedDelay)
+				next := make(chan bool, 1)
+				defer close(next)
+				next <- true
+				for {
+					select {
+					case <-timeout:
+						return errors.Errorf("ログが送信されていません")
+					case <-next:
+						logs, err := t.isulog.GetUserLogs(c1.UserID())
+						if err != nil {
+							return errors.Wrap(err, "isulog get user logs failed")
+						}
+						ok, err := func() (bool, error) {
+							var fl []*isulog.Log
+							fl = filetrLogs(logs, isulog.TagSignup)
+							if len(fl) == 0 {
+								return false, nil
+							}
+							if fl[0].Signup.Name != name1 {
+								return false, errors.Errorf("log.signup のnameが正しくありません")
+							}
+							if fl[0].Signup.BankID != account1 {
+								return false, errors.Errorf("log.signup のbank_idが正しくありません")
+							}
+							fl = filetrLogs(logs, isulog.TagSignin)
+							if len(fl) == 0 {
+								return false, nil
+							}
+							fl = filetrLogs(logs, isulog.TagBuyError)
+							if len(fl) < 2 {
+								return false, nil
+							}
+							if fl[0].BuyError.Amount != 1 || fl[0].BuyError.Price != 2000 {
+								return false, errors.Errorf("log.buy.errorが正しくありません")
+							}
+							fl = filetrLogs(logs, isulog.TagBuyOrder)
+							if len(fl) < 5 {
+								return false, nil
+							}
+							fl = filetrLogs(logs, isulog.TagBuyTrade)
+							if len(fl) < 2 {
+								return false, nil
+							}
+							return true, nil
+						}()
+						if err != nil {
+							return err
+						}
+						if ok {
+							log.Printf("[INFO] ログチェック OK")
+							return nil
+						}
+						time.Sleep(PollingInterval)
+						next <- true
 					}
-					ok, err := func() (bool, error) {
-						var fl []*isulog.Log
-						fl = filetrLogs(logs, isulog.TagSignup)
-						if len(fl) == 0 {
-							return false, nil
-						}
-						if fl[0].Signup.Name != "鈴木 明" {
-							return false, errors.Errorf("log.signup のnameが正しくありません")
-						}
-						if fl[0].Signup.BankID != account1 {
-							return false, errors.Errorf("log.signup のbank_idが正しくありません")
-						}
-						fl = filetrLogs(logs, isulog.TagSignin)
-						if len(fl) == 0 {
-							return false, nil
-						}
-						fl = filetrLogs(logs, isulog.TagBuyError)
-						if len(fl) < 2 {
-							return false, nil
-						}
-						if fl[0].BuyError.Amount != 1 || fl[0].BuyError.Price != 2000 {
-							return false, errors.Errorf("log.buy.errorが正しくありません")
-						}
-						fl = filetrLogs(logs, isulog.TagBuyOrder)
-						if len(fl) < 5 {
-							return false, nil
-						}
-						fl = filetrLogs(logs, isulog.TagBuyTrade)
-						if len(fl) < 2 {
-							return false, nil
-						}
-						return true, nil
-					}()
-					if err != nil {
-						return err
-					}
-					if ok {
-						log.Printf("[INFO] ログチェック OK")
-						return nil
-					}
-					time.Sleep(PollingInterval)
 				}
-			}
-			return nil
+			}()
 		})
 		eg.Go(func() error {
 			log.Printf("[INFO] run c2 tasks")
@@ -347,29 +362,38 @@ func (t *PreTester) Run() error {
 					return errors.Errorf("GET /orders 順番が注文時間の昇順になっていません % v", orders)
 				}
 			}
-			timeout := time.After(TestTradeTimeout)
-			for {
-				select {
-				case <-timeout:
-					return errors.Errorf("成立すべき取引が成立しませんでした")
-				default:
-					info, err := c2.Info(0)
-					if err != nil {
-						return err
+			err := func() error {
+				timeout := time.After(TestTradeTimeout)
+				next := make(chan bool, 1)
+				defer close(next)
+				next <- true
+				for {
+					select {
+					case <-timeout:
+						return errors.Errorf("成立すべき取引が成立しませんでした")
+					case <-next:
+						info, err := c2.Info(0)
+						if err != nil {
+							return err
+						}
+						if len(info.TradedOrders) == 1 {
+							break
+						}
+						log.Printf("traded_orders: %d", len(info.TradedOrders))
+						time.Sleep(PollingInterval)
+						next <- true
 					}
-					if len(info.TradedOrders) == 1 {
-						break
-					}
-					log.Printf("traded_orders: %d", len(info.TradedOrders))
-					time.Sleep(PollingInterval)
 				}
+			}()
+			if err != nil {
+				return err
 			}
 			orders, err := c2.GetOrders()
 			if err != nil {
 				return err
 			}
-			if len(orders) != 5 {
-				return errors.Errorf("GET /orders 件数が会いません")
+			if g, w := len(orders), 6; g != w {
+				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
 			if orders[2].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
@@ -388,52 +412,57 @@ func (t *PreTester) Run() error {
 			if rest != buyed {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
-			timeout = time.After(LogAllowedDelay)
-			for {
-				select {
-				case <-timeout:
-					return errors.Errorf("ログが送信されていません")
-				default:
-					logs, err := t.isulog.GetUserLogs(c1.UserID())
-					if err != nil {
-						return errors.Wrap(err, "isulog get user logs failed")
+			return func() error {
+				timeout := time.After(LogAllowedDelay)
+				next := make(chan bool, 1)
+				defer close(next)
+				next <- true
+				for {
+					select {
+					case <-timeout:
+						return errors.Errorf("ログが送信されていません")
+					case <-next:
+						logs, err := t.isulog.GetUserLogs(c1.UserID())
+						if err != nil {
+							return errors.Wrap(err, "isulog get user logs failed")
+						}
+						ok, err := func() (bool, error) {
+							var fl []*isulog.Log
+							fl = filetrLogs(logs, isulog.TagSignup)
+							if len(fl) == 0 {
+								return false, nil
+							}
+							if fl[0].Signup.Name != name2 {
+								return false, errors.Errorf("log.signup のnameが正しくありません")
+							}
+							if fl[0].Signup.BankID != account2 {
+								return false, errors.Errorf("log.signup のbank_idが正しくありません")
+							}
+							fl = filetrLogs(logs, isulog.TagSignin)
+							if len(fl) == 0 {
+								return false, nil
+							}
+							fl = filetrLogs(logs, isulog.TagSellOrder)
+							if len(fl) < 5 {
+								return false, nil
+							}
+							fl = filetrLogs(logs, isulog.TagSellTrade)
+							if len(fl) < 3 {
+								return false, nil
+							}
+							return true, nil
+						}()
+						if err != nil {
+							return err
+						}
+						if ok {
+							return nil
+						}
+						time.Sleep(PollingInterval)
+						next <- true
 					}
-					ok, err := func() (bool, error) {
-						var fl []*isulog.Log
-						fl = filetrLogs(logs, isulog.TagSignup)
-						if len(fl) == 0 {
-							return false, nil
-						}
-						if fl[0].Signup.Name != "トニー モリス" {
-							return false, errors.Errorf("log.signup のnameが正しくありません")
-						}
-						if fl[0].Signup.BankID != account2 {
-							return false, errors.Errorf("log.signup のbank_idが正しくありません")
-						}
-						fl = filetrLogs(logs, isulog.TagSignin)
-						if len(fl) == 0 {
-							return false, nil
-						}
-						fl = filetrLogs(logs, isulog.TagSellOrder)
-						if len(fl) < 5 {
-							return false, nil
-						}
-						fl = filetrLogs(logs, isulog.TagSellTrade)
-						if len(fl) < 3 {
-							return false, nil
-						}
-						return true, nil
-					}()
-					if err != nil {
-						return err
-					}
-					if ok {
-						return nil
-					}
-					time.Sleep(PollingInterval)
 				}
-			}
-			return nil
+			}()
 		})
 		if err := eg.Wait(); err != nil {
 			return err
