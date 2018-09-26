@@ -517,7 +517,8 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 			return errors.Wrap(err, "update orders for cancel")
 		}
 		le := logger.Send(order.Type+".delete", map[string]interface{}{
-			"order_id": id,
+			"order_id": order.ID,
+			"user_id":  order.UserID,
 			"reason":   "canceled",
 		})
 		if le != nil {
@@ -959,13 +960,23 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 				return 0, errors.Wrap(err, "update buy_order for cancel")
 			}
 			le := logger.Send(order.Type+".delete", map[string]interface{}{
-				"order_id": id,
+				"order_id": order.ID,
+				"user_id":  order.UserID,
 				"reason":   "reserve_failed",
 			})
 			if le != nil {
 				log.Printf("[WARN] logger.Send failed. err:%s", le)
 			}
-			return 0, err
+			le = logger.Send(order.Type+".error", map[string]interface{}{
+				"error":   ErrCreditInsufficient.Error(),
+				"user_id": order.UserID,
+				"amount":  order.Amount,
+				"price":   price,
+			})
+			if le != nil {
+				log.Printf("[WARN] logger.Send failed. err:%s", le)
+			}
+			return 0, ErrCreditInsufficient
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
 	}
@@ -982,6 +993,13 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	if err != nil {
 		return errors.Wrap(err, "logger init failed")
 	}
+	defer func() {
+		if len(reserves) > 0 {
+			if err = isubank.Cancel(reserves); err != nil {
+				log.Printf("[WARN] isubank cancel failed. err:%s", err)
+			}
+		}
+	}()
 	res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, order.Amount, order.Price, time.Now())
 	if err != nil {
 		return errors.Wrap(err, "insert trade")
@@ -1016,6 +1034,7 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	if err = isubank.Commit(reserves); err != nil {
 		return errors.Wrap(err, "commit")
 	}
+	reserves = reserves[:0]
 	return nil
 }
 
@@ -1034,6 +1053,18 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if len(reserves) > 0 {
+			isubank, err := newIsubank(tx)
+			if err != nil {
+				log.Printf("[WARN] isubank init failed. err:%s", err)
+				return
+			}
+			if err = isubank.Cancel(reserves); err != nil {
+				log.Printf("[WARN] isubank cancel failed. err:%s", err)
+			}
+		}
+	}()
 
 	var targetIDs []int64
 	switch order.Type {
@@ -1075,18 +1106,13 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 		}
 	}
 	if restAmount > 0 {
-		isubank, err := newIsubank(tx)
-		if err != nil {
-			return errors.Wrap(err, "isubank init failed")
-		}
-		if len(reserves) > 0 {
-			if err = isubank.Cancel(reserves); err != nil {
-				return errors.Wrap(err, "isubank.Cancel")
-			}
-		}
 		return errNoOrder
 	}
-	return commitReservedOrder(tx, order, targets, reserves)
+	// cancelをしたいので
+	r := make([]int64, len(reserves))
+	copy(r, reserves)
+	reserves = reserves[:0]
+	return commitReservedOrder(tx, order, targets, r)
 }
 
 func runTrade(db *sql.DB) error {
@@ -1121,9 +1147,20 @@ func runTrade(db *sql.DB) error {
 	}
 
 	for _, orderID := range candidates {
-		err := txScorp(db, func(tx *sql.Tx) error {
-			return tryTrade(tx, orderID)
-		})
+		err := func() error {
+			tx, err := db.Begin()
+			if err != nil {
+				return errors.Wrap(err, "begin transaction failed")
+			}
+			err = tryTrade(tx, orderID)
+			switch err {
+			case nil, errNoOrder, errClosedOrder, ErrCreditInsufficient:
+				tx.Commit()
+			default:
+				tx.Rollback()
+			}
+			return err
+		}()
 		switch err {
 		case nil:
 			// トレード成立したため次の取引を行う

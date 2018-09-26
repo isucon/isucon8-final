@@ -416,6 +416,7 @@ func (c *Client) Top() error {
 			if res.StatusCode >= 400 {
 				return errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
 			}
+			// TODO MD5のチェック
 			return nil
 		}(path)
 		if err != nil {

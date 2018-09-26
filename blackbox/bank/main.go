@@ -7,6 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
+	//	"encoding/json"
+	//	"flag"
+	//	"fmt"
+	//	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -275,7 +280,7 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case err == CreditIsInsufficient:
-		Error(w, "credit is insufficient", http.StatusOK)
+		Error(w, "credit is insufficient", http.StatusBadRequest)
 	case err != nil:
 		log.Printf("[WARN] check failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
@@ -321,14 +326,14 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			return errors.Wrap(err, "select lock failed")
 		}
 		now := time.Now()
-		expire := now.Add(time.Minute)
+		expire := now.Add(5 * time.Minute)
 		isMinus := price < 0
 		if isMinus {
 			var fixed, reserved int64
 			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM credit WHERE user_id = ?`, userID).Scan(&fixed); err != nil {
 				return errors.Wrap(err, "calc credit failed")
 			}
-			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire).Scan(&reserved); err != nil {
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, now).Scan(&reserved); err != nil {
 				return errors.Wrap(err, "calc reserve failed")
 			}
 			if fixed+reserved+price < 0 {
@@ -348,7 +353,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case err == CreditIsInsufficient:
-		Error(w, "credit is insufficient", http.StatusOK)
+		Error(w, "credit is insufficient", http.StatusBadRequest)
 	case err != nil:
 		log.Printf("[WARN] reserve failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)
@@ -572,6 +577,7 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) int64 {
 	switch {
 	case err == sql.ErrNoRows:
 		Error(w, "bank_id not found", http.StatusNotFound)
+		return 0
 	case err != nil:
 		log.Printf("[WARN] get user failed. err: %s", err)
 		Error(w, "internal server error", http.StatusInternalServerError)

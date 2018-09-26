@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	crand "crypto/rand"
 	"encoding/binary"
 	"flag"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -26,6 +26,7 @@ func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("Success!")
 }
 
 func run() error {
@@ -33,11 +34,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	bm := bench.NewRunner(mgr, time.Minute, 20*time.Millisecond)
-	if err = bm.Run(context.Background()); err != nil {
-		return err
+	log.Printf("run initialize")
+	if err = mgr.Initialize(); err != nil {
+		return errors.Wrap(err, "Initialize Failed")
 	}
-	bm.Result()
+
+	log.Printf("run test")
+	if err := mgr.PreTest(); err != nil {
+		return errors.Wrap(err, "Test Failed")
+	}
 	return nil
 }
 

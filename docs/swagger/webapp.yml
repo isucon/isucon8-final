@@ -103,21 +103,8 @@ paths:
         409:
           description: "bank_id conflict"
       x-logs:
-        on_success:
-          tag: signup
-          parameters:
-            - name: "name"
-              description: name
-              schema:
-                type: string
-            - name: "bank_id"
-              description: ISUBANKID
-              schema:
-                type: string
-            - name: "user_id"
-              description: 登録したISUCOIN上でのuser_id
-              schema:
-                type: integer
+        - $ref: "#/logs/Singup"
+
   /signin:
     post:
       tags:
@@ -158,12 +145,7 @@ paths:
         404:
           description: "bank id or password not match"
       x-logs:
-        on_success:
-          tag: signin
-          parameters:
-            - name: "user_id"
-              schema:
-                type: integer
+        - $ref: "#/logs/Singin"
 
   /info:
     get:
@@ -296,28 +278,9 @@ paths:
           description: "Unauthorized"
 
       x-logs:
-        on_success__buy:
-          description: 買い注文成功時
-          tag: buy.order
-          schema:
-            $ref: "#/definitions/OrderLog"
-        on_success__sell:
-          description: 売り注文成功時
-          tag: sell.order
-          schema:
-            $ref: "#/definitions/OrderLog"
-        on_error__insuffisient:
-          description: 残高不足によるエラー時
-          tag: buy.error
-          parameters:
-            error:
-              type: string
-            user_id:
-              type: integer
-            amount:
-              type: integer
-            price:
-              type: integer
+        - $ref: "#/logs/BuyOrder"
+        - $ref: "#/logs/SellOrder"
+        - $ref: "#/logs/BuyError"
 
   /order/{id}:
     delete:
@@ -346,24 +309,8 @@ paths:
           description: "No Order or already closed"
 
       x-logs:
-        on_success__buy:
-          description: 買い注文キャンセル時
-          tag: buy.delete
-          parameters:
-            order_id:
-              type: integer
-            reason:
-              type: string
-              value: canceled
-        on_success__sell:
-          description: 売り注文キャンセル時
-          tag: sell.delete
-          parameters:
-            order_id:
-              type: integer
-            reason:
-              type: string
-              value: canceled
+        - $ref: "#/logs/BuyDelete"
+        - $ref: "#/logs/SellDelete"
 
 definitions:
   User:
@@ -444,13 +391,138 @@ definitions:
         type: integer
         description: 安値
   OrderLog:
+
+logs:
+  Signup:
+    tag: "signup"
+    description: "登録時"
+    type: "object"
+    properties:
+      name:
+        type: string
+        description: "登録した名前"
+      bank_id:
+        type: string
+        description: ISUBANKID
+      user_id:
+        type: integer
+        description: アプリケーションで払い出したユニークID
+
+  Signin:
+    tag: "signin"
+    description: "ログイン時"
+    type: "object"
+    properties:
+      user_id:
+        type: integer
+        description: Signup時と同じuser_id
+
+  Order:
+    tag:  ~
+    type: "object"
+    properties:
+      order_id:
+        type: integer
+        description: アプリケーションで払い出したユニークID
+      user_id:
+        type: integer
+        description: Signup時と同じuser_id
+      amount:
+        type: integer
+        description: 注文脚数
+      price:
+        type: integer
+        description: 注文単価
+
+  BuyOrder:
+    tag: "buy.order"
+    description: "買い注文受付時"
+    $ref: "#/logs/Order"
+
+  SellOrder:
+    tag: "sell.order"
+    description: "売り注文受付時"
+    $ref: "#/logs/Order"
+
+  BuyError:
+    tag: "buy.error"
+    description: "買い注文や与信失敗時"
+    type: "object"
+    properties:
+      error:
+        type: string
+        description: ISUBANK APIからのエラーメッセージ
+      user_id:
+        type: integer
+        description: アプリケーションで払い出したユニークID
+      amount:
+        type: integer
+        description: 注文脚数
+      price:
+        type: integer
+        description: 単価
+
+  OrderDelete:
+    tag:  ~
     type: "object"
     properties:
       order_id:
         type: integer
       user_id:
         type: integer
+      reason:
+        type: string
+        description: 削除理由
+        enum: ['canceled', 'reserve_failed']
+
+  BuyDelete:
+    tag: "buy.delete"
+    description: "買い注文削除時"
+    $ref: "#/logs/OrderDelete"
+
+  SellDelete:
+    tag: "sell.delete"
+    description: "売り注文削除時"
+    $ref: "#/logs/OrderDelete"
+
+  Trade:
+    tag:  "trade" 
+    type: "object"
+    description: "取引成立時"
+    properties:
+      trade_id:
+        type: integer
+        description: アプリケーションで払い出したユニークID
       amount:
         type: integer
+        description: 取引脚数
       price:
         type: integer
+        description: 取引単価
+
+  OrderTrade:
+    tag:  ~
+    type: "object"
+    properties:
+      order_id:
+        type: integer
+      user_id:
+        type: integer
+      trade_id:
+        type: integer
+      amount:
+        type: integer
+        description: 取引脚数
+      price:
+        type: integer
+        description: 取引単価
+
+  BuyTrade:
+    tag: "buy.trade"
+    description: "買い注文成立時"
+    $ref: "#/logs/OrderTrade"
+
+  SellTrade:
+    tag: "sell.trade"
+    description: "売り注文成立時"
+    $ref: "#/logs/OrderTrade"
