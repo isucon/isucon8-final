@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -118,7 +119,10 @@ type Handler struct {
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	if err := exec.Command("sh", h.datadir+"/init.sh").Run(); err != nil {
+	cmd := exec.Command("sh", h.datadir+"/init.sh")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
 		return
 	}
