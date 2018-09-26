@@ -50,6 +50,7 @@ services:
     volumes:
       - mysql:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
+      - ./mysql/conf.d:/etc/mysql/conf.d
 
 volumes:
   gopath:
