@@ -965,7 +965,7 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 			if le != nil {
 				log.Printf("[WARN] logger.Send failed. err:%s", le)
 			}
-			return 0, err
+			return 0, ErrCreditInsufficient
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
 	}
