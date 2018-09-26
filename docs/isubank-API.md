@@ -12,7 +12,7 @@ baseurlは各アプリケーションごとにユニークなURLを払い出す
 
 アプリケーションへの認証は Authorization にユニークなappidをしてする
 ```
-Authorization: app_id APP_ID
+Authorization: Bearer <APP_ID>
 ```
 
 ### `POST /check`
