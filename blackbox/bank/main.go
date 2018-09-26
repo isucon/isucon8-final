@@ -326,14 +326,14 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 			return errors.Wrap(err, "select lock failed")
 		}
 		now := time.Now()
-		expire := now.Add(time.Minute)
+		expire := now.Add(5 * time.Minute)
 		isMinus := price < 0
 		if isMinus {
 			var fixed, reserved int64
 			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM credit WHERE user_id = ?`, userID).Scan(&fixed); err != nil {
 				return errors.Wrap(err, "calc credit failed")
 			}
-			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, expire).Scan(&reserved); err != nil {
+			if err := tx.QueryRow(`SELECT IFNULL(SUM(amount), 0) FROM reserve WHERE user_id = ? AND is_minus = 1 AND expire_at >= ?`, userID, now).Scan(&reserved); err != nil {
 				return errors.Wrap(err, "calc reserve failed")
 			}
 			if fixed+reserved+price < 0 {
