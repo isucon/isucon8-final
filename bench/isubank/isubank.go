@@ -3,6 +3,7 @@ package isubank
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -72,21 +73,28 @@ func (b *Isubank) AddCredit(bankid string, price int64) error {
 func (b *Isubank) GetCredit(bankid string) (int64, error) {
 	u := new(url.URL)
 	*u = *b.endpoint
-	u.Path = path.Join(u.Path, "/get_credit")
+	u.Path = path.Join(u.Path, "/credit")
 	u.RawQuery = url.Values{"bank_id": []string{bankid}}.Encode()
 	res, err := http.Get(u.String())
 	if err != nil {
 		return 0, errors.Wrap(err, "isubank get_credit failed")
 	}
 	defer res.Body.Close()
-	type Res struct {
-		Credit int64 `json:"credit"`
+	if res.StatusCode == 200 {
+		type Res struct {
+			Credit int64 `json:"credit"`
+		}
+		var r Res
+		if err = json.NewDecoder(res.Body).Decode(&r); err != nil {
+			return 0, errors.Wrap(err, "isubank get_credit decode failed")
+		}
+		return r.Credit, nil
 	}
-	var r Res
-	if err = json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return 0, errors.Wrap(err, "isubank get_credit decode failed")
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return 0, errors.Wrap(err, "isubank read body failed")
 	}
-	return r.Credit, nil
+	return 0, errors.Errorf("isubank getCredit failed. [status:%d, body:%s]", res.StatusCode, string(body))
 }
 
 func (b *Isubank) request(p string, v map[string]interface{}, r isubankResponse) error {
