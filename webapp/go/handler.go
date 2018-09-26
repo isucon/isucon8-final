@@ -517,7 +517,8 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 			return errors.Wrap(err, "update orders for cancel")
 		}
 		le := logger.Send(order.Type+".delete", map[string]interface{}{
-			"order_id": id,
+			"order_id": order.ID,
+			"user_id":  order.UserID,
 			"reason":   "canceled",
 		})
 		if le != nil {
@@ -959,7 +960,8 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 				return 0, errors.Wrap(err, "update buy_order for cancel")
 			}
 			le := logger.Send(order.Type+".delete", map[string]interface{}{
-				"order_id": id,
+				"order_id": order.ID,
+				"user_id":  order.UserID,
 				"reason":   "reserve_failed",
 			})
 			if le != nil {
