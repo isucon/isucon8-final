@@ -967,6 +967,15 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 			if le != nil {
 				log.Printf("[WARN] logger.Send failed. err:%s", le)
 			}
+			le = logger.Send(order.Type+".error", map[string]interface{}{
+				"error":   ErrCreditInsufficient.Error(),
+				"user_id": order.UserID,
+				"amount":  order.Amount,
+				"price":   price,
+			})
+			if le != nil {
+				log.Printf("[WARN] logger.Send failed. err:%s", le)
+			}
 			return 0, ErrCreditInsufficient
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
