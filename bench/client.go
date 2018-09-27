@@ -454,10 +454,12 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	slen, mlen, hlen := len(r.ChartBySec), len(r.ChartByMin), len(r.ChartByHour)
-	if slen < mlen || mlen < hlen {
-		return nil, errors.Errorf("GET %s chart length is broken?", path)
-	}
+	// 古いのだけで最新がないのはあり得る
+	// TODO チャートデータのテスト
+	// slen, mlen, hlen := len(r.ChartBySec), len(r.ChartByMin), len(r.ChartByHour)
+	// if slen < mlen || mlen < hlen {
+	// 	return nil, errors.Errorf("GET %s chart length is broken?", path)
+	// }
 	if r.Cursor == 0 {
 		return nil, errors.Errorf("GET %s curson is zero", path)
 	}

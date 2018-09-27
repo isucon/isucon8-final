@@ -29,33 +29,36 @@ type Investor interface {
 	IsSignin() bool
 	IsStarted() bool
 	Orders() []*Order
+	UserID() int64
 
+	LatestTradedOrder() *Order
 	LatestTradePrice() int64
 	IsRetired() bool
 }
 
 type investorBase struct {
-	c                *Client
-	defcredit        int64
-	credit           int64
-	resvedCredit     int64
-	defisu           int64
-	isu              int64
-	resvedIsu        int64
-	orders           []*Order
-	lowestSellPrice  int64
-	highestBuyPrice  int64
-	latestTradePrice int64
-	isSignin         bool
-	isStarted        bool
-	lastCursor       int64
-	pollingTime      time.Time
-	pollingLock      sync.Mutex
-	lastOrder        time.Time
-	actionLock       sync.Mutex
-	taskLock         sync.Mutex
-	taskStack        []taskworker.Task
-	timeoutCount     int
+	c                 *Client
+	defcredit         int64
+	credit            int64
+	resvedCredit      int64
+	defisu            int64
+	isu               int64
+	resvedIsu         int64
+	orders            []*Order
+	lowestSellPrice   int64
+	highestBuyPrice   int64
+	latestTradePrice  int64
+	isSignin          bool
+	isStarted         bool
+	lastCursor        int64
+	pollingTime       time.Time
+	pollingLock       sync.Mutex
+	lastOrder         time.Time
+	actionLock        sync.Mutex
+	taskLock          sync.Mutex
+	taskStack         []taskworker.Task
+	timeoutCount      int
+	latestTradedOrder *Order
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
@@ -107,6 +110,14 @@ func (i *investorBase) IsStarted() bool {
 
 func (i *investorBase) Orders() []*Order {
 	return i.orders
+}
+
+func (i *investorBase) LatestTradedOrder() *Order {
+	return i.latestTradedOrder
+}
+
+func (i *investorBase) UserID() int64 {
+	return i.c.UserID()
 }
 
 func (i *investorBase) Top() taskworker.Task {
@@ -171,6 +182,14 @@ func (i *investorBase) Info() taskworker.Task {
 
 		if info.TradedOrders != nil && len(info.TradedOrders) > 0 {
 			// TODO 即実行のほうが良いか
+			for _, order := range info.TradedOrders {
+				if order.Trade == nil {
+					return 0, errors.Errorf("GET /info traded_order.trade is null")
+				}
+				if i.latestTradedOrder == nil || i.latestTradedOrder.Trade.CreatedAt.Before(order.Trade.CreatedAt) {
+					i.latestTradedOrder = &order
+				}
+			}
 			i.pushNextTask(i.UpdateOrders())
 		}
 
@@ -266,16 +285,18 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 	return taskworker.NewScoreTask(func(ctx context.Context) (int64, error) {
 		i.actionLock.Lock()
 		defer i.actionLock.Unlock()
-		if order.Removed() {
+		if order.ClosedAt != nil {
 			return 0, nil
 		}
+		var score int64 = DeleteOrdersScore
 		if err := i.c.DeleteOrders(order.ID); err != nil {
 			if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 404 {
 				// 404エラーはしょうがないのでerrにはしないが加点しない
+				score = 0
 				log.Printf("[INFO] delete 404 %s", er)
-				return 0, nil
+			} else {
+				return 0, err
 			}
-			return 0, err
 		}
 		found := false
 		for _, o := range i.orders {
@@ -289,7 +310,7 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 		if !found {
 			log.Printf("[WARN] not found removed order. %d", order.ID)
 		}
-		return DeleteOrdersScore, nil
+		return score, nil
 	})
 }
 
@@ -384,12 +405,18 @@ func (i *RandomInvestor) UpdateOrderTask() taskworker.Task {
 	}
 	logicalCredit := i.credit - i.resvedCredit
 	logicalIsu := i.isu - i.resvedIsu
+	waitingOrders := make([]*Order, 0, len(i.orders))
+	for _, o := range i.orders {
+		if o.ClosedAt == nil {
+			waitingOrders = append(waitingOrders, o)
+		}
+	}
 	switch {
-	case len(i.orders) >= OrderCap:
+	case len(waitingOrders) >= OrderCap:
 		// orderを一個リリースする
 		var o *Order
 		var df int64
-		for _, order := range i.orders {
+		for _, order := range waitingOrders {
 			var mdiff int64
 			if order.Type == TradeTypeSell {
 				mdiff = order.Price - i.highestBuyPrice
