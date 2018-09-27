@@ -6,7 +6,6 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
 	"github.com/ken39arg/isucon2018-final/bench/isulog"
@@ -31,8 +30,7 @@ type Manager struct {
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
 	level        uint
-
-	lastTradePorring time.Time
+	totalivst    int
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
@@ -86,15 +84,16 @@ func (c *Manager) AddInvestor(i Investor) {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	c.investors = append(c.investors, i)
+	c.totalivst++
 }
 
-func (c *Manager) RemoveInvestor(i Investor) {
+func (c *Manager) PurgeInvestor() {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	cleared := make([]Investor, 0, cap(c.investors))
-	for _, ii := range c.investors {
-		if i.BankID() != ii.BankID() {
-			cleared = append(cleared, ii)
+	for _, i := range c.investors {
+		if !i.IsRetired() {
+			cleared = append(cleared, i)
 		}
 	}
 	c.investors = cleared
@@ -140,17 +139,11 @@ func (c *Manager) GetLevel() uint {
 }
 
 func (c *Manager) AllInvestors() int {
-	return len(c.investors)
+	return c.totalivst
 }
 
 func (c *Manager) ActiveInvestors() int {
-	var i int
-	for _, in := range c.investors {
-		if !in.IsRetired() {
-			i++
-		}
-	}
-	return i
+	return len(c.investors)
 }
 
 func (c *Manager) FindInvestor(bankID string) Investor {
@@ -188,12 +181,22 @@ func (c *Manager) Initialize() error {
 }
 
 func (c *Manager) PreTest() error {
-	return NewPreTester(c.appep, c.isulog, c.isubank).Run()
+	t := &PreTester{
+		appep:   c.appep,
+		isubank: c.isubank,
+		isulog:  c.isulog,
+	}
+	return t.Run()
 }
 
 func (c *Manager) PostTest() error {
-	// PostTesterは多分このままにはならない
-	return NewPostTester(c.appep, c.isulog, c.isubank).Run()
+	t := &PostTester{
+		appep:     c.appep,
+		isubank:   c.isubank,
+		isulog:    c.isulog,
+		investors: c.investors,
+	}
+	return t.Run()
 }
 
 func (c *Manager) Start() ([]taskworker.Task, error) {
@@ -227,6 +230,12 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
+	c.PurgeInvestor()
+
+	if c.ActiveInvestors() == 0 {
+		return nil, errors.New("アクティブユーザーがいなくなりました")
+	}
+
 	tasks := []taskworker.Task{}
 	for _, investor := range c.investors {
 		// 初期以外はnextのタイミングで一人づつ投入
@@ -250,8 +259,6 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 
 	score := c.GetScore()
 	for {
-		break // とりあえず通すために worker level をあげない
-
 		// levelup
 		nextScore := (1 << c.level) * 100
 		if score < int64(nextScore) {
@@ -266,10 +273,10 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 			latestTradePrice = 100
 		}
 		c.level++
-		log.Printf("[INFO] ユーザーが増えます")
+		c.Logger().Printf("アクティブユーザーが自然増加します")
 
 		// 2人追加
-		unitamount := int64(c.level * 5)
+		unitamount := int64(c.level + 1)
 		for i := 0; i < 2; i++ {
 			cl, err := c.newClient()
 			if err != nil {
@@ -279,10 +286,12 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 			if i%2 == 1 {
 				investor = NewRandomInvestor(cl, latestTradePrice*1000, 0, unitamount, latestTradePrice-2)
 			} else {
-				investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, latestTradePrice+5)
+				investor = NewRandomInvestor(cl, 0, unitamount*100, unitamount, latestTradePrice+5)
 			}
 			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
-				c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				if investor.Credit() > 0 {
+					c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				}
 				c.AddInvestor(investor)
 				return nil
 			}, 0))

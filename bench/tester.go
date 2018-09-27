@@ -12,24 +12,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type tester struct {
+type PreTester struct {
 	appep   string
 	isulog  *isulog.Isulog
 	isubank *isubank.Isubank
-}
-
-func newtester(a string, l *isulog.Isulog, b *isubank.Isubank) *tester {
-	return &tester{a, l, b}
-}
-
-type PreTester struct {
-	*tester
-}
-
-func NewPreTester(a string, l *isulog.Isulog, b *isubank.Isubank) *PreTester {
-	return &PreTester{
-		tester: newtester(a, l, b),
-	}
 }
 
 func (t *PreTester) Run() error {
@@ -534,17 +520,149 @@ func (t *PreTester) Run() error {
 }
 
 type PostTester struct {
-	*tester
-}
-
-func NewPostTester(a string, l *isulog.Isulog, b *isubank.Isubank) *PostTester {
-	return &PostTester{
-		tester: newtester(a, l, b),
-	}
+	appep     string
+	isulog    *isulog.Isulog
+	isubank   *isubank.Isubank
+	investors []Investor
 }
 
 func (t *PostTester) Run() error {
-	return nil
+	deadline := time.Now().Add(LogAllowedDelay)
+	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
+	var trade *Trade
+	for _, investor := range t.investors {
+		for _, order := range investor.Orders() {
+			if order.Trade != nil {
+				if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
+					trade = order.Trade
+					latest = investor
+				}
+			}
+		}
+	}
+	eg := new(errgroup.Group)
+
+	eg.Go(func() error {
+		timeout := time.After(deadline.Sub(time.Now()))
+		next := make(chan bool, 1)
+		defer close(next)
+		next <- true
+		for {
+			select {
+			case <-timeout:
+				return errors.Errorf("ログが欠損しています [trade:%d]", trade.ID)
+			case <-next:
+				logs, err := t.isulog.GetTradeLogs(trade.ID)
+				if err != nil {
+					return errors.Wrap(err, "isulog get trade logs failed")
+				}
+				ok := func() bool {
+					if countLog(logs, isulog.TagTrade) < 1 {
+						return false
+					}
+					var bnum, snum int64
+					for _, l := range filetrLogs(logs, isulog.TagBuyTrade) {
+						bnum += l.BuyTrade.Amount
+					}
+					for _, l := range filetrLogs(logs, isulog.TagSellTrade) {
+						snum += l.SellTrade.Amount
+					}
+					if bnum != trade.Amount || snum != trade.Amount {
+						return false
+					}
+					return true
+				}()
+				if ok {
+					log.Printf("[INFO] 取引ログチェックOK [trade:%d]", trade.ID)
+					return nil
+				}
+			}
+			time.Sleep(PollingInterval)
+			next <- true
+		}
+	})
+	for _, inv := range []Investor{first, latest, random} {
+
+		investor := inv
+		eg.Go(func() error {
+			timeout := time.After(deadline.Sub(time.Now()))
+			credit, err := t.isubank.GetCredit(investor.BankID())
+			if err != nil {
+				return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
+			}
+			if credit != investor.Credit() {
+				return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+			}
+			var buy, sell, buyt, sellt, buyd, selld int
+			for _, order := range investor.Orders() {
+				switch order.Type {
+				case TradeTypeBuy:
+					buy++
+					if order.TradeID > 0 {
+						buyt++
+					} else if order.Removed() {
+						buyd++
+					}
+				case TradeTypeSell:
+					sell++
+					if order.TradeID > 0 {
+						sellt++
+					} else if order.Removed() {
+						selld++
+					}
+				}
+			}
+			next := make(chan bool, 1)
+			defer close(next)
+			next <- true
+			for {
+				select {
+				case <-timeout:
+					return errors.Errorf("ログが欠損しています [user:%d]", investor.UserID())
+				case <-next:
+					logs, err := t.isulog.GetUserLogs(investor.UserID())
+					if err != nil {
+						return errors.Wrap(err, "isulog get user logs failed")
+					}
+					ok := func() bool {
+						if countLog(logs, isulog.TagSignup) == 0 {
+							return false
+						}
+						if countLog(logs, isulog.TagSignin) == 0 {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyOrder) < buy {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyTrade) < buyt {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyDelete) < buyd {
+							return false
+						}
+						if countLog(logs, isulog.TagSellOrder) < sell {
+							return false
+						}
+						if countLog(logs, isulog.TagSellTrade) < sellt {
+							return false
+						}
+						if countLog(logs, isulog.TagSellDelete) < selld {
+							return false
+						}
+						return true
+					}()
+					if ok {
+						log.Printf("[INFO] ユーザーログチェックOK [user:%d]", investor.UserID())
+						return nil
+					}
+				}
+				time.Sleep(PollingInterval)
+				next <- true
+			}
+		})
+	}
+
+	return eg.Wait()
 }
 
 func filetrLogs(logs []*isulog.Log, tag string) []*isulog.Log {
@@ -555,4 +673,14 @@ func filetrLogs(logs []*isulog.Log, tag string) []*isulog.Log {
 		}
 	}
 	return ret
+}
+
+func countLog(logs []*isulog.Log, tag string) int {
+	r := 0
+	for _, l := range logs {
+		if l.Tag == tag {
+			r++
+		}
+	}
+	return r
 }

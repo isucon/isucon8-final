@@ -4,10 +4,12 @@ import "time"
 
 const (
 	// Timeouts
-	ClientTimeout = 10 * time.Second // HTTP clientのタイムアウト
-	InitTimeout   = 30 * time.Second // Initialize のタイムアウト
+	BenchMarkTime  = 60 * time.Second      // 負荷走行の時間
+	TickerInterval = 20 * time.Millisecond // tickerのinterval
 
-	RetireTimeout = 5 * time.Second        // clientが退役するタイムアウト時間
+	InitTimeout   = 30 * time.Second       // Initialize のタイムアウト
+	ClientTimeout = 15 * time.Second       // HTTP clientのタイムアウト
+	RetireTimeout = 10 * time.Second       // clientが退役するタイムアウト時間
 	RetryInterval = 500 * time.Millisecond // 50x系でエラーになったときのretry間隔
 
 	TestTradeTimeout = 5 * time.Second  // testでのtradeは成立までの時間
