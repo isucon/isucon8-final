@@ -215,7 +215,7 @@ func (t *PreTester) Run() error {
 				{2, 5100},
 				{1, 5099},
 				{3, 5104}, // 足りない
-				{2, 5105}, // 99とマッチング
+				{2, 5106}, // 99とマッチング
 			} {
 				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
@@ -226,7 +226,7 @@ func (t *PreTester) Run() error {
 					return err
 				}
 				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 順番が注文時間の昇順になっていません % v", orders)
+					return errors.Errorf("GET /orders 買い注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
 				}
 			}
 			log.Printf("[INFO] send order finish")
@@ -356,7 +356,7 @@ func (t *PreTester) Run() error {
 					return err
 				}
 				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 順番が注文時間の昇順になっていません % v", orders)
+					return errors.Errorf("GET /orders 売り注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
 				}
 			}
 			err := func() error {

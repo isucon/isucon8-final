@@ -199,6 +199,8 @@ func (c *Manager) Start() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 
+	basePrice := 5105
+
 	tasks := make([]taskworker.Task, 0, AddWorkersByLevel)
 	for i := 0; i < AddWorkersByLevel; i++ {
 		cl, err := c.newClient()
@@ -207,11 +209,13 @@ func (c *Manager) Start() ([]taskworker.Task, error) {
 		}
 		var investor Investor
 		if i%2 == 1 {
-			investor = NewRandomInvestor(cl, 10000, 0, 2, int64(100+i/2))
+			investor = NewRandomInvestor(cl, 100000, 0, 1, int64(basePrice+i/2))
 		} else {
-			investor = NewRandomInvestor(cl, 1, 5, 2, int64(100+i/2))
+			investor = NewRandomInvestor(cl, 0, 5, 1, int64(basePrice+i/2))
 		}
-		c.isubank.AddCredit(investor.BankID(), investor.Credit())
+		if investor.Credit() > 0 {
+			c.isubank.AddCredit(investor.BankID(), investor.Credit())
+		}
 		c.AddInvestor(investor)
 		tasks = append(tasks, investor.Start())
 	}
