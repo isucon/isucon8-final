@@ -135,6 +135,10 @@ func (c *Manager) TotalScore() int64 {
 	return score - demerit*c.ErrorCount()
 }
 
+func (c *Manager) GetLevel() uint {
+	return c.level
+}
+
 func (c *Manager) AllInvestors() int {
 	return len(c.investors)
 }
