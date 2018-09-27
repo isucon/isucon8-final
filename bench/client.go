@@ -140,9 +140,10 @@ func NewClient(base, bankid, name, password string, timout, retire time.Duration
 	if err != nil {
 		return nil, errors.Wrapf(err, "cookiejar.New Failed.")
 	}
+	transport := &http.Transport{}
 	hc := &http.Client{
-		Jar: jar,
-		// Transport: transport,
+		Jar:       jar,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
