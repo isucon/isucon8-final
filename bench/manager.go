@@ -180,6 +180,9 @@ func (c *Manager) Initialize() error {
 	if err := guest.Initialize(c.bankep, c.isubank.AppID(), c.logep, c.isulog.AppID()); err != nil {
 		return err
 	}
+	c.Logger().Printf("GET /initialize complete")
+	time.Sleep(10 * time.Second)
+	c.Logger().Printf("warmup complete")
 	return nil
 }
 
