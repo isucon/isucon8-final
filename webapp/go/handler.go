@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -119,13 +117,6 @@ type Handler struct {
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	cmd := exec.Command("sh", h.datadir+"/init.sh")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
-		return
-	}
 	err := txScorp(h.db, func(tx *sql.Tx) error {
 		var dt time.Time
 		if err := tx.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
