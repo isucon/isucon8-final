@@ -222,6 +222,10 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 
 	c.PurgeInvestor()
 
+	if c.ActiveInvestors() == 0 {
+		return nil, errors.New("アクティブユーザーがいなくなりました")
+	}
+
 	tasks := []taskworker.Task{}
 	for _, investor := range c.investors {
 		// 初期以外はnextのタイミングで一人づつ投入
