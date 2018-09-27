@@ -107,7 +107,7 @@ func NewServer(db *sql.DB, store sessions.Store, publicdir, datadir string) http
 	router.POST("/orders", h.AddOrders)
 	router.GET("/orders", h.GetOrders)
 	router.DELETE("/order/:id", h.DeleteOrders)
-	router.NotFound = http.FileServer(http.Dir(publicdir))
+	router.NotFound = http.FileServer(http.Dir(publicdir)).ServeHTTP
 
 	return h.commonHandler(router)
 }
