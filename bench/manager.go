@@ -6,7 +6,6 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
 	"github.com/ken39arg/isucon2018-final/bench/isulog"
@@ -31,8 +30,7 @@ type Manager struct {
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
 	level        uint
-
-	lastTradePorring time.Time
+	totalivst    int
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
@@ -86,15 +84,16 @@ func (c *Manager) AddInvestor(i Investor) {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	c.investors = append(c.investors, i)
+	c.totalivst++
 }
 
-func (c *Manager) RemoveInvestor(i Investor) {
+func (c *Manager) PurgeInvestor() {
 	c.investorLock.Lock()
 	defer c.investorLock.Unlock()
 	cleared := make([]Investor, 0, cap(c.investors))
-	for _, ii := range c.investors {
-		if i.BankID() != ii.BankID() {
-			cleared = append(cleared, ii)
+	for _, i := range c.investors {
+		if !i.IsRetired() {
+			cleared = append(cleared, i)
 		}
 	}
 	c.investors = cleared
@@ -140,17 +139,11 @@ func (c *Manager) GetLevel() uint {
 }
 
 func (c *Manager) AllInvestors() int {
-	return len(c.investors)
+	return c.totalivst
 }
 
 func (c *Manager) ActiveInvestors() int {
-	var i int
-	for _, in := range c.investors {
-		if !in.IsRetired() {
-			i++
-		}
-	}
-	return i
+	return len(c.investors)
 }
 
 func (c *Manager) FindInvestor(bankID string) Investor {
@@ -226,6 +219,8 @@ func (c *Manager) Start() ([]taskworker.Task, error) {
 func (c *Manager) Next() ([]taskworker.Task, error) {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
+
+	c.PurgeInvestor()
 
 	tasks := []taskworker.Task{}
 	for _, investor := range c.investors {
