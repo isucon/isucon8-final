@@ -93,6 +93,10 @@ type Order struct {
 	Trade     *Trade     `json:"trade,omitempty"`
 }
 
+func (o *Order) Removed() bool {
+	return o.ClosedAt != nil && o.TradeID == 0
+}
+
 type CandlestickData struct {
 	Time  time.Time `json:"time"`
 	Open  int64     `json:"open"`
@@ -430,6 +434,7 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	path := "/info"
 	v := url.Values{}
 	v.Set("cursor", strconv.FormatInt(cursor, 10))
+	//log.Printf("[DEBUG] GET /info?curson=%d [user:%d]", cursor, c.UserID())
 	res, err := c.get(path, v)
 	if err != nil {
 		if err == ErrAlreadyRetired {
@@ -449,6 +454,18 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	if err := json.NewDecoder(res.Body).Decode(r); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
+	slen, mlen, hlen := len(r.ChartBySec), len(r.ChartByMin), len(r.ChartByHour)
+	if slen < mlen || mlen < hlen {
+		return nil, errors.Wrapf(err, "GET %s chart length is broken?", path)
+	}
+	if r.Cursor == 0 {
+		return nil, errors.Wrapf(err, "GET %s curson is zero", path)
+	}
+	if r.TradedOrders != nil && len(r.TradedOrders) > 0 {
+		if err := c.testMyOrder(path, r.TradedOrders); err != nil {
+			return nil, err
+		}
+	}
 	return r, nil
 }
 
@@ -458,6 +475,7 @@ func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) 
 	v.Set("type", ordertyp)
 	v.Set("amount", strconv.FormatInt(amount, 10))
 	v.Set("price", strconv.FormatInt(price, 10))
+	//log.Printf("[DEBUG] POST /orders [user:%d]", c.UserID())
 	res, err := c.post(path, v)
 	if err != nil {
 		if err == ErrAlreadyRetired {
@@ -510,30 +528,15 @@ func (c *Client) GetOrders() ([]Order, error) {
 	if err := json.NewDecoder(res.Body).Decode(&orders); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
-	var tc time.Time
-	for _, order := range orders {
-		if order.UserID != c.userID {
-			return nil, errors.Wrapf(err, "GET %s returned not my order [id:%d, user_id:%d]", path, order.ID, c.UserID)
-		}
-		if order.User == nil {
-			return nil, errors.Wrapf(err, "GET %s returned not filled user [id:%d, user_id:%d]", path, order.ID, c.UserID)
-		}
-		if order.User.Name != c.name {
-			return nil, errors.Wrapf(err, "GET %s returned filled user.name is not my name [id:%d, user_id:%d]", path, order.ID, c.UserID)
-		}
-		if order.TradeID != 0 && order.Trade == nil {
-			return nil, errors.Wrapf(err, "GET %s returned not filled trade [id:%d, user_id:%d]", path, order.ID, c.UserID)
-		}
-		if order.CreatedAt.Before(tc) {
-			return nil, errors.Wrapf(err, "GET %s sort order is must be created_at desc", path)
-		}
-		tc = order.CreatedAt
+	if err := c.testMyOrder(path, orders); err != nil {
+		return nil, err
 	}
 	return orders, nil
 }
 
 func (c *Client) DeleteOrders(id int64) error {
 	path := fmt.Sprintf("/order/%d", id)
+	//log.Printf("[DEBUG] DELETE %s [user:%d]", path, c.UserID())
 	res, err := c.del(path, url.Values{})
 	if err != nil {
 		if err == ErrAlreadyRetired {
@@ -555,6 +558,29 @@ func (c *Client) DeleteOrders(id int64) error {
 	}
 	if r.ID != id {
 		return errors.Errorf("DELETE %s failed. id is not match requested value [got:%d, want:%d]", path, r.ID, id)
+	}
+	return nil
+}
+
+func (c *Client) testMyOrder(path string, orders []Order) error {
+	var tc time.Time
+	for _, order := range orders {
+		if order.UserID != c.userID {
+			return errors.Errorf("GET %s returned not my order [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User == nil {
+			return errors.Errorf("GET %s returned not filled user [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.User.Name != c.name {
+			return errors.Errorf("GET %s returned filled user.name is not my name [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.TradeID != 0 && order.Trade == nil {
+			return errors.Errorf("GET %s returned not filled trade [id:%d, user_id:%d]", path, order.ID, c.UserID)
+		}
+		if order.CreatedAt.Before(tc) {
+			return errors.Errorf("GET %s sort order is must be created_at desc", path)
+		}
+		tc = order.CreatedAt
 	}
 	return nil
 }
