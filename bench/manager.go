@@ -181,12 +181,22 @@ func (c *Manager) Initialize() error {
 }
 
 func (c *Manager) PreTest() error {
-	return NewPreTester(c.appep, c.isulog, c.isubank).Run()
+	t := &PreTester{
+		appep:   c.appep,
+		isubank: c.isubank,
+		isulog:  c.isulog,
+	}
+	return t.Run()
 }
 
 func (c *Manager) PostTest() error {
-	// PostTesterは多分このままにはならない
-	return NewPostTester(c.appep, c.isulog, c.isubank).Run()
+	t := &PostTester{
+		appep:     c.appep,
+		isubank:   c.isubank,
+		isulog:    c.isulog,
+		investors: c.investors,
+	}
+	return t.Run()
 }
 
 func (c *Manager) Start() ([]taskworker.Task, error) {
