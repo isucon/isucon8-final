@@ -65,7 +65,7 @@ func (t *PreTester) Run() error {
 		if info.TradedOrders != nil && len(info.TradedOrders) > 0 {
 			return errors.Errorf("GET /info ゲストユーザーのtraded_ordersが設定されています")
 		}
-		if info.HighestBuyPrice <= info.LowestSellPrice {
+		if info.LowestSellPrice <= info.HighestBuyPrice {
 			// 注文個数によってはあり得るのでそうならないシナリオにしたい
 			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
 		}
