@@ -4,6 +4,9 @@ import "time"
 
 const (
 	// Timeouts
+	BenchMarkTime  = 60 * time.Second      // 負荷走行の時間
+	TickerInterval = 20 * time.Millisecond // tickerのinterval
+
 	ClientTimeout = 10 * time.Second // HTTP clientのタイムアウト
 	InitTimeout   = 30 * time.Second // Initialize のタイムアウト
 
