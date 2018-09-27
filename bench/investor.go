@@ -254,9 +254,10 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 		if g, w := len(orders), len(i.orders); g < w {
 			return errors.Errorf("few orders. got:%d, want:%d", g, w)
 		}
-		if i.timeoutCount == 0 && len(orders) > 0 && len(i.orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
-			return errors.Errorf("orders is not last ordered. got:[len:%d,lastid:%d], want:[len:%d,lastid:%d]", len(orders), orders[len(orders)-1].ID, len(i.orders), i.orders[len(i.orders)-1].ID)
-		}
+		// 注文後に即与信失敗で消されることがある
+		// if i.timeoutCount == 0 && len(orders) > 0 && len(i.orders) > 0 && orders[len(orders)-1].ID != i.orders[len(i.orders)-1].ID {
+		// 	return errors.Errorf("orders is not last ordered. got:[len:%d,lastid:%d], want:[len:%d,lastid:%d]", len(orders), orders[len(orders)-1].ID, len(i.orders), i.orders[len(i.orders)-1].ID)
+		// }
 		var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
 		for _, order := range orders {
 			switch {
