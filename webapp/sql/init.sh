@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# TODO: docker-compose 用の暫定対応
-apt-get update
-apt-get -y install mysql-client
-
 DB_DIR=$(cd $(dirname $0); pwd)
 export MYSQL_PWD=${ISU_DB_PASSWORD}
 
