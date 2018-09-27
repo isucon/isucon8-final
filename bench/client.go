@@ -456,10 +456,10 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	}
 	slen, mlen, hlen := len(r.ChartBySec), len(r.ChartByMin), len(r.ChartByHour)
 	if slen < mlen || mlen < hlen {
-		return nil, errors.Wrapf(err, "GET %s chart length is broken?", path)
+		return nil, errors.Errorf("GET %s chart length is broken?", path)
 	}
 	if r.Cursor == 0 {
-		return nil, errors.Wrapf(err, "GET %s curson is zero", path)
+		return nil, errors.Errorf("GET %s curson is zero", path)
 	}
 	if r.TradedOrders != nil && len(r.TradedOrders) > 0 {
 		if err := c.testMyOrder(path, r.TradedOrders); err != nil {
