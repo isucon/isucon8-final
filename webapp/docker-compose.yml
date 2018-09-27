@@ -22,7 +22,7 @@ services:
 
   isucoin:
     image: golang:1.10
-    command: bash -c "go get ./...; go run main.go const.go handler.go isubank.go logger.go"
+    command: bash -c "apt-get update; apt-get -y install mysql-client; go get ./...; go run main.go const.go handler.go isubank.go logger.go"
     environment:
       ISU_APP_PORT:    '5000'
       ISU_DB_HOST:     'mysql'
