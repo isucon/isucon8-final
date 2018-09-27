@@ -510,6 +510,7 @@ func (c *Client) GetOrders() ([]Order, error) {
 	if err := json.NewDecoder(res.Body).Decode(&orders); err != nil {
 		return nil, errors.Wrapf(err, "GET %s body decode failed", path)
 	}
+	var tc time.Time
 	for _, order := range orders {
 		if order.UserID != c.userID {
 			return nil, errors.Wrapf(err, "GET %s returned not my order [id:%d, user_id:%d]", path, order.ID, c.UserID)
@@ -523,6 +524,10 @@ func (c *Client) GetOrders() ([]Order, error) {
 		if order.TradeID != 0 && order.Trade == nil {
 			return nil, errors.Wrapf(err, "GET %s returned not filled trade [id:%d, user_id:%d]", path, order.ID, c.UserID)
 		}
+		if order.CreatedAt.Before(tc) {
+			return nil, errors.Wrapf(err, "GET %s sort order is must be created_at desc", path)
+		}
+		tc = order.CreatedAt
 	}
 	return orders, nil
 }

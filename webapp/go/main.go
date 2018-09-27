@@ -29,6 +29,7 @@ func main() {
 		dbpass = getEnv("DB_PASSWORD", "")
 		dbname = getEnv("DB_NAME", "isucoin")
 		public = getEnv("PUBLIC_DIR", "public")
+		data   = getEnv("DATA_DIR", "data")
 	)
 
 	dbusrpass := dbuser
@@ -42,7 +43,7 @@ func main() {
 		log.Fatalf("mysql connect failed. err: %s", err)
 	}
 	store := sessions.NewCookieStore([]byte(SessionSecret))
-	server := NewServer(db, store, public)
+	server := NewServer(db, store, public, data)
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
