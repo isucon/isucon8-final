@@ -250,8 +250,6 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 
 	score := c.GetScore()
 	for {
-		break // とりあえず通すために worker level をあげない
-
 		// levelup
 		nextScore := (1 << c.level) * 100
 		if score < int64(nextScore) {
@@ -266,10 +264,10 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 			latestTradePrice = 100
 		}
 		c.level++
-		log.Printf("[INFO] ユーザーが増えます")
+		c.Logger().Printf("アクティブユーザーが自然増加します")
 
 		// 2人追加
-		unitamount := int64(c.level * 5)
+		unitamount := int64(c.level + 1)
 		for i := 0; i < 2; i++ {
 			cl, err := c.newClient()
 			if err != nil {
@@ -279,10 +277,12 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 			if i%2 == 1 {
 				investor = NewRandomInvestor(cl, latestTradePrice*1000, 0, unitamount, latestTradePrice-2)
 			} else {
-				investor = NewRandomInvestor(cl, 1, unitamount*100, unitamount, latestTradePrice+5)
+				investor = NewRandomInvestor(cl, 0, unitamount*100, unitamount, latestTradePrice+5)
 			}
 			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
-				c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				if investor.Credit() > 0 {
+					c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				}
 				c.AddInvestor(investor)
 				return nil
 			}, 0))
