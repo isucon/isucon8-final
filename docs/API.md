@@ -153,6 +153,7 @@
     - chart_by_hour: ロウソクチャート用の単位時間取引結果
     - lowest_sell_price: $price
     - highest_buy_price: $price
+    - enable_share: シェアボタン有効化フラグ
 
 ## 取引処理
 

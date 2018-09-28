@@ -113,6 +113,7 @@ type InfoResponse struct {
 	ChartBySec      []CandlestickData `json:"chart_by_sec"`
 	ChartByMin      []CandlestickData `json:"chart_by_min"`
 	ChartByHour     []CandlestickData `json:"chart_by_hour"`
+	EnableShare     bool              `json:"enable_share"`
 }
 
 type OrderActionResponse struct {
