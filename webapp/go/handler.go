@@ -588,7 +588,7 @@ func (h *Handler) userByRequest(r *http.Request) (*User, error) {
 	if id, ok := v.(int64); ok {
 		return getUserByID(h.db, id)
 	}
-	return nil, errors.New("Not userByRequestenticate")
+	return nil, errors.New("Not authenticated")
 }
 
 func (h *Handler) handleSuccess(w http.ResponseWriter, data interface{}) {
