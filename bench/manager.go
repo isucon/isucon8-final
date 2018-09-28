@@ -258,29 +258,15 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 	}
 
 	score := c.GetScore()
-	for {
-		// levelup
-		nextScore := (1 << c.level) * 100
-		if score < int64(nextScore) {
-			break
-		}
-		if AllowErrorMin < c.ErrorCount() {
-			// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
-			break
-		}
-		latestTradePrice := c.investors[0].LatestTradePrice()
-		if latestTradePrice == 0 {
-			latestTradePrice = 100
-		}
-		c.level++
-		c.Logger().Printf("アクティブユーザーが自然増加します")
-
-		// 2人追加
-		unitamount := int64(c.level + 1)
-		for i := 0; i < 2; i++ {
+	latestTradePrice := c.investors[0].LatestTradePrice()
+	if latestTradePrice == 0 {
+		latestTradePrice = 5000
+	}
+	addInvestors := func(num int, unitamount int64) error {
+		for i := 0; i < num; i++ {
 			cl, err := c.newClient()
 			if err != nil {
-				return nil, err
+				return err
 			}
 			var investor Investor
 			if i%2 == 1 {
@@ -295,6 +281,26 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 				c.AddInvestor(investor)
 				return nil
 			}, 0))
+		}
+		return nil
+	}
+	// 自然増加
+	for {
+		// levelup
+		nextScore := (1 << c.level) * 100
+		if score < int64(nextScore) {
+			break
+		}
+		if AllowErrorMin < c.ErrorCount() {
+			// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
+			break
+		}
+		c.level++
+		c.Logger().Printf("アクティブユーザーが自然増加します")
+
+		// 2人追加
+		if err := addInvestors(2, int64(c.level+1)); err != nil {
+			return nil, err
 		}
 	}
 	return tasks, nil
