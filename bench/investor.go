@@ -236,12 +236,25 @@ func (i *investorBase) FetchOrders() error {
 		return err
 	}
 	if len(i.orders) > 0 {
-		lo := i.orders[len(i.orders)-1]
-		if lo.Type == TradeTypeSell {
+		var lo *Order
+		// cancelされていない最後の注文
+		for j := len(i.orders) - 1; j >= 0; j-- {
+			lo = i.orders[j]
+			if lo.ClosedAt == nil {
+				break
+			}
+		}
+		if lo != nil && lo.Type == TradeTypeSell {
 			// 買い注文は即cancelされる可能性があるので調べない
-			glo := orders[len(orders)-1]
-			if lo.ID != glo.ID {
-				return errors.Errorf("GET /orders 注文内容が反映されていません")
+			var ok bool
+			for _, glo := range orders {
+				if lo.ID == glo.ID {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return errors.Errorf("GET /orders 注文内容が反映されていません id:%d", lo.ID)
 			}
 		}
 	}
