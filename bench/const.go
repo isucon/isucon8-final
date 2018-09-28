@@ -18,6 +18,9 @@ const (
 	PollingInterval     = 500 * time.Millisecond // clientのポーリング感覚
 	OrderUpdateInterval = 2 * time.Second        // 注文間隔
 
+	AddUsersOnShare   = 5 // SNSシェアによって増えるユーザー数
+	AddUsersOnNatural = 2 // 自然増で増えるユーザー数
+
 	AddWorkersByLevel = 10
 
 	// Scores

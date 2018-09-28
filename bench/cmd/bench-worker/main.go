@@ -211,6 +211,7 @@ func run(tempDir, portalUrl string) {
 				result.Message = "システムエラーです。運営に連絡してください"
 				return result
 			}
+			defer mgr.Close()
 			bm := bench.NewRunner(mgr)
 			if err = bm.Run(context.Background()); err != nil {
 				result.Errors = append(result.Errors, err.Error())

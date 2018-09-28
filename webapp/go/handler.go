@@ -371,6 +371,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	default:
 		res["highest_buy_price"] = highestBuyOrder.Price
 	}
+	res["enable_share"] = false
 
 	h.handleSuccess(w, res)
 }

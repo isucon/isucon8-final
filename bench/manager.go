@@ -22,7 +22,6 @@ type Manager struct {
 	isubank   *isubank.Isubank
 	isulog    *isulog.Isulog
 	idlist    chan string
-	closed    chan struct{}
 	investors []Investor
 	score     int64
 	errcount  int64
@@ -55,9 +54,15 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		isubank:   bank,
 		isulog:    isulog,
 		idlist:    make(chan string, 10),
-		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
 	}, nil
+}
+
+func (c *Manager) Close() {
+	close(c.idlist)
+	for _, i := range c.investors {
+		i.Close()
+	}
 }
 
 // benchに影響を与えないようにidは予め用意しておく
@@ -92,7 +97,9 @@ func (c *Manager) PurgeInvestor() {
 	defer c.investorLock.Unlock()
 	cleared := make([]Investor, 0, cap(c.investors))
 	for _, i := range c.investors {
-		if !i.IsRetired() {
+		if i.IsRetired() {
+			i.Close()
+		} else {
 			cleared = append(cleared, i)
 		}
 	}
@@ -237,14 +244,41 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 	}
 
 	tasks := []taskworker.Task{}
+	addInvestors := func(num int, unitamount, price int64) error {
+		for i := 0; i < num; i++ {
+			cl, err := c.newClient()
+			if err != nil {
+				return err
+			}
+			var investor Investor
+			if i%2 == 1 {
+				investor = NewRandomInvestor(cl, price*1000, 0, unitamount, price-2)
+			} else {
+				investor = NewRandomInvestor(cl, 0, unitamount*100, unitamount, price+5)
+			}
+			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
+				if investor.Credit() > 0 {
+					c.isubank.AddCredit(investor.BankID(), investor.Credit())
+				}
+				c.AddInvestor(investor)
+				return nil
+			}, 0))
+		}
+		return nil
+	}
+	start := 2 // 一度に投入する数
 	for _, investor := range c.investors {
-		// 初期以外はnextのタイミングで一人づつ投入
 		if !investor.IsStarted() {
 			tasks = append(tasks, investor.Start())
+			start--
+		}
+		if start <= 0 {
 			break
 		}
 	}
 
+	var latestTradePrice int64 = 5000
+	var addByShare int
 	for _, investor := range c.investors {
 		if !investor.IsSignin() {
 			continue
@@ -255,9 +289,20 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 		if task := investor.Next(); task != nil {
 			tasks = append(tasks, task)
 		}
+		for _, trade := range investor.SharedTrades() {
+			if err := addInvestors(AddUsersOnShare, trade.Amount, trade.Price); err != nil {
+				return nil, err
+			}
+			addByShare++
+		}
+		latestTradePrice = investor.LatestTradePrice()
+	}
+	if addByShare > 0 {
+		c.Logger().Printf("SNSでシェアされたためアクティブユーザーが増加しました[%d]", addByShare)
 	}
 
 	score := c.GetScore()
+	// 自然増加
 	for {
 		// levelup
 		nextScore := (1 << c.level) * 100
@@ -268,33 +313,11 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 			// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
 			break
 		}
-		latestTradePrice := c.investors[0].LatestTradePrice()
-		if latestTradePrice == 0 {
-			latestTradePrice = 100
-		}
 		c.level++
 		c.Logger().Printf("アクティブユーザーが自然増加します")
 
-		// 2人追加
-		unitamount := int64(c.level + 1)
-		for i := 0; i < 2; i++ {
-			cl, err := c.newClient()
-			if err != nil {
-				return nil, err
-			}
-			var investor Investor
-			if i%2 == 1 {
-				investor = NewRandomInvestor(cl, latestTradePrice*1000, 0, unitamount, latestTradePrice-2)
-			} else {
-				investor = NewRandomInvestor(cl, 0, unitamount*100, unitamount, latestTradePrice+5)
-			}
-			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
-				if investor.Credit() > 0 {
-					c.isubank.AddCredit(investor.BankID(), investor.Credit())
-				}
-				c.AddInvestor(investor)
-				return nil
-			}, 0))
+		if err := addInvestors(AddUsersOnNatural, int64(c.level+1), latestTradePrice); err != nil {
+			return nil, err
 		}
 	}
 	return tasks, nil

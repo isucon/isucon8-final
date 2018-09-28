@@ -33,6 +33,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer mgr.Close()
 	bm := bench.NewRunner(mgr)
 	if err = bm.Run(context.Background()); err != nil {
 		return err
