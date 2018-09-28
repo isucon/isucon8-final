@@ -586,6 +586,9 @@ func (t *PostTester) Run() error {
 		investor := inv
 		eg.Go(func() error {
 			timeout := time.After(deadline.Sub(time.Now()))
+			if err := investor.FetchOrders(); err != nil {
+				return err
+			}
 			credit, err := t.isubank.GetCredit(investor.BankID())
 			if err != nil {
 				return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
