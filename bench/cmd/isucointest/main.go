@@ -34,6 +34,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer mgr.Close()
 	log.Printf("run initialize")
 	if err = mgr.Initialize(); err != nil {
 		return errors.Wrap(err, "Initialize Failed")

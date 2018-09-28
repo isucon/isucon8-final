@@ -22,7 +22,6 @@ type Manager struct {
 	isubank   *isubank.Isubank
 	isulog    *isulog.Isulog
 	idlist    chan string
-	closed    chan struct{}
 	investors []Investor
 	score     int64
 	errcount  int64
@@ -55,9 +54,12 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		isubank:   bank,
 		isulog:    isulog,
 		idlist:    make(chan string, 10),
-		closed:    make(chan struct{}),
 		investors: make([]Investor, 0, 5000),
 	}, nil
+}
+
+func (c *Manager) Close() {
+	close(c.idlist)
 }
 
 // benchに影響を与えないようにidは予め用意しておく
