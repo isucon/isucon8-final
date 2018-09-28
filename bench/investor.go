@@ -23,6 +23,7 @@ type Investor interface {
 	// tickerで呼ばれる
 	Next() taskworker.Task
 
+	Close()
 	BankID() string
 	Credit() int64
 	Isu() int64
@@ -34,6 +35,7 @@ type Investor interface {
 	LatestTradedOrder() *Order
 	LatestTradePrice() int64
 	IsRetired() bool
+	SharedTrades() []*Trade
 }
 
 type investorBase struct {
@@ -59,19 +61,34 @@ type investorBase struct {
 	taskStack         []taskworker.Task
 	timeoutCount      int
 	latestTradedOrder *Order
+	sharedTrades      []*Trade
+	enableShare       bool
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
 	orderMax := int(BenchMarkTime/OrderUpdateInterval) + 1
 	return &investorBase{
-		c:         c,
-		defcredit: credit,
-		credit:    credit,
-		defisu:    isu,
-		isu:       isu,
-		orders:    make([]*Order, 0, orderMax),
-		taskStack: make([]taskworker.Task, 0, 5),
+		c:            c,
+		defcredit:    credit,
+		credit:       credit,
+		defisu:       isu,
+		isu:          isu,
+		orders:       make([]*Order, 0, orderMax),
+		taskStack:    make([]taskworker.Task, 0, 5),
+		sharedTrades: make([]*Trade, 0, 10),
 	}
+}
+
+func (i *investorBase) Close() {
+	//i.c = nil // How do http.Client close?
+}
+
+func (i *investorBase) SharedTrades() []*Trade {
+	// maybe need lock ?
+	r := make([]*Trade, len(i.sharedTrades))
+	copy(r, i.sharedTrades)
+	i.sharedTrades = i.sharedTrades[:0]
+	return r
 }
 
 func (i *investorBase) IsRetired() bool {
@@ -134,6 +151,9 @@ func (i *investorBase) Signup() taskworker.Task {
 		if i.IsSignin() {
 			return 0, nil
 		}
+		if i.c == nil {
+			return 0, nil
+		}
 		if err := i.c.Signup(); err != nil {
 			if strings.Index(err.Error(), "bank_id already exists") > -1 {
 				return SignupScore, nil
@@ -147,6 +167,9 @@ func (i *investorBase) Signup() taskworker.Task {
 func (i *investorBase) Signin() taskworker.Task {
 	return taskworker.NewExecTask(func(_ context.Context) error {
 		time.Sleep(time.Millisecond * time.Duration(rand.Int63n(100)))
+		if i.c == nil {
+			return nil
+		}
 		if err := i.c.Signin(); err != nil {
 			return err
 		}
@@ -163,6 +186,9 @@ func (i *investorBase) Info() taskworker.Task {
 		if i.IsRetired() {
 			return 0, nil
 		}
+		if i.c == nil {
+			return 0, nil
+		}
 		now := time.Now()
 		if now.Before(i.pollingTime) {
 			//log.Printf("[INFO] skip info() next: %s now: %s", i.pollingTime, now)
@@ -176,6 +202,7 @@ func (i *investorBase) Info() taskworker.Task {
 		i.lowestSellPrice = info.LowestSellPrice
 		i.highestBuyPrice = info.HighestBuyPrice
 		i.lastCursor = info.Cursor
+		i.enableShare = info.EnableShare
 		if l := len(info.ChartByHour); l > 0 {
 			i.latestTradePrice = info.ChartByHour[l-1].Close
 		}
@@ -201,6 +228,9 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 	return taskworker.NewExecTask(func(_ context.Context) error {
 		i.actionLock.Lock()
 		defer i.actionLock.Unlock()
+		if i.c == nil {
+			return nil
+		}
 		orders, err := i.c.GetOrders()
 		if err != nil {
 			return err
@@ -237,6 +267,10 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 				o.ClosedAt = &ct
 				continue
 			}
+			if i.enableShare && order.Trade != nil && o.TradeID == 0 && len(i.sharedTrades) < cap(i.sharedTrades) {
+				// トレード成立 (初)
+				i.sharedTrades = append(i.sharedTrades, order.Trade)
+			}
 			*o = *order
 			switch {
 			case order.Trade != nil && order.Type == TradeTypeSell:
@@ -267,6 +301,9 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task 
 	return taskworker.NewExecTask(func(ctx context.Context) error {
 		i.actionLock.Lock()
 		defer i.actionLock.Unlock()
+		if i.c == nil {
+			return nil
+		}
 		order, err := i.c.AddOrder(ot, amount, price)
 		if err != nil {
 			// 残高不足はOKとする
@@ -286,6 +323,9 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 		i.actionLock.Lock()
 		defer i.actionLock.Unlock()
 		if order.ClosedAt != nil {
+			return 0, nil
+		}
+		if i.c == nil {
 			return 0, nil
 		}
 		var score int64 = DeleteOrdersScore
