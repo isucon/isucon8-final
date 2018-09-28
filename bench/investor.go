@@ -36,6 +36,7 @@ type Investor interface {
 	LatestTradePrice() int64
 	IsRetired() bool
 	SharedTrades() []*Trade
+	FetchOrders() error
 }
 
 type investorBase struct {
@@ -224,76 +225,80 @@ func (i *investorBase) Info() taskworker.Task {
 	})
 }
 
+func (i *investorBase) FetchOrders() error {
+	i.actionLock.Lock()
+	defer i.actionLock.Unlock()
+	if i.c == nil {
+		return nil
+	}
+	orders, err := i.c.GetOrders()
+	if err != nil {
+		return err
+	}
+	if len(i.orders) > 0 {
+		lo := i.orders[len(i.orders)-1]
+		if lo.Type == TradeTypeSell {
+			// 買い注文は即cancelされる可能性があるので調べない
+			glo := orders[len(orders)-1]
+			if lo.ID != glo.ID {
+				return errors.Errorf("GET /orders 注文内容が反映されていません")
+			}
+		}
+	}
+
+	var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
+	for _, o := range i.orders {
+		if o.Removed() {
+			continue
+		}
+		var order *Order
+		for _, ro := range orders {
+			if ro.ID == o.ID {
+				order = &ro
+				break
+			}
+		}
+		if order == nil {
+			// 自動的に消されたもの
+			if o.Type == TradeTypeSell {
+				return errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
+			}
+			ct := time.Now()
+			o.ClosedAt = &ct
+			continue
+		}
+		if i.enableShare && order.Trade != nil && o.TradeID == 0 && len(i.sharedTrades) < cap(i.sharedTrades) {
+			// トレード成立 (初)
+			i.sharedTrades = append(i.sharedTrades, order.Trade)
+		}
+		*o = *order
+		switch {
+		case order.Trade != nil && order.Type == TradeTypeSell:
+			// 成立済み 売り注文
+			tradedIsu -= order.Amount
+			tradedCredit += order.Amount * order.Trade.Price
+		case order.Trade != nil && order.Type == TradeTypeBuy:
+			// 成立済み 買い注文
+			tradedIsu += order.Amount
+			tradedCredit -= order.Amount * order.Trade.Price
+		case order.Type == TradeTypeSell:
+			// 売り注文
+			resvedIsu += order.Amount
+		case order.Type == TradeTypeBuy:
+			// 買い注文
+			resvedCredit += order.Amount * order.Price
+		}
+	}
+	i.resvedIsu = resvedIsu
+	i.resvedCredit = resvedCredit
+	i.credit = i.defcredit + tradedCredit
+	i.isu = i.defisu + tradedIsu
+	return nil
+}
+
 func (i *investorBase) UpdateOrders() taskworker.Task {
 	return taskworker.NewExecTask(func(_ context.Context) error {
-		i.actionLock.Lock()
-		defer i.actionLock.Unlock()
-		if i.c == nil {
-			return nil
-		}
-		orders, err := i.c.GetOrders()
-		if err != nil {
-			return err
-		}
-		if len(i.orders) > 0 {
-			lo := i.orders[len(i.orders)-1]
-			if lo.Type == TradeTypeSell {
-				// 買い注文は即cancelされる可能性があるので調べない
-				glo := orders[len(orders)-1]
-				if lo.ID != glo.ID {
-					return errors.Errorf("GET /orders 注文内容が反映されていません")
-				}
-			}
-		}
-
-		var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
-		for _, o := range i.orders {
-			if o.Removed() {
-				continue
-			}
-			var order *Order
-			for _, ro := range orders {
-				if ro.ID == o.ID {
-					order = &ro
-					break
-				}
-			}
-			if order == nil {
-				// 自動的に消されたもの
-				if o.Type == TradeTypeSell {
-					return errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
-				}
-				ct := time.Now()
-				o.ClosedAt = &ct
-				continue
-			}
-			if i.enableShare && order.Trade != nil && o.TradeID == 0 && len(i.sharedTrades) < cap(i.sharedTrades) {
-				// トレード成立 (初)
-				i.sharedTrades = append(i.sharedTrades, order.Trade)
-			}
-			*o = *order
-			switch {
-			case order.Trade != nil && order.Type == TradeTypeSell:
-				// 成立済み 売り注文
-				tradedIsu -= order.Amount
-				tradedCredit += order.Amount * order.Trade.Price
-			case order.Trade != nil && order.Type == TradeTypeBuy:
-				// 成立済み 買い注文
-				tradedIsu += order.Amount
-				tradedCredit -= order.Amount * order.Trade.Price
-			case order.Type == TradeTypeSell:
-				// 売り注文
-				resvedIsu += order.Amount
-			case order.Type == TradeTypeBuy:
-				// 買い注文
-				resvedCredit += order.Amount * order.Price
-			}
-		}
-		i.resvedIsu = resvedIsu
-		i.resvedCredit = resvedCredit
-		i.credit = i.defcredit + tradedCredit
-		i.isu = i.defisu + tradedIsu
-		return nil
+		return i.FetchOrders()
 	}, GetOrdersScore)
 }
 

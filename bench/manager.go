@@ -197,11 +197,17 @@ func (c *Manager) PreTest() error {
 }
 
 func (c *Manager) PostTest() error {
+	testInvestors := make([]Investor, 0, len(c.investors))
+	for _, inv := range c.investors {
+		if inv.IsSignin() && !inv.IsRetired() {
+			testInvestors = append(testInvestors, inv)
+		}
+	}
 	t := &PostTester{
 		appep:     c.appep,
 		isubank:   c.isubank,
 		isulog:    c.isulog,
-		investors: c.investors,
+		investors: testInvestors,
 	}
 	return t.Run()
 }
