@@ -22,7 +22,7 @@ services:
 
   isucoin:
     build: go
-    command: "go run main.go const.go handler.go isubank.go logger.go"
+    command: "go run ./webapp/main.go"
     environment:
       ISU_APP_PORT:    '5000'
       ISU_DB_HOST:     'mysql'
@@ -35,10 +35,10 @@ services:
     links:
       - mysql
       - mockservice
-    working_dir: /go/src/webapp
+    working_dir: /go/src/isucon8/isucoin
     volumes:
       - gopath:/go
-      - ./go:/go/src/webapp
+      - ./go/src/isucon8:/go/src/isucon8
       - ./public:/public
       - ./sql:/data
 

@@ -8,7 +8,13 @@ import (
 	"os"
 	"time"
 
+	"isucon8/isucoin/controller"
+
 	"github.com/gorilla/sessions"
+)
+
+const (
+	SessionSecret = "tonymoris"
 )
 
 func init() {
@@ -43,7 +49,7 @@ func main() {
 		log.Fatalf("mysql connect failed. err: %s", err)
 	}
 	store := sessions.NewCookieStore([]byte(SessionSecret))
-	server := NewServer(db, store, public, data)
+	server := controller.NewServer(db, store, public, data)
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)

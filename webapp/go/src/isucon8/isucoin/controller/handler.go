@@ -1,4 +1,4 @@
-package main
+package controller
 
 import (
 	"context"
@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"isucon8/isubank"
+	"isucon8/isulogger"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
@@ -170,7 +173,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
-	isubank, err := newIsubank(h.db)
+	bank, err := newIsubank(h.db)
 	if err != nil {
 		h.handleError(w, err, 500)
 		return
@@ -181,7 +184,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		return
 	}
 	// bankIDの検証
-	if err = isubank.Check(bankID, 0); err != nil {
+	if err = bank.Check(bankID, 0); err != nil {
 		h.handleError(w, err, 404)
 		return
 	}
@@ -392,7 +395,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		if err != nil {
 			return errors.Wrap(err, "newLogger failed")
 		}
-		isubank, err := newIsubank(tx)
+		bank, err := newIsubank(tx)
 		if err != nil {
 			return errors.Wrap(err, "newIsubank failed")
 		}
@@ -414,7 +417,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		switch ot {
 		case OrderTypeBuy:
 			totalPrice := price * amount
-			if err = isubank.Check(user.BankID, totalPrice); err != nil {
+			if err = bank.Check(user.BankID, totalPrice); err != nil {
 				le := logger.Send("buy.error", map[string]interface{}{
 					"error":   err.Error(),
 					"user_id": user.ID,
@@ -424,7 +427,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 				if le != nil {
 					log.Printf("[WARN] logger.Send failed. err:%s", le)
 				}
-				if err == ErrCreditInsufficient {
+				if err == isubank.ErrCreditInsufficient {
 					return errcode("銀行残高が足りません", 400)
 				}
 				return errors.Wrap(err, "isubank check failed")
@@ -707,7 +710,7 @@ func getSettingValue(d QueryExecuter, k string) (v string, err error) {
 	return
 }
 
-func newIsubank(d QueryExecuter) (*Isubank, error) {
+func newIsubank(d QueryExecuter) (*isubank.Isubank, error) {
 	ep, err := getSettingValue(d, BankEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
@@ -716,10 +719,10 @@ func newIsubank(d QueryExecuter) (*Isubank, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
 	}
-	return NewIsubank(ep, id)
+	return isubank.NewIsubank(ep, id)
 }
 
-func newLogger(d QueryExecuter) (*Logger, error) {
+func newLogger(d QueryExecuter) (*isulogger.Isulogger, error) {
 	ep, err := getSettingValue(d, LogEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
@@ -728,7 +731,7 @@ func newLogger(d QueryExecuter) (*Logger, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
 	}
-	return NewLogger(ep, id)
+	return isulogger.NewIsulogger(ep, id)
 }
 
 func getUserByBankID(d QueryExecuter, bankID string) (*User, error) {
@@ -957,7 +960,7 @@ func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
 }
 
 func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
-	isubank, err := newIsubank(d)
+	bank, err := newIsubank(d)
 	if err != nil {
 		return 0, errors.Wrap(err, "isubank init failed")
 	}
@@ -970,31 +973,31 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 		p *= -1
 	}
 
-	id, err := isubank.Reserve(order.User.BankID, p)
+	id, err := bank.Reserve(order.User.BankID, p)
 	if err != nil {
-		if err == ErrCreditInsufficient {
+		if err == isubank.ErrCreditInsufficient {
 			// 与信確保失敗した場合はorderを破棄する
-			if _, err = d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
-				return 0, errors.Wrap(err, "update buy_order for cancel")
+			if _, derr := d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); derr != nil {
+				return 0, errors.Wrap(derr, "update buy_order for cancel")
 			}
-			le := logger.Send(order.Type+".delete", map[string]interface{}{
+			lerr := logger.Send(order.Type+".delete", map[string]interface{}{
 				"order_id": order.ID,
 				"user_id":  order.UserID,
 				"reason":   "reserve_failed",
 			})
-			if le != nil {
-				log.Printf("[WARN] logger.Send failed. err:%s", le)
+			if lerr != nil {
+				log.Printf("[WARN] logger.Send failed. err:%s", lerr)
 			}
-			le = logger.Send(order.Type+".error", map[string]interface{}{
-				"error":   ErrCreditInsufficient.Error(),
+			lerr = logger.Send(order.Type+".error", map[string]interface{}{
+				"error":   err.Error(),
 				"user_id": order.UserID,
 				"amount":  order.Amount,
 				"price":   price,
 			})
-			if le != nil {
-				log.Printf("[WARN] logger.Send failed. err:%s", le)
+			if lerr != nil {
+				log.Printf("[WARN] logger.Send failed. err:%s", lerr)
 			}
-			return 0, ErrCreditInsufficient
+			return 0, err
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
 	}
@@ -1003,7 +1006,7 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 }
 
 func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []int64) error {
-	isubank, err := newIsubank(tx)
+	bank, err := newIsubank(tx)
 	if err != nil {
 		return errors.Wrap(err, "isubank init failed")
 	}
@@ -1013,7 +1016,7 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	}
 	defer func() {
 		if len(reserves) > 0 {
-			if err = isubank.Cancel(reserves); err != nil {
+			if err = bank.Cancel(reserves); err != nil {
 				log.Printf("[WARN] isubank cancel failed. err:%s", err)
 			}
 		}
@@ -1049,7 +1052,7 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 			log.Printf("[WARN] logger.Send failed. err:%s", le)
 		}
 	}
-	if err = isubank.Commit(reserves); err != nil {
+	if err = bank.Commit(reserves); err != nil {
 		return errors.Wrap(err, "commit")
 	}
 	reserves = reserves[:0]
@@ -1073,12 +1076,12 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	}
 	defer func() {
 		if len(reserves) > 0 {
-			isubank, err := newIsubank(tx)
+			bank, err := newIsubank(tx)
 			if err != nil {
 				log.Printf("[WARN] isubank init failed. err:%s", err)
 				return
 			}
-			if err = isubank.Cancel(reserves); err != nil {
+			if err = bank.Cancel(reserves); err != nil {
 				log.Printf("[WARN] isubank cancel failed. err:%s", err)
 			}
 		}
@@ -1111,7 +1114,7 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 		}
 		rid, err := reserveOrder(tx, to, unitPrice)
 		if err != nil {
-			if err == ErrCreditInsufficient {
+			if err == isubank.ErrCreditInsufficient {
 				continue
 			}
 			return err
@@ -1172,7 +1175,7 @@ func runTrade(db *sql.DB) error {
 			}
 			err = tryTrade(tx, orderID)
 			switch err {
-			case nil, errNoOrder, errClosedOrder, ErrCreditInsufficient:
+			case nil, errNoOrder, errClosedOrder, isubank.ErrCreditInsufficient:
 				tx.Commit()
 			default:
 				tx.Rollback()

@@ -1,8 +1,7 @@
-package main
+package controller
 
 const (
-	SessionSecret = "tonymoris"
-	SessionName   = "isucoin_session"
+	SessionName = "isucoin_session"
 
 	BankEndpoint = "bank_endpoint"
 	BankAppid    = "bank_appid"

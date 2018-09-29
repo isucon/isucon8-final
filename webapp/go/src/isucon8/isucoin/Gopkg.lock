@@ -40,8 +40,11 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
-  packages = ["bcrypt","blowfish"]
-  revision = "0e37d006457bf46f9e6692014ba72ef82c33022c"
+  packages = [
+    "bcrypt",
+    "blowfish"
+  ]
+  revision = "5295e8364332db77d75fce11f1d19c053919a9c9"
 
 [[projects]]
   name = "google.golang.org/appengine"
