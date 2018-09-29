@@ -1,4 +1,4 @@
-package main
+package isulogger
 
 import (
 	"bytes"
@@ -18,23 +18,23 @@ type Log struct {
 	Data interface{} `json:"data"`
 }
 
-type Logger struct {
+type Isulogger struct {
 	endpoint *url.URL
 	appID    string
 }
 
-func NewLogger(endpoint, appID string) (*Logger, error) {
+func NewIsulogger(endpoint, appID string) (*Isulogger, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
-	return &Logger{
+	return &Isulogger{
 		endpoint: u,
 		appID:    appID,
 	}, nil
 }
 
-func (b *Logger) Send(tag string, data interface{}) error {
+func (b *Isulogger) Send(tag string, data interface{}) error {
 	return b.request("/send", Log{
 		Tag:  tag,
 		Time: time.Now(),
@@ -42,7 +42,7 @@ func (b *Logger) Send(tag string, data interface{}) error {
 	})
 }
 
-func (b *Logger) request(p string, v interface{}) error {
+func (b *Isulogger) request(p string, v interface{}) error {
 	u := new(url.URL)
 	*u = *b.endpoint
 	u.Path = path.Join(u.Path, p)
