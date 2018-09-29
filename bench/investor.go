@@ -239,8 +239,8 @@ func (i *investorBase) FetchOrders() error {
 		var lo *Order
 		// cancelされていない最後の注文
 		for j := len(i.orders) - 1; j >= 0; j-- {
-			lo = i.orders[j]
-			if lo.ClosedAt == nil {
+			if i.orders[j].ClosedAt == nil {
+				lo = i.orders[j]
 				break
 			}
 		}
