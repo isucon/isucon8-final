@@ -1,3 +1,4 @@
+// Package isulogger is client for ISULOG
 package isulogger
 
 import (
@@ -12,9 +13,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Log はIsuloggerに送るためのログフォーマット
 type Log struct {
-	Tag  string      `json:"tag"`
-	Time time.Time   `json:"time"`
+	// Tagは各ログを識別するための情報です
+	Tag string `json:"tag"`
+	// Timeはログの発生時間
+	Time time.Time `json:"time"`
+	// Data はログの詳細情報でTagごとに決められています
 	Data interface{} `json:"data"`
 }
 
@@ -23,6 +28,10 @@ type Isulogger struct {
 	appID    string
 }
 
+// NewIsulogger はIsuloggerを初期化します
+//
+// endpoint: ISULOGを利用するためのエンドポイントURI
+// appID:    ISULOGを利用するためのアプリケーションID
 func NewIsulogger(endpoint, appID string) (*Isulogger, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -34,6 +43,7 @@ func NewIsulogger(endpoint, appID string) (*Isulogger, error) {
 	}, nil
 }
 
+// Send はログを送信します
 func (b *Isulogger) Send(tag string, data interface{}) error {
 	return b.request("/send", Log{
 		Tag:  tag,
