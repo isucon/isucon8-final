@@ -1,16 +1,5 @@
 version: '2'
 services:
-  mockservice:
-    image: golang:1.10
-    working_dir: /go/src/mockservice
-    volumes:
-      - gopath:/go
-      - ./mockservice:/go/src/mockservice
-    ports:
-      - "14690:14690"
-      - "14809:14809"
-    command: sh ./docker-run.sh
-
   nginx:
     image: nginx:1.15.3-alpine
     volumes:
@@ -22,7 +11,10 @@ services:
 
   isucoin:
     build: go
-    command: "go run main.go const.go handler.go isubank.go logger.go"
+    command:
+      - "sh"
+      - "-c"
+      - "dep ensure && go run main.go const.go handler.go isubank.go logger.go"
     environment:
       ISU_APP_PORT:    '5000'
       ISU_DB_HOST:     'mysql'
@@ -34,10 +26,8 @@ services:
       ISU_DATA_DIR:    '/data'
     links:
       - mysql
-      - mockservice
     working_dir: /go/src/webapp
     volumes:
-      - gopath:/go
       - ./go:/go/src/webapp
       - ./public:/public
       - ./sql:/data
@@ -53,5 +43,4 @@ services:
       - ./mysql/conf.d:/etc/mysql/conf.d
 
 volumes:
-  gopath:
   mysql:
