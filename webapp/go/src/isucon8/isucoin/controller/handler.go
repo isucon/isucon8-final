@@ -14,11 +14,9 @@ import (
 	"isucon8/isubank"
 	"isucon8/isucoin/model"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -101,14 +99,13 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		if _, err := tx.Exec("update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null", diffmin); err != nil {
 			return errors.Wrap(err, "update orders.closed_at")
 		}
-		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
 			model.BankEndpoint,
 			model.BankAppid,
 			model.LogEndpoint,
 			model.LogAppid,
 		} {
-			if _, err := tx.Exec(query, k, r.FormValue(k)); err != nil {
+			if err := model.SetSetting(tx, k, r.FormValue(k)); err != nil {
 				return errors.Wrapf(err, "set setting failed. %s", k)
 			}
 		}
@@ -130,45 +127,16 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
-	bank, err := model.Isubank(h.db)
-	if err != nil {
-		h.handleError(w, err, 500)
-		return
-	}
-	logger, err := model.Logger(h.db)
-	if err != nil {
-		h.handleError(w, err, 500)
-		return
-	}
-	// bankIDの検証
-	if err = bank.Check(bankID, 0); err != nil {
+	err := txScorp(h.db, func(tx *sql.Tx) error {
+		return model.UserSignup(tx, name, bankID, password)
+	})
+	switch {
+	case err == model.ErrBankUserNotFound:
 		h.handleError(w, err, 404)
-		return
-	}
-	pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
+	case err == model.ErrBankUserConflict:
+		h.handleError(w, err, 409)
+	case err != nil:
 		h.handleError(w, err, 500)
-		return
-	}
-	if res, err := h.db.Exec(`INSERT INTO user (bank_id, name, password, created_at) VALUES (?, ?, ?, NOW(6))`, bankID, name, pass); err != nil {
-		if mysqlError, ok := err.(*mysql.MySQLError); ok {
-			if mysqlError.Number == 1062 {
-				h.handleError(w, errors.New("bank_id conflict"), 409)
-				return
-			}
-		}
-		h.handleError(w, err, 500)
-		return
-	} else {
-		userID, _ := res.LastInsertId()
-		err := logger.Send("signup", map[string]interface{}{
-			"bank_id": bankID,
-			"user_id": userID,
-			"name":    name,
-		})
-		if err != nil {
-			log.Printf("[WARN] logger.Send failed. err:%s", err)
-		}
 	}
 	h.handleSuccess(w, empty)
 }
@@ -180,29 +148,14 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
-	logger, err := model.Logger(h.db)
-	if err != nil {
+	user, err := model.UserLogin(h.db, bankID, password)
+	switch {
+	case err == model.ErrUserNotFound:
+		h.handleError(w, err, 404)
+	case err != nil:
 		h.handleError(w, err, 500)
-		return
 	}
 
-	user, err := model.GetUserByBankID(h.db, bankID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			h.handleError(w, errors.New("bank_id or password is not match"), 404)
-			return
-		}
-		h.handleError(w, err, 500)
-		return
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		if err == bcrypt.ErrMismatchedHashAndPassword {
-			h.handleError(w, errors.New("bank_id or password is not match"), 404)
-			return
-		}
-		h.handleError(w, err, 400)
-		return
-	}
 	session, err := h.store.Get(r, SessionName)
 	if err != nil {
 		h.handleError(w, err, 500)
@@ -212,12 +165,6 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	if err = session.Save(r, w); err != nil {
 		h.handleError(w, err, 500)
 		return
-	}
-	err = logger.Send("signin", map[string]interface{}{
-		"user_id": user.ID,
-	})
-	if err != nil {
-		log.Printf("[WARN] logger.Send failed. err:%s", err)
 	}
 	h.handleSuccess(w, user)
 }

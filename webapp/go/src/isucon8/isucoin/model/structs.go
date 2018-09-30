@@ -7,14 +7,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-type User struct {
-	ID        int64     `json:"id"`
-	BankID    string    `json:"-"`
-	Name      string    `json:"name"`
-	Password  string    `json:"-"`
-	CreatedAt time.Time `json:"-"`
-}
-
 type Trade struct {
 	ID        int64     `json:"id"`
 	Amount    int64     `json:"amount"`

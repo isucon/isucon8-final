@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"isucon8/isubank"
-	"isucon8/isulogger"
 	"log"
 	"strings"
 	"time"
@@ -13,11 +12,6 @@ import (
 )
 
 const (
-	BankEndpoint = "bank_endpoint"
-	BankAppid    = "bank_appid"
-	LogEndpoint  = "log_endpoint"
-	LogAppid     = "log_appid"
-
 	OrderTypeBuy  = "buy"
 	OrderTypeSell = "sell"
 )
@@ -27,72 +21,20 @@ var (
 	errNoOrder     = errors.New("no order")
 )
 
-const (
-	userColumns   = "id,bank_id,name,password,created_at"
-	ordersColumns = "id,type,user_id,amount,price,closed_at,trade_id,created_at"
-	tradeColumns  = "id,amount,price,created_at"
-)
-
 type QueryExecuter interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 	QueryRow(string, ...interface{}) *sql.Row
 	Query(string, ...interface{}) (*sql.Rows, error)
 }
 
-func getSettingValue(d QueryExecuter, k string) (v string, err error) {
-	err = d.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
-	return
-}
-
-func Isubank(d QueryExecuter) (*isubank.Isubank, error) {
-	ep, err := getSettingValue(d, BankEndpoint)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
-	}
-	id, err := getSettingValue(d, BankAppid)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", BankAppid)
-	}
-	return isubank.NewIsubank(ep, id)
-}
-
-func Logger(d QueryExecuter) (*isulogger.Isulogger, error) {
-	ep, err := getSettingValue(d, LogEndpoint)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
-	}
-	id, err := getSettingValue(d, LogAppid)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getSetting failed. %s", LogAppid)
-	}
-	return isulogger.NewIsulogger(ep, id)
-}
-
-func GetUserByBankID(d QueryExecuter, bankID string) (*User, error) {
-	query := fmt.Sprintf("SELECT %s FROM user WHERE bank_id = ?", userColumns)
-	return scanUser(d.QueryRow(query, bankID))
-}
-
-func GetUserByID(d QueryExecuter, id int64) (*User, error) {
-	query := fmt.Sprintf("SELECT %s FROM user WHERE id = ?", userColumns)
-	return scanUser(d.QueryRow(query, id))
-}
-
-func GetUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
-	query := fmt.Sprintf("SELECT %s FROM user WHERE id = ? FOR UPDATE", userColumns)
-	return scanUser(tx.QueryRow(query, id))
-}
-
 func GetTradeByID(d QueryExecuter, id int64) (*Trade, error) {
-	query := fmt.Sprintf("SELECT %s FROM trade WHERE id = ?", tradeColumns)
-	return scanTrade(d.QueryRow(query, id))
+	return scanTrade(d.QueryRow("SELECT * FROM trade WHERE id = ?", id))
 }
 
 func GetTradesByLastID(d QueryExecuter, lastID int64) ([]*Trade, error) {
-	query := fmt.Sprintf("SELECT %s FROM trade WHERE id > ? ORDER BY id ASC", tradeColumns)
-	rows, err := d.Query(query, lastID)
+	rows, err := d.Query("SELECT * FROM trade WHERE id > ? ORDER BY id ASC", lastID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Query failed. query:%s, lastID:%d", query, lastID)
+		return nil, errors.Wrapf(err, "GetTradesByLastID Query failed. lastID:%d", lastID)
 	}
 	defer rows.Close()
 	trades := []*Trade{}
@@ -167,8 +109,7 @@ func queryInt64(d QueryExecuter, q string, args ...interface{}) ([]int64, error)
 }
 
 func GetOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
-	query := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY id ASC`, ordersColumns)
-	return queryOrders(d, query, userID)
+	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY id ASC", userID)
 }
 
 func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
@@ -182,7 +123,7 @@ func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int6
 	for _, id := range tradeIDs {
 		args = append(args, id)
 	}
-	query := fmt.Sprintf(`SELECT %s FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY id ASC`, ordersColumns, win)
+	query := fmt.Sprintf(`SELECT * FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY id ASC`, win)
 	return queryOrders(d, query, args...)
 }
 
@@ -207,23 +148,19 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 }
 
 func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
-	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ?", ordersColumns)
-	return scanOrder(d.QueryRow(query, id))
+	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
 }
 
 func GetOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
-	query := fmt.Sprintf("SELECT %s FROM orders WHERE id = ? FOR UPDATE", ordersColumns)
-	return scanOrder(tx.QueryRow(query, id))
+	return scanOrder(tx.QueryRow("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
 }
 
 func GetLowestSellOrder(d QueryExecuter) (*Order, error) {
-	q := fmt.Sprintf("SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, id ASC LIMIT 1", ordersColumns)
-	return scanOrder(d.QueryRow(q, OrderTypeSell))
+	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, id ASC LIMIT 1", OrderTypeSell))
 }
 
 func GetHighestBuyOrder(d QueryExecuter) (*Order, error) {
-	q := fmt.Sprintf("SELECT %s FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, id ASC LIMIT 1", ordersColumns)
-	return scanOrder(d.QueryRow(q, OrderTypeBuy))
+	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, id ASC LIMIT 1", OrderTypeBuy))
 }
 
 func HasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
