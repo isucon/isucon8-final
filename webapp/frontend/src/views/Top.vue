@@ -2,6 +2,7 @@
   <div class='content'>
     <div class="chart">
       <Price />
+      <Chart />
     </div>
     <div class="order">
       <Order />
@@ -13,6 +14,7 @@
 <script lang="ts">
 import Vue from 'vue'
 import Price from '@/components/Price.vue'
+import Chart from '@/components/Chart.vue'
 import Order from '@/components/Order.vue'
 import Log from '@/components/Log.vue'
 
@@ -20,6 +22,7 @@ export default Vue.extend({
   name: 'home',
   components: {
     Price,
+    Chart,
     Order,
     Log,
   },
@@ -30,7 +33,6 @@ export default Vue.extend({
 .content
   display: flex
   justify-content: center
-  align-items: center
   padding-top: 24px
 
 .chart

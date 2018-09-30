@@ -24,6 +24,7 @@ export default Vue.extend({
   display: flex
   justify-content: center
   align-items: center
+  margin-bottom: 24px
 
 .item
   margin: 0 12px
