@@ -16,6 +16,14 @@ type User struct {
 	CreatedAt time.Time `json:"-"`
 }
 
+func scanUser(r RowScanner) (*User, error) {
+	var v User
+	if err := r.Scan(&v.ID, &v.BankID, &v.Name, &v.Password, &v.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
 func GetUserByID(d QueryExecuter, id int64) (*User, error) {
 	return scanUser(d.QueryRow("SELECT * FROM user WHERE id = ?", id))
 }

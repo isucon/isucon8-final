@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"isucon8/isubank"
 	"isucon8/isucoin/model"
 
 	"github.com/gorilla/sessions"
@@ -137,8 +136,9 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, err, 409)
 	case err != nil:
 		h.handleError(w, err, 500)
+	default:
+		h.handleSuccess(w, empty)
 	}
-	h.handleSuccess(w, empty)
 }
 
 func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -154,19 +154,19 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, err, 404)
 	case err != nil:
 		h.handleError(w, err, 500)
+	default:
+		session, err := h.store.Get(r, SessionName)
+		if err != nil {
+			h.handleError(w, err, 500)
+			return
+		}
+		session.Values["user_id"] = user.ID
+		if err = session.Save(r, w); err != nil {
+			h.handleError(w, err, 500)
+			return
+		}
+		h.handleSuccess(w, user)
 	}
-
-	session, err := h.store.Get(r, SessionName)
-	if err != nil {
-		h.handleError(w, err, 500)
-		return
-	}
-	session.Values["user_id"] = user.ID
-	if err = session.Save(r, w); err != nil {
-		h.handleError(w, err, 500)
-		return
-	}
-	h.handleSuccess(w, user)
 }
 
 func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -192,18 +192,15 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		res         = make(map[string]interface{}, 10)
 	)
 	if _cursor := r.URL.Query().Get("cursor"); _cursor != "" {
-		lastTradeID, err = strconv.ParseInt(_cursor, 10, 64)
-		if err != nil {
-			h.handleError(w, errors.Wrap(err, "cursor parse failed"), 400)
-			return
-		}
-		trade, err := model.GetTradeByID(h.db, lastTradeID)
-		if err != nil && err != sql.ErrNoRows {
-			h.handleError(w, errors.Wrap(err, "getTradeByID failed"), 500)
-			return
-		}
-		if trade != nil {
-			lt = trade.CreatedAt
+		if lastTradeID, _ = strconv.ParseInt(_cursor, 10, 64); lastTradeID > 0 {
+			trade, err := model.GetTradeByID(h.db, lastTradeID)
+			if err != nil && err != sql.ErrNoRows {
+				h.handleError(w, errors.Wrap(err, "getTradeByID failed"), 500)
+				return
+			}
+			if trade != nil {
+				lt = trade.CreatedAt
+			}
 		}
 	}
 	res["cursor"] = lastTradeID
@@ -290,95 +287,40 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		return
 	}
 
-	var id int64
+	var order *model.Order
 	err = txScorp(h.db, func(tx *sql.Tx) error {
-		if _, err := model.GetUserByIDWithLock(tx, user.ID); err != nil {
-			return errors.Wrapf(err, "model.GetUserByIDWithLock failed. id:%d", user.ID)
-		}
-		logger, err := model.Logger(tx)
-		if err != nil {
-			return errors.Wrap(err, "newLogger failed")
-		}
-		bank, err := model.Isubank(tx)
-		if err != nil {
-			return errors.Wrap(err, "newIsubank failed")
-		}
 		amount, err := formvalInt64(r, "amount")
 		if err != nil {
 			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. amount"), 400)
-		}
-		if amount <= 0 {
-			return errcodeWrap(errors.Errorf("amount is must be greater 0. [%d]", amount), 400)
 		}
 		price, err := formvalInt64(r, "price")
 		if err != nil {
 			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. price"), 400)
 		}
-		if price <= 0 {
-			return errcodeWrap(errors.Errorf("price is must be greater 0. [%d]", price), 400)
+		order, err = model.AddOrder(tx, r.FormValue("type"), user.ID, amount, price)
+		return err
+	})
+	switch {
+	case err == model.ErrParameterInvalid || err == model.ErrCreditInsufficient:
+		h.handleError(w, err, 400)
+	case err != nil:
+		h.handleError(w, err, 500)
+	default:
+		tradeChance, err := model.HasTradeChanceByOrder(h.db, order.ID)
+		if err != nil {
+			h.handleError(w, err, 500)
+			return
 		}
-		ot := r.FormValue("type")
-		switch ot {
-		case model.OrderTypeBuy:
-			totalPrice := price * amount
-			if err = bank.Check(user.BankID, totalPrice); err != nil {
-				le := logger.Send("buy.error", map[string]interface{}{
-					"error":   err.Error(),
-					"user_id": user.ID,
-					"amount":  amount,
-					"price":   price,
-				})
-				if le != nil {
-					log.Printf("[WARN] logger.Send failed. err:%s", le)
-				}
-				if err == isubank.ErrCreditInsufficient {
-					return errcode("銀行残高が足りません", 400)
-				}
-				return errors.Wrap(err, "isubank check failed")
+		if tradeChance {
+			if err := model.RunTrade(h.db); err != nil {
+				// トレードに失敗してもエラーにはしない
+				log.Printf("runTrade err:%s", err)
 			}
-		case model.OrderTypeSell:
-			// TODO 椅子の保有チェック
-		default:
-			return errcode("type must be sell or buy", 400)
 		}
-		res, err := tx.Exec(`INSERT INTO orders (type, user_id, amount, price, created_at) VALUES (?, ?, ?, ?, NOW(6))`, ot, user.ID, amount, price)
-		if err != nil {
-			return errors.Wrap(err, "insert order failed")
-		}
-		id, err = res.LastInsertId()
-		if err != nil {
-			return errors.Wrap(err, "get order_id failed")
-		}
-		le := logger.Send(ot+".order", map[string]interface{}{
-			"order_id": id,
-			"user_id":  user.ID,
-			"amount":   amount,
-			"price":    price,
+		h.handleSuccess(w, map[string]interface{}{
+			"id": order.ID,
 		})
-		if le != nil {
-			log.Printf("[WARN] logger.Send failed. err:%s", le)
-		}
-		return nil
-	})
-	if err != nil {
-		h.handleError(w, err, 500)
-		return
 	}
-
-	tradeChance, err := model.HasTradeChanceByOrder(h.db, id)
-	if err != nil {
-		h.handleError(w, err, 500)
-		return
-	}
-	if tradeChance {
-		if err := model.RunTrade(h.db); err != nil {
-			// トレードに失敗してもエラーにはしない
-			log.Printf("runTrade err:%s", err)
-		}
-	}
-	h.handleSuccess(w, map[string]interface{}{
-		"id": id,
-	})
 }
 
 func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {

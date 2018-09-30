@@ -5,15 +5,9 @@ import (
 	"fmt"
 	"isucon8/isubank"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
-)
-
-const (
-	OrderTypeBuy  = "buy"
-	OrderTypeSell = "sell"
 )
 
 var (
@@ -108,61 +102,6 @@ func queryInt64(d QueryExecuter, q string, args ...interface{}) ([]int64, error)
 	return is, nil
 }
 
-func GetOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
-	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY id ASC", userID)
-}
-
-func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
-	if len(tradeIDs) == 0 {
-		tradeIDs = []int64{0}
-	}
-	win := strings.Repeat(",?", len(tradeIDs))
-	win = win[1:]
-	args := make([]interface{}, 0, len(tradeIDs)+1)
-	args = append(args, userID)
-	for _, id := range tradeIDs {
-		args = append(args, id)
-	}
-	query := fmt.Sprintf(`SELECT * FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY id ASC`, win)
-	return queryOrders(d, query, args...)
-}
-
-func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
-	rows, err := d.Query(query, args...)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
-	}
-	defer rows.Close()
-	orders := []*Order{}
-	for rows.Next() {
-		order, err := scanOrder(rows)
-		if err != nil {
-			return nil, errors.Wrapf(err, "Scan failed.")
-		}
-		orders = append(orders, order)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrapf(err, "rows.Err failed.")
-	}
-	return orders, nil
-}
-
-func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
-}
-
-func GetOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
-	return scanOrder(tx.QueryRow("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
-}
-
-func GetLowestSellOrder(d QueryExecuter) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, id ASC LIMIT 1", OrderTypeSell))
-}
-
-func GetHighestBuyOrder(d QueryExecuter) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, id ASC LIMIT 1", OrderTypeBuy))
-}
-
 func HasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
 	order, err := getOrderByID(d, orderID)
 	if err != nil {
@@ -198,36 +137,6 @@ func HasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
 		return false, errors.Errorf("other type [%s]", order.Type)
 	}
 	return false, nil
-}
-
-func FetchOrderRelation(d QueryExecuter, order *Order) error {
-	var err error
-	order.User, err = GetUserByID(d, order.UserID)
-	if err != nil {
-		return errors.Wrapf(err, "GetUserByID failed. id")
-	}
-	if order.TradeID > 0 {
-		order.Trade, err = GetTradeByID(d, order.TradeID)
-		if err != nil {
-			return errors.Wrapf(err, "GetTradeByID failed. id")
-		}
-	}
-	return nil
-}
-
-func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
-	order, err := GetOrderByIDWithLock(tx, id)
-	if err != nil {
-		return nil, errors.Wrap(err, "GetOrderByIDWithLock sell_order")
-	}
-	if order.ClosedAt != nil {
-		return nil, errClosedOrder
-	}
-	order.User, err = GetUserByIDWithLock(tx, order.UserID)
-	if err != nil {
-		return nil, errors.Wrap(err, "GetUserByIDWithLock sell user")
-	}
-	return order, nil
 }
 
 func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
