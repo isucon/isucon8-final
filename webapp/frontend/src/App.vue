@@ -1,11 +1,13 @@
 <template>
   <div id="app">
     <Header />
-    <div id="nav">
-      <router-link to="/">Top</router-link> |
-      <router-link to="/info">Info</router-link>
+    <div id="content">
+      <div id="nav">
+        <router-link to="/">Top</router-link> |
+        <router-link to="/info">Info</router-link>
+      </div>
+      <router-view/>
     </div>
-    <router-view/>
   </div>
 </template>
 
@@ -28,4 +30,7 @@ export default Vue.extend({
   -moz-osx-font-smoothing: grayscale
   text-align: center
   color: #2c3e50
+
+#content
+  padding-top: 64px
 </style>
