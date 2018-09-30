@@ -5,6 +5,7 @@
     </div>
     <div class="order">
       <Order />
+      <Log />
     </div>
   </div>
 </template>
@@ -13,12 +14,14 @@
 import Vue from 'vue'
 import Price from '@/components/Price.vue'
 import Order from '@/components/Order.vue'
+import Log from '@/components/Log.vue'
 
 export default Vue.extend({
   name: 'home',
   components: {
     Price,
     Order,
+    Log,
   },
 })
 </script>
@@ -33,6 +36,6 @@ export default Vue.extend({
 .chart
   margin-right: 24px
 
-.sidebar
-  
+.order
+  width: 260px
 </style>
