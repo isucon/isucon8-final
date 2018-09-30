@@ -2,10 +2,6 @@
   <div id="app">
     <Header />
     <div id="content">
-      <div id="nav">
-        <router-link to="/">Top</router-link> |
-        <router-link to="/info">Info</router-link>
-      </div>
       <router-view/>
     </div>
   </div>
