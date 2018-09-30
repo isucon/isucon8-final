@@ -83,7 +83,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
 		return
 	}
-	err := txScorp(h.db, func(tx *sql.Tx) error {
+	err := h.txScorp(func(tx *sql.Tx) error {
 		var dt time.Time
 		if err := tx.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
 			return errors.Wrap(err, "get last traded")
@@ -126,7 +126,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, errors.New("all paramaters are required"), 400)
 		return
 	}
-	err := txScorp(h.db, func(tx *sql.Tx) error {
+	err := h.txScorp(func(tx *sql.Tx) error {
 		return model.UserSignup(tx, name, bankID, password)
 	})
 	switch {
@@ -288,7 +288,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 	}
 
 	var order *model.Order
-	err = txScorp(h.db, func(tx *sql.Tx) error {
+	err = h.txScorp(func(tx *sql.Tx) error {
 		amount, err := formvalInt64(r, "amount")
 		if err != nil {
 			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. amount"), 400)
@@ -349,59 +349,24 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 		h.handleError(w, err, 401)
 		return
 	}
-	var id int64
-	err = txScorp(h.db, func(tx *sql.Tx) error {
-		if _, err := model.GetUserByIDWithLock(tx, user.ID); err != nil {
-			return errors.Wrapf(err, "model.GetUserByIDWithLock failed. id:%d", user.ID)
-		}
-		logger, err := model.Logger(tx)
-		if err != nil {
-			return errors.Wrap(err, "newLogger failed")
-		}
-		_id := p.ByName("id")
-		if _id == "" {
-			return errcodeWrap(errors.Errorf("id is required"), 400)
-		}
-		id, err = strconv.ParseInt(_id, 10, 64)
-		if err != nil {
-			return errcodeWrap(errors.Wrap(err, "id parse failed"), 400)
-		}
-		order, err := model.GetOrderByIDWithLock(tx, id)
-		if err != nil {
-			err = errors.Wrapf(err, "model.GetOrderByIDWithLock failed. id")
-			if err == sql.ErrNoRows {
-				return errcodeWrap(err, 404)
-			}
-			return err
-		}
-		if order.UserID != user.ID {
-			return errcodeWrap(errors.New("not found"), 404)
-		}
-		if order.ClosedAt != nil {
-			return errcodeWrap(errors.New("already closed"), 404)
-		}
-		if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
-			return errors.Wrap(err, "update orders for cancel")
-		}
-		le := logger.Send(order.Type+".delete", map[string]interface{}{
-			"order_id": order.ID,
-			"user_id":  order.UserID,
-			"reason":   "canceled",
-		})
-		if le != nil {
-			log.Printf("[WARN] logger.Send failed. err:%s", le)
-		}
-		return nil
-	})
-
+	id, err := strconv.ParseInt(p.ByName("id"), 10, 64)
 	if err != nil {
-		h.handleError(w, err, 500)
+		h.handleError(w, errors.Wrap(err, "id parse failed"), 400)
 		return
 	}
-
-	h.handleSuccess(w, map[string]interface{}{
-		"id": id,
+	err = h.txScorp(func(tx *sql.Tx) error {
+		return model.DeleteOrder(tx, user.ID, id, "canceled")
 	})
+	switch {
+	case err == model.ErrOrderNotFound || err == model.ErrOrderAlreadyClosed:
+		h.handleError(w, err, 404)
+	case err != nil:
+		h.handleError(w, err, 500)
+	default:
+		h.handleSuccess(w, map[string]interface{}{
+			"id": id,
+		})
+	}
 }
 
 func (h *Handler) commonHandler(f http.Handler) http.Handler {
@@ -481,9 +446,9 @@ func formvalInt64(r *http.Request, key string) (int64, error) {
 	return i, nil
 }
 
-func txScorp(db *sql.DB, f func(*sql.Tx) error) (err error) {
+func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	var tx *sql.Tx
-	tx, err = db.Begin()
+	tx, err = h.db.Begin()
 	if err != nil {
 		return errors.Wrap(err, "begin transaction failed")
 	}

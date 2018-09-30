@@ -178,3 +178,30 @@ func AddOrder(tx *sql.Tx, ot string, userID, amount, price int64) (*Order, error
 	})
 	return getOrderByID(tx, id)
 }
+
+func DeleteOrder(tx *sql.Tx, userID, orderID int64, reason string) error {
+	user, err := GetUserByIDWithLock(tx, userID)
+	if err != nil {
+		return errors.Wrapf(err, "model.GetUserByIDWithLock failed. id:%d", userID)
+	}
+	order, err := GetOrderByIDWithLock(tx, orderID)
+	switch {
+	case err == sql.ErrNoRows:
+		return ErrOrderNotFound
+	case err != nil:
+		return errors.Wrapf(err, "GetOrderByIDWithLock failed. id")
+	case order.UserID != user.ID:
+		return ErrOrderNotFound
+	case order.ClosedAt != nil:
+		return ErrOrderAlreadyClosed
+	}
+	if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
+		return errors.Wrap(err, "update orders for cancel")
+	}
+	sendLog(tx, order.Type+".delete", map[string]interface{}{
+		"order_id": order.ID,
+		"user_id":  order.UserID,
+		"reason":   reason,
+	})
+	return nil
+}
