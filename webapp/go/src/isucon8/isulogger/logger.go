@@ -4,13 +4,12 @@ package isulogger
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 // Log はIsuloggerに送るためのログフォーマット
@@ -59,27 +58,27 @@ func (b *Isulogger) request(p string, v interface{}) error {
 
 	body := &bytes.Buffer{}
 	if err := json.NewEncoder(body).Encode(v); err != nil {
-		return errors.Wrap(err, "logger json encode failed")
+		return fmt.Errorf("logger json encode failed. err: %s", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), body)
 	if err != nil {
-		return errors.Wrap(err, "logger new request failed")
+		return fmt.Errorf("logger new request failed. err: %s", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+b.appID)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "logger request failed")
+		return fmt.Errorf("logger request failed. err: %s", err)
 	}
 	defer res.Body.Close()
 	bo, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return errors.Wrap(err, "logger body read failed")
+		return fmt.Errorf("logger body read failed. err: %s", err)
 	}
 	if res.StatusCode == http.StatusOK {
 		return nil
 	}
-	return errors.Errorf("logger status is not ok. code: %d, body: %s", res.StatusCode, string(bo))
+	return fmt.Errorf("logger status is not ok. code: %d, body: %s", res.StatusCode, string(bo))
 }

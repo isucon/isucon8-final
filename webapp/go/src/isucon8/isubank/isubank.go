@@ -4,11 +4,11 @@ package isubank
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -72,7 +72,7 @@ func (b *Isubank) Check(bankID string, price int64) error {
 		"price":   price,
 	}
 	if err := b.request("/check", v, res); err != nil {
-		return errors.Wrap(err, "check failed")
+		return fmt.Errorf("check failed. err: %s", err)
 	}
 	if res.success() {
 		return nil
@@ -83,7 +83,7 @@ func (b *Isubank) Check(bankID string, price int64) error {
 	if res.Error == "credit is insufficient" {
 		return ErrCreditInsufficient
 	}
-	return errors.Errorf("check failed. err:%s", res.Error)
+	return fmt.Errorf("check failed. err:%s", res.Error)
 }
 
 // Reserve は仮決済(残高の確保)を行います
@@ -94,13 +94,13 @@ func (b *Isubank) Reserve(bankID string, price int64) (int64, error) {
 		"price":   price,
 	}
 	if err := b.request("/reserve", v, res); err != nil {
-		return 0, errors.Wrap(err, "reserve failed")
+		return 0, fmt.Errorf("reserve failed. err: %s", err)
 	}
 	if !res.success() {
 		if res.Error == "credit is insufficient" {
 			return 0, ErrCreditInsufficient
 		}
-		return 0, errors.Errorf("reserve failed. err:%s", res.Error)
+		return 0, fmt.Errorf("reserve failed. err:%s", res.Error)
 	}
 	return res.ReserveID, nil
 }
@@ -113,13 +113,13 @@ func (b *Isubank) Commit(reserveIDs []int64) error {
 		"reserve_ids": reserveIDs,
 	}
 	if err := b.request("/commit", v, res); err != nil {
-		return errors.Wrap(err, "commit failed")
+		return fmt.Errorf("commit failed. err: %s", err)
 	}
 	if !res.success() {
 		if res.Error == "credit is insufficient" {
 			return ErrCreditInsufficient
 		}
-		return errors.Errorf("commit failed. err:%s", res.Error)
+		return fmt.Errorf("commit failed. err:%s", res.Error)
 	}
 	return nil
 }
@@ -131,10 +131,10 @@ func (b *Isubank) Cancel(reserveIDs []int64) error {
 		"reserve_ids": reserveIDs,
 	}
 	if err := b.request("/cancel", v, res); err != nil {
-		return errors.Wrap(err, "cancel failed")
+		return fmt.Errorf("cancel failed. err: %s", err)
 	}
 	if !res.success() {
-		return errors.Errorf("cancel failed. err:%s", res.Error)
+		return fmt.Errorf("cancel failed. err:%s", res.Error)
 	}
 	return nil
 }
@@ -146,22 +146,22 @@ func (b *Isubank) request(p string, v interface{}, r isubankResponse) error {
 
 	body := &bytes.Buffer{}
 	if err := json.NewEncoder(body).Encode(v); err != nil {
-		return errors.Wrap(err, "isubank json encode failed")
+		return fmt.Errorf("isubank json encode failed. err: %s", err)
 	}
 	req, err := http.NewRequest(http.MethodPost, u.String(), body)
 	if err != nil {
-		return errors.Wrap(err, "isubank new request failed")
+		return fmt.Errorf("isubank new request failed. err: %s", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+b.appID)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "isubank request failed")
+		return fmt.Errorf("isubank request failed. err: %s", err)
 	}
 	defer res.Body.Close()
 	if err = json.NewDecoder(res.Body).Decode(r); err != nil {
-		return errors.Wrap(err, "isubank decode json failed")
+		return fmt.Errorf("isubank decode json failed. err: %s", err)
 	}
 	r.setStatus(res.StatusCode)
 	return nil
