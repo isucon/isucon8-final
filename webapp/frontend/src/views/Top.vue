@@ -13,6 +13,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapActions, mapState } from 'vuex'
 import Price from '@/components/Price.vue'
 import Chart from '@/components/Chart.vue'
 import Order from '@/components/Order.vue'
@@ -20,11 +21,32 @@ import Log from '@/components/Log.vue'
 
 export default Vue.extend({
   name: 'home',
+
   components: {
     Price,
     Chart,
     Order,
     Log,
+  },
+
+  mounted() {
+    this.updateInfo()
+  },
+
+  computed: {
+    ...mapState(['info']),
+  },
+
+  methods: {
+    ...mapActions(['getInfo']),
+    async updateInfo() {
+      try {
+        await this.getInfo(this.info ? this.info.cursor : null)
+        setTimeout(() => this.updateInfo(), 1000)
+      } catch (error) {
+        throw error
+      }
+    },
   },
 })
 </script>

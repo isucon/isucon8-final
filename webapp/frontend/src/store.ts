@@ -1,10 +1,13 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
+import axios from 'axios'
 
 Vue.use(Vuex)
 
 export default new Vuex.Store({
   state: {
+    chartType: 'min',
+    info: null,
     isModalOpen: false,
     modalType: 'signup',
   },
@@ -18,6 +21,12 @@ export default new Vuex.Store({
     setModalType(state, type) {
       state.modalType = type
     },
+    setInfo(state, info) {
+      state.info = info
+    },
+    setChartType(state, type) {
+      state.chartType = type
+    },
   },
   actions: {
     openSignupModal({ commit }) {
@@ -27,6 +36,18 @@ export default new Vuex.Store({
     openSigninModal({ commit }) {
       commit('setModalType', 'signin')
       commit('openModal')
+    },
+    async getInfo({ commit }, cursor?) {
+      const config = cursor ? { params: { cursor } } : undefined
+
+      try {
+        const response = await axios.get('/info', config)
+        commit('setInfo', response.data)
+      } catch (error) {
+        // tslint:disable
+        console.error('failed to fetch /info')
+        throw error
+      }
     },
   },
 })
