@@ -6,9 +6,10 @@ Vue.use(Vuex)
 
 export default new Vuex.Store({
   state: {
+    chartType: 'min',
+    info: null,
     isModalOpen: false,
     modalType: 'signup',
-    info: null,
   },
   mutations: {
     openModal(state) {
@@ -23,6 +24,9 @@ export default new Vuex.Store({
     setInfo(state, info) {
       state.info = info
     },
+    setChartType(state, type) {
+      state.chartType = type
+    },
   },
   actions: {
     openSignupModal({ commit }) {
@@ -34,7 +38,7 @@ export default new Vuex.Store({
       commit('openModal')
     },
     async getInfo({ commit }, cursor?) {
-      const config = cursor ? { params: { cursor: cursor + 1 } } : undefined
+      const config = cursor ? { params: { cursor } } : undefined
 
       try {
         const response = await axios.get('/info', config)
