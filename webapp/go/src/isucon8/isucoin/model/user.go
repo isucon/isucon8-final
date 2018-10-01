@@ -28,7 +28,7 @@ func GetUserByID(d QueryExecuter, id int64) (*User, error) {
 	return scanUser(d.QueryRow("SELECT * FROM user WHERE id = ?", id))
 }
 
-func GetUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
+func getUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
 	return scanUser(tx.QueryRow("SELECT * FROM user WHERE id = ? FOR UPDATE", id))
 }
 

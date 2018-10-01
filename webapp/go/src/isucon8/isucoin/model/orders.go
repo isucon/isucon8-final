@@ -65,16 +65,16 @@ func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int6
 }
 
 func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
-	order, err := GetOrderByIDWithLock(tx, id)
+	order, err := getOrderByIDWithLock(tx, id)
 	if err != nil {
-		return nil, errors.Wrap(err, "GetOrderByIDWithLock sell_order")
+		return nil, errors.Wrap(err, "getOrderByIDWithLock sell_order")
 	}
 	if order.ClosedAt != nil {
 		return nil, ErrOrderAlreadyClosed
 	}
-	order.User, err = GetUserByIDWithLock(tx, order.UserID)
+	order.User, err = getUserByIDWithLock(tx, order.UserID)
 	if err != nil {
-		return nil, errors.Wrap(err, "GetUserByIDWithLock sell user")
+		return nil, errors.Wrap(err, "getUserByIDWithLock sell user")
 	}
 	return order, nil
 }
@@ -103,7 +103,7 @@ func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
 }
 
-func GetOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
+func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 	return scanOrder(tx.QueryRow("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
 }
 
@@ -134,9 +134,9 @@ func AddOrder(tx *sql.Tx, ot string, userID, amount, price int64) (*Order, error
 	if amount <= 0 || price <= 0 {
 		return nil, ErrParameterInvalid
 	}
-	user, err := GetUserByIDWithLock(tx, userID)
+	user, err := getUserByIDWithLock(tx, userID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetUserByIDWithLock failed. id:%d", userID)
+		return nil, errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", userID)
 	}
 	bank, err := Isubank(tx)
 	if err != nil {
@@ -180,16 +180,16 @@ func AddOrder(tx *sql.Tx, ot string, userID, amount, price int64) (*Order, error
 }
 
 func DeleteOrder(tx *sql.Tx, userID, orderID int64, reason string) error {
-	user, err := GetUserByIDWithLock(tx, userID)
+	user, err := getUserByIDWithLock(tx, userID)
 	if err != nil {
-		return errors.Wrapf(err, "model.GetUserByIDWithLock failed. id:%d", userID)
+		return errors.Wrapf(err, "getUserByIDWithLock failed. id:%d", userID)
 	}
-	order, err := GetOrderByIDWithLock(tx, orderID)
+	order, err := getOrderByIDWithLock(tx, orderID)
 	switch {
 	case err == sql.ErrNoRows:
 		return ErrOrderNotFound
 	case err != nil:
-		return errors.Wrapf(err, "GetOrderByIDWithLock failed. id")
+		return errors.Wrapf(err, "getOrderByIDWithLock failed. id")
 	case order.UserID != user.ID:
 		return ErrOrderNotFound
 	case order.ClosedAt != nil:
