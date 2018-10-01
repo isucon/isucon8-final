@@ -18,56 +18,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	empty = struct{}{}
+const (
+	SessionName = "isucoin_session"
 )
-
-// structs
-
-type errWithCode struct {
-	StatusCode int
-	Err        error
-}
-
-func (e *errWithCode) Error() string {
-	return e.Err.Error()
-}
-
-func errcodeWrap(err error, code int) error {
-	if err == nil {
-		return nil
-	}
-	return &errWithCode{
-		StatusCode: code,
-		Err:        err,
-	}
-}
-
-func errcode(err string, code int) error {
-	return errcodeWrap(errors.New(err), code)
-}
-
-func NewServer(db *sql.DB, store sessions.Store, publicdir, datadir string) http.Handler {
-
-	h := &Handler{
-		db:      db,
-		store:   store,
-		datadir: datadir,
-	}
-
-	router := httprouter.New()
-	router.POST("/initialize", h.Initialize)
-	router.POST("/signup", h.Signup)
-	router.POST("/signin", h.Signin)
-	router.POST("/signout", h.Signout)
-	router.GET("/info", h.Info)
-	router.POST("/orders", h.AddOrders)
-	router.GET("/orders", h.GetOrders)
-	router.DELETE("/order/:id", h.DeleteOrders)
-	router.NotFound = http.FileServer(http.Dir(publicdir)).ServeHTTP
-
-	return h.commonHandler(router)
-}
 
 type Handler struct {
 	db      *sql.DB
@@ -103,7 +56,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		h.handleError(w, err, 500)
 	} else {
 		time.Sleep(10 * time.Second)
-		h.handleSuccess(w, empty)
+		h.handleSuccess(w, struct{}{})
 	}
 }
 
@@ -126,7 +79,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	case err != nil:
 		h.handleError(w, err, 500)
 	default:
-		h.handleSuccess(w, empty)
+		h.handleSuccess(w, struct{}{})
 	}
 }
 
@@ -170,7 +123,7 @@ func (h *Handler) Signout(w http.ResponseWriter, r *http.Request, _ httprouter.P
 		h.handleError(w, err, 500)
 		return
 	}
-	h.handleSuccess(w, empty)
+	h.handleSuccess(w, struct{}{})
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -278,14 +231,8 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 
 	var order *model.Order
 	err = h.txScorp(func(tx *sql.Tx) error {
-		amount, err := formvalInt64(r, "amount")
-		if err != nil {
-			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. amount"), 400)
-		}
-		price, err := formvalInt64(r, "price")
-		if err != nil {
-			return errcodeWrap(errors.Wrapf(err, "formvalInt64 failed. price"), 400)
-		}
+		amount, _ := strconv.ParseInt(r.FormValue("amount"), 10, 64)
+		price, _ := strconv.ParseInt(r.FormValue("price"), 10, 64)
 		order, err = model.AddOrder(tx, r.FormValue("type"), user.ID, amount, price)
 		return err
 	})
@@ -358,7 +305,7 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 	}
 }
 
-func (h *Handler) commonHandler(f http.Handler) http.Handler {
+func (h *Handler) CommonMiddleware(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			if err := r.ParseForm(); err != nil {
@@ -403,10 +350,6 @@ func (h *Handler) handleSuccess(w http.ResponseWriter, data interface{}) {
 }
 
 func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
-	if e, ok := err.(*errWithCode); ok {
-		code = e.StatusCode
-		err = e.Err
-	}
 	w.WriteHeader(code)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -418,21 +361,6 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("[WARN] write error response json failed. %s", err)
 	}
-}
-
-// helpers
-
-func formvalInt64(r *http.Request, key string) (int64, error) {
-	v := r.FormValue(key)
-	if v == "" {
-		return 0, errors.Errorf("%s is required", key)
-	}
-	i, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		log.Printf("[INFO] can't parse to int64 key:%s val:%s err:%s", key, v, err)
-		return 0, errors.Errorf("%s can't parse to int64", key)
-	}
-	return i, nil
 }
 
 func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
@@ -454,5 +382,3 @@ func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
 	err = f(tx)
 	return
 }
-
-// databases

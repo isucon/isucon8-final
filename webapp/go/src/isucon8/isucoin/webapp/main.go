@@ -11,6 +11,7 @@ import (
 	"isucon8/isucoin/controller"
 
 	"github.com/gorilla/sessions"
+	"github.com/julienschmidt/httprouter"
 )
 
 const (
@@ -49,11 +50,33 @@ func main() {
 		log.Fatalf("mysql connect failed. err: %s", err)
 	}
 	store := sessions.NewCookieStore([]byte(SessionSecret))
-	server := controller.NewServer(db, store, public, data)
+	server := newHandler(db, store, public, data)
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
 	log.Fatal(http.ListenAndServe(addr, server))
+}
+
+func newHandler(db *sql.DB, store sessions.Store, publicdir, datadir string) http.Handler {
+
+	h := &controller.Handler{
+		db:      db,
+		store:   store,
+		datadir: datadir,
+	}
+
+	router := httprouter.New()
+	router.POST("/initialize", h.Initialize)
+	router.POST("/signup", h.Signup)
+	router.POST("/signin", h.Signin)
+	router.POST("/signout", h.Signout)
+	router.GET("/info", h.Info)
+	router.POST("/orders", h.AddOrders)
+	router.GET("/orders", h.GetOrders)
+	router.DELETE("/order/:id", h.DeleteOrders)
+	router.NotFound = http.FileServer(http.Dir(publicdir)).ServeHTTP
+
+	return h.CommonMiddleware(router)
 }
 
 func getEnv(key, def string) string {
