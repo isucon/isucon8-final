@@ -21,4 +21,6 @@ type Job struct {
 	ID       int    `json:"id"`
 	TeamID   int    `json:"team_id"`
 	TargetIP string `json:"target_ip"`
+	BankIP   string `json:"bank_ip"`
+	LogIP    string `json:"log_ip"`
 }

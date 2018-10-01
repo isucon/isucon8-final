@@ -16,11 +16,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
+	"os/exec"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/ken39arg/isucon2018-final/bench"
+	"github.com/ken39arg/isucon2018-final/bench/portal"
 	"github.com/pkg/errors"
 )
 
@@ -31,6 +33,7 @@ var (
 
 	portalUrl = flag.String("portal", "http://172.18.0.1:3333", "portal host")
 	tempDir   = flag.String("temdir", "", "path to temp dir")
+	benchcmd  = flag.String("bench", "bench", "path to temp dir")
 )
 
 func main() {
@@ -48,21 +51,7 @@ func updateHostname() {
 }
 
 func run(tempDir, portalUrl string) {
-	for _, arg := range os.Args {
-		if strings.HasPrefix(arg, "-remotes") ||
-			strings.HasPrefix(arg, "-output") {
-			log.Fatalln("Cannot use the option", arg, "on workermode")
-		}
-	}
-
 	updateHostname()
-
-	var baseArgs []string
-	for _, arg := range os.Args {
-		if !strings.HasPrefix(arg, "-workermode") {
-			baseArgs = append(baseArgs, arg)
-		}
-	}
 
 	getUrl := func(path string) (*url.URL, error) {
 		u, err := url.Parse(portalUrl + path)
@@ -75,7 +64,7 @@ func run(tempDir, portalUrl string) {
 		return u, nil
 	}
 
-	getJob := func() (*Job, error) {
+	getJob := func() (*portal.Job, error) {
 		u, err := getUrl("/" + pathPrefix + "job")
 		if err != nil {
 			return nil, err
@@ -93,7 +82,7 @@ func run(tempDir, portalUrl string) {
 		if res.StatusCode == http.StatusNoContent {
 			return nil, errNoJob
 		}
-		j := new(Job)
+		j := new(portal.Job)
 		dec := json.NewDecoder(res.Body)
 		err = dec.Decode(j)
 		if err != nil {
@@ -102,7 +91,7 @@ func run(tempDir, portalUrl string) {
 		return j, nil
 	}
 
-	getJobLoop := func() *Job {
+	getJobLoop := func() *portal.Job {
 		for {
 			task, err := getJob()
 			if err == nil {
@@ -118,18 +107,20 @@ func run(tempDir, portalUrl string) {
 		}
 	}
 
-	postResult := func(job *Job, result BenchResult, l io.Reader, aborted bool) error {
+	postResult := func(job *portal.Job, jsonPath string, logPath string, aborted bool) error {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 
-		{
-			part, _ := writer.CreateFormFile("result", "resutl.json")
-			json.NewEncoder(part).Encode(result)
+		if file, err := os.Open(jsonPath); err == nil {
+			part, _ := writer.CreateFormFile("result", filepath.Base(jsonPath))
+			io.Copy(part, file)
+			file.Close()
 		}
 
-		{
-			part, _ := writer.CreateFormFile("log", "output.log")
-			io.Copy(part, l)
+		if file, err := os.Open(logPath); err == nil {
+			part, _ := writer.CreateFormFile("log", filepath.Base(logPath))
+			io.Copy(part, file)
+			file.Close()
 		}
 
 		writer.Close()
@@ -140,9 +131,9 @@ func run(tempDir, portalUrl string) {
 		}
 
 		q := u.Query()
-		q.Set("job_id", fmt.Sprint(job.ID))
+		q.Set("jobid", fmt.Sprint(job.ID))
 		if aborted {
-			q.Set("is_aborted", "1")
+			q.Set("aborted", "yes")
 		}
 		u.RawQuery = q.Encode()
 
@@ -170,49 +161,42 @@ func run(tempDir, portalUrl string) {
 
 	for {
 		job := getJobLoop()
-		out := &bytes.Buffer{}
-		result := func() BenchResult {
-			result := BenchResult{
-				JobID:     strconv.Itoa(job.ID),
-				IPAddrs:   job.TargetIP,
-				StartTime: time.Now(),
-			}
-			var (
-				// TODO
-				bankEndpoint           string
-				loggerEndpoint         string
-				bankInternalEndpoint   string
-				loggerInternalEndpoint string
-			)
-			mgr, err := bench.NewManager(out, "http://"+job.TargetIP, bankEndpoint, loggerEndpoint, bankInternalEndpoint, loggerInternalEndpoint)
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("benchmarker の初期化に失敗しました. err: %s", err))
-				result.Message = "システムエラーです。運営に連絡してください"
-				return result
-			}
-			defer mgr.Close()
-			bm := bench.NewRunner(mgr)
-			if err = bm.Run(context.Background()); err != nil {
-				result.Errors = append(result.Errors, err.Error())
-			}
-			bm.Result()
+		now := time.Now()
+		rname := fmt.Sprintf("isucon8f-benchresult-%d-%d.json", now.Unix(), job.ID)
+		lname := fmt.Sprintf("isucon8f-benchlog-%d-%d.log", now.Unix(), job.ID)
+		result := path.Join(tempDir, rname)
+		logpath := path.Join(tempDir, lname)
+		aborted := false
 
-			result.Score = mgr.TotalScore()
-			result.Pass = 0 < result.Score
-			result.LoadLevel = int(mgr.GetLevel())
-			// TODO
-			// result.Logs
-			if result.Pass {
-				result.Message = "Success"
-			} else {
-				result.Message = "Failed"
-			}
-			return result
-		}()
-		result.EndTime = time.Now()
-		aborted := false // TODO
+		var args []string
+		args = append(args, fmt.Sprintf("-jobid=%d", job.ID))
+		args = append(args, fmt.Sprintf("-appep=%s", job.TargetIP))
+		args = append(args, fmt.Sprintf("-bankep=%s", job.BankIP))
+		args = append(args, fmt.Sprintf("-logep=%s", job.LogIP))
+		args = append(args, fmt.Sprintf("-internalbank=%s", job.BankIP))
+		args = append(args, fmt.Sprintf("-internallog=%s", job.LogIP))
+		args = append(args, fmt.Sprintf("-result=%s", result))
+		args = append(args, fmt.Sprintf("-log=%s", logpath))
 
-		if err := postResult(job, result, out, aborted); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, *benchcmd, args...)
+
+		log.Println("Start benchmark args:", cmd.Args)
+		err := cmd.Start()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		err = cmd.Wait()
+		if err != nil {
+			aborted = true
+			log.Println(err)
+		}
+
+		err = postResult(job, result, logpath, aborted)
+		if err != nil {
 			log.Println(err)
 		}
 
