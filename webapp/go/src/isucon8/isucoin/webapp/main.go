@@ -3,12 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"isucon8/isucoin/controller"
 	"log"
 	"net/http"
 	"os"
 	"time"
-
-	"isucon8/isucoin/controller"
 
 	"github.com/gorilla/sessions"
 	"github.com/julienschmidt/httprouter"
@@ -25,28 +24,6 @@ func init() {
 		log.Panicln(err)
 	}
 	time.Local = loc
-}
-
-func newHandler(db *sql.DB, store sessions.Store, publicdir, datadir string) http.Handler {
-
-	h := &controller.Handler{
-		db:      db,
-		store:   store,
-		datadir: datadir,
-	}
-
-	router := httprouter.New()
-	router.POST("/initialize", h.Initialize)
-	router.POST("/signup", h.Signup)
-	router.POST("/signin", h.Signin)
-	router.POST("/signout", h.Signout)
-	router.GET("/info", h.Info)
-	router.POST("/orders", h.AddOrders)
-	router.GET("/orders", h.GetOrders)
-	router.DELETE("/order/:id", h.DeleteOrders)
-	router.NotFound = http.FileServer(http.Dir(publicdir)).ServeHTTP
-
-	return h.CommonMiddleware(router)
 }
 
 func getEnv(key, def string) string {
@@ -79,9 +56,21 @@ func main() {
 		log.Fatalf("mysql connect failed. err: %s", err)
 	}
 	store := sessions.NewCookieStore([]byte(SessionSecret))
-	server := newHandler(db, store, public, data)
+
+	h := controller.NewHandler(db, store, data)
+
+	router := httprouter.New()
+	router.POST("/initialize", h.Initialize)
+	router.POST("/signup", h.Signup)
+	router.POST("/signin", h.Signin)
+	router.POST("/signout", h.Signout)
+	router.GET("/info", h.Info)
+	router.POST("/orders", h.AddOrders)
+	router.GET("/orders", h.GetOrders)
+	router.DELETE("/order/:id", h.DeleteOrders)
+	router.NotFound = http.FileServer(http.Dir(public)).ServeHTTP
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
-	log.Fatal(http.ListenAndServe(addr, server))
+	log.Fatal(http.ListenAndServe(addr, h.CommonMiddleware(router)))
 }

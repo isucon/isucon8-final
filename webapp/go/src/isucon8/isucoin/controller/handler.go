@@ -28,6 +28,14 @@ type Handler struct {
 	datadir string
 }
 
+func NewHandler(db *sql.DB, store sessions.Store, datadir string) *Handler {
+	return &Handler{
+		db:      db,
+		store:   store,
+		datadir: datadir,
+	}
+}
+
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	cmd := exec.Command("sh", h.datadir+"/init")
 	cmd.Stdout = os.Stdout
