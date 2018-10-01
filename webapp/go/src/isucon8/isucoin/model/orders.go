@@ -45,40 +45,6 @@ func scanOrder(r RowScanner) (*Order, error) {
 	return &v, nil
 }
 
-func GetOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
-	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY id ASC", userID)
-}
-
-func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
-	if len(tradeIDs) == 0 {
-		tradeIDs = []int64{0}
-	}
-	win := strings.Repeat(",?", len(tradeIDs))
-	win = win[1:]
-	args := make([]interface{}, 0, len(tradeIDs)+1)
-	args = append(args, userID)
-	for _, id := range tradeIDs {
-		args = append(args, id)
-	}
-	query := fmt.Sprintf(`SELECT * FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY id ASC`, win)
-	return queryOrders(d, query, args...)
-}
-
-func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
-	order, err := getOrderByIDWithLock(tx, id)
-	if err != nil {
-		return nil, errors.Wrap(err, "getOrderByIDWithLock sell_order")
-	}
-	if order.ClosedAt != nil {
-		return nil, ErrOrderAlreadyClosed
-	}
-	order.User, err = getUserByIDWithLock(tx, order.UserID)
-	if err != nil {
-		return nil, errors.Wrap(err, "getUserByIDWithLock sell user")
-	}
-	return order, nil
-}
-
 func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
 	rows, err := d.Query(query, args...)
 	if err != nil {
@@ -99,6 +65,40 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 	return orders, nil
 }
 
+func GetOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
+	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC", userID)
+}
+
+func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
+	if len(tradeIDs) == 0 {
+		tradeIDs = []int64{0}
+	}
+	win := strings.Repeat(",?", len(tradeIDs))
+	win = win[1:]
+	args := make([]interface{}, 0, len(tradeIDs)+1)
+	args = append(args, userID)
+	for _, id := range tradeIDs {
+		args = append(args, id)
+	}
+	query := fmt.Sprintf(`SELECT * FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY created_at ASC`, win)
+	return queryOrders(d, query, args...)
+}
+
+func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
+	order, err := getOrderByIDWithLock(tx, id)
+	if err != nil {
+		return nil, errors.Wrap(err, "getOrderByIDWithLock sell_order")
+	}
+	if order.ClosedAt != nil {
+		return nil, ErrOrderAlreadyClosed
+	}
+	order.User, err = getUserByIDWithLock(tx, order.UserID)
+	if err != nil {
+		return nil, errors.Wrap(err, "getUserByIDWithLock sell user")
+	}
+	return order, nil
+}
+
 func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
 }
@@ -108,11 +108,11 @@ func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 }
 
 func GetLowestSellOrder(d QueryExecuter) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, id ASC LIMIT 1", OrderTypeSell))
+	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1", OrderTypeSell))
 }
 
 func GetHighestBuyOrder(d QueryExecuter) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, id ASC LIMIT 1", OrderTypeBuy))
+	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1", OrderTypeBuy))
 }
 
 func FetchOrderRelation(d QueryExecuter, order *Order) error {
@@ -195,10 +195,14 @@ func DeleteOrder(tx *sql.Tx, userID, orderID int64, reason string) error {
 	case order.ClosedAt != nil:
 		return ErrOrderAlreadyClosed
 	}
-	if _, err = tx.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); err != nil {
+	return cancelOrder(tx, order, reason)
+}
+
+func cancelOrder(d QueryExecuter, order *Order, reason string) error {
+	if _, err := d.Exec(`UPDATE orders SET closed_at = NOW(6) WHERE id = ?`, order.ID); err != nil {
 		return errors.Wrap(err, "update orders for cancel")
 	}
-	sendLog(tx, order.Type+".delete", map[string]interface{}{
+	sendLog(d, order.Type+".delete", map[string]interface{}{
 		"order_id": order.ID,
 		"user_id":  order.UserID,
 		"reason":   reason,

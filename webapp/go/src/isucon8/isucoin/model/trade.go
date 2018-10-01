@@ -136,10 +136,6 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "isubank init failed")
 	}
-	logger, err := Logger(d)
-	if err != nil {
-		return 0, errors.Wrap(err, "logger init failed")
-	}
 	p := order.Amount * price
 	if order.Type == OrderTypeBuy {
 		p *= -1
@@ -148,27 +144,15 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 	id, err := bank.Reserve(order.User.BankID, p)
 	if err != nil {
 		if err == isubank.ErrCreditInsufficient {
-			// 与信確保失敗した場合はorderを破棄する
-			if _, derr := d.Exec(`UPDATE orders SET closed_at = ? WHERE id = ?`, time.Now(), order.ID); derr != nil {
-				return 0, errors.Wrap(derr, "update buy_order for cancel")
+			if derr := cancelOrder(d, order, "reserve_failed"); derr != nil {
+				return 0, derr
 			}
-			lerr := logger.Send(order.Type+".delete", map[string]interface{}{
-				"order_id": order.ID,
-				"user_id":  order.UserID,
-				"reason":   "reserve_failed",
-			})
-			if lerr != nil {
-				log.Printf("[WARN] logger.Send failed. err:%s", lerr)
-			}
-			lerr = logger.Send(order.Type+".error", map[string]interface{}{
+			sendLog(d, order.Type+".error", map[string]interface{}{
 				"error":   err.Error(),
 				"user_id": order.UserID,
 				"amount":  order.Amount,
 				"price":   price,
 			})
-			if lerr != nil {
-				log.Printf("[WARN] logger.Send failed. err:%s", lerr)
-			}
 			return 0, err
 		}
 		return 0, errors.Wrap(err, "isubank.Reserve")
@@ -178,22 +162,7 @@ func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
 }
 
 func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []int64) error {
-	bank, err := Isubank(tx)
-	if err != nil {
-		return errors.Wrap(err, "isubank init failed")
-	}
-	logger, err := Logger(tx)
-	if err != nil {
-		return errors.Wrap(err, "logger init failed")
-	}
-	defer func() {
-		if len(reserves) > 0 {
-			if err = bank.Cancel(reserves); err != nil {
-				log.Printf("[WARN] isubank cancel failed. err:%s", err)
-			}
-		}
-	}()
-	res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, ?)`, order.Amount, order.Price, time.Now())
+	res, err := tx.Exec(`INSERT INTO trade (amount, price, created_at) VALUES (?, ?, NOW(6))`, order.Amount, order.Price)
 	if err != nil {
 		return errors.Wrap(err, "insert trade")
 	}
@@ -201,33 +170,30 @@ func commitReservedOrder(tx *sql.Tx, order *Order, targets []*Order, reserves []
 	if err != nil {
 		return errors.Wrap(err, "lastInsertID for trade")
 	}
-	le := logger.Send("trade", map[string]interface{}{
+	sendLog(tx, "trade", map[string]interface{}{
 		"trade_id": tradeID,
 		"price":    order.Price,
 		"amount":   order.Amount,
 	})
-	if le != nil {
-		log.Printf("[WARN] logger.Send failed. err:%s", le)
-	}
 	for _, o := range append(targets, order) {
-		if _, err = tx.Exec(`UPDATE orders SET trade_id = ?, closed_at = ? WHERE id = ?`, tradeID, time.Now(), o.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE orders SET trade_id = ?, closed_at = NOW(6) WHERE id = ?`, tradeID, o.ID); err != nil {
 			return errors.Wrap(err, "update order for trade")
 		}
-		le := logger.Send(o.Type+".trade", map[string]interface{}{
+		sendLog(tx, o.Type+".trade", map[string]interface{}{
 			"order_id": o.ID,
 			"price":    order.Price,
 			"amount":   o.Amount,
 			"user_id":  o.UserID,
 			"trade_id": tradeID,
 		})
-		if le != nil {
-			log.Printf("[WARN] logger.Send failed. err:%s", le)
-		}
+	}
+	bank, err := Isubank(tx)
+	if err != nil {
+		return errors.Wrap(err, "isubank init failed")
 	}
 	if err = bank.Commit(reserves); err != nil {
 		return errors.Wrap(err, "commit")
 	}
-	reserves = reserves[:0]
 	return nil
 }
 
@@ -301,11 +267,11 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	if restAmount > 0 {
 		return ErrNoOrderForTrade
 	}
-	// cancelをしたいので
-	r := make([]int64, len(reserves))
-	copy(r, reserves)
+	if err = commitReservedOrder(tx, order, targets, reserves); err != nil {
+		return err
+	}
 	reserves = reserves[:0]
-	return commitReservedOrder(tx, order, targets, r)
+	return nil
 }
 
 func RunTrade(db *sql.DB) error {
