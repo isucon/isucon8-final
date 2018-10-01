@@ -397,14 +397,6 @@ func (c *Client) Signout() error {
 func (c *Client) Top() error {
 	for _, path := range []string{
 		"/",
-		// TODO static files
-		"/css/bootstrap-grid.min.css",
-		"/css/bootstrap-reboot.min.css",
-		"/css/bootstrap.min.css",
-		"/js/bootstrap.bundle.min.js",
-		"/js/bootstrap.min.js",
-		"/js/jquery-3.3.1.slim.min.js",
-		"/js/popper.min.js",
 	} {
 		err := func(path string) error {
 			res, err := c.get(path, url.Values{})
