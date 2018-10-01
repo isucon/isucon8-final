@@ -84,19 +84,8 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 		return
 	}
 	err := h.txScorp(func(tx *sql.Tx) error {
-		var dt time.Time
-		if err := tx.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
-			return errors.Wrap(err, "get last traded")
-		}
-		diffmin := int64(time.Now().Sub(dt).Minutes())
-		if _, err := tx.Exec("update trade set created_at = (created_at + interval ? minute)", diffmin); err != nil {
-			return errors.Wrap(err, "update trade.created_at")
-		}
-		if _, err := tx.Exec("update orders set created_at = (created_at + interval ? minute)", diffmin); err != nil {
-			return errors.Wrap(err, "update orders.created_at")
-		}
-		if _, err := tx.Exec("update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null", diffmin); err != nil {
-			return errors.Wrap(err, "update orders.closed_at")
+		if err := model.InitBenchmark(tx); err != nil {
+			return err
 		}
 		for _, k := range []string{
 			model.BankEndpoint,
