@@ -32,6 +32,14 @@ export default Vue.extend({
 </script>
 
 <style lang="sass" scoped>
+@keyframes appear
+  0%
+    opacity: 0
+    transform: translate3d(0,-12px,0)
+  100%
+    opacity: 1
+    transform: translate3d(0,0,0)
+
 .modal
   display: flex
   justify-content: center
@@ -42,6 +50,7 @@ export default Vue.extend({
   width: 100%
   height: 100%
   background-color: rgba(255,255,255,0.87)
+  animation: appear 0.3s cubic-bezier(0.25, 0.8, 0.5, 1)
 
 .content
   padding: 24px
