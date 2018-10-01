@@ -4,13 +4,17 @@ import (
 	"context"
 	"time"
 
+	"github.com/ken39arg/isucon2018-final/bench/portal"
 	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
 
 type Runner struct {
-	mgr  *Manager
-	done chan struct{}
+	mgr   *Manager
+	done  chan struct{}
+	start time.Time
+	end   time.Time
+	fail  bool
 }
 
 func NewRunner(mgr *Manager) *Runner {
@@ -20,13 +24,31 @@ func NewRunner(mgr *Manager) *Runner {
 	}
 }
 
-func (r *Runner) Result() {
-	c := r.mgr
-	c.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", c.TotalScore(), c.level, c.ErrorCount(), c.ActiveInvestors(), c.AllInvestors())
+func (r *Runner) Result() portal.BenchResult {
+	score := r.mgr.TotalScore()
+	level := r.mgr.GetLevel()
+	errors := r.mgr.GetErrorsString()
+	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveInvestors(), r.mgr.AllInvestors())
+
+	logs, _ := r.mgr.GetLogs()
+	return portal.BenchResult{
+		Pass:      score > 0,
+		Score:     score,
+		Errors:    errors,
+		Logs:      logs,
+		LoadLevel: int(level),
+
+		StartTime: r.start,
+		EndTime:   r.end,
+	}
 }
 
 func (r *Runner) Run(ctx context.Context) error {
 	m := r.mgr
+	defer func() {
+		r.end = time.Now()
+	}()
+	r.start = time.Now()
 
 	cctx, ccancel := context.WithCancel(ctx)
 	defer ccancel()
@@ -45,6 +67,10 @@ func (r *Runner) Run(ctx context.Context) error {
 	m.Logger().Printf("# benchmark")
 	if err := r.runBenchmark(ctx); err != nil {
 		return errors.Wrap(err, "負荷走行 に失敗しました")
+	}
+
+	if r.fail {
+		return errors.New("finish by fail")
 	}
 
 	m.Logger().Printf("# post test")
@@ -91,7 +117,8 @@ func (r *Runner) handleWorker(worker *taskworker.Worker) {
 			case ErrAlreadyRetired:
 			default:
 				r.mgr.Logger().Printf("error: %s", err)
-				if e := r.mgr.IncrErr(); e != nil {
+				if e := r.mgr.AppendError(err); e != nil {
+					r.fail = true
 					r.mgr.Logger().Printf("ベンチマークを終了します: %s", e)
 					worker.Finish()
 				}
@@ -109,6 +136,7 @@ func (r *Runner) runTicker(worker *taskworker.Worker) {
 			// nextが終わってから次のloopとしたいのでtickerではない
 			tasks, err := r.mgr.Next()
 			if err != nil {
+				r.fail = true
 				r.mgr.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
 				worker.Finish()
 			}

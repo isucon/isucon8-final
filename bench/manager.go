@@ -1,6 +1,8 @@
 package bench
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"log"
@@ -24,12 +26,15 @@ type Manager struct {
 	idlist    chan string
 	investors []Investor
 	score     int64
-	errcount  int64
+	errors    []error
+	logs      *bytes.Buffer
 
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
+	errorLock    sync.Mutex
 	level        uint
 	totalivst    int
+	overError    bool
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
@@ -45,8 +50,9 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 	if err != nil {
 		return nil, err
 	}
+	logs := &bytes.Buffer{}
 	return &Manager{
-		logger:    NewLogger(out),
+		logger:    NewLogger(io.MultiWriter(out, logs)),
 		appep:     appep,
 		bankep:    bankep,
 		logep:     logep,
@@ -55,6 +61,8 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		isulog:    isulog,
 		idlist:    make(chan string, 10),
 		investors: make([]Investor, 0, 5000),
+		errors:    make([]error, 0, AllowErrorMax+10),
+		logs:      logs,
 	}, nil
 }
 
@@ -113,8 +121,15 @@ func (c *Manager) GetScore() int64 {
 	return atomic.LoadInt64(&c.score)
 }
 
-func (c *Manager) IncrErr() error {
-	ec := atomic.AddInt64(&c.errcount, 1)
+func (c *Manager) AppendError(e error) error {
+	if e == nil {
+		return nil
+	}
+	c.errorLock.Lock()
+	defer c.errorLock.Unlock()
+
+	c.errors = append(c.errors, e)
+	ec := len(c.errors)
 
 	errorLimit := c.GetScore() / 20
 	if errorLimit < AllowErrorMin {
@@ -122,22 +137,48 @@ func (c *Manager) IncrErr() error {
 	} else if errorLimit > AllowErrorMax {
 		errorLimit = AllowErrorMax
 	}
-	if errorLimit <= ec {
+	if errorLimit <= int64(ec) {
+		c.overError = true
 		return errors.Errorf("エラー件数が規定を超過しました.")
 	}
 	return nil
 }
 
-func (c *Manager) ErrorCount() int64 {
-	return atomic.LoadInt64(&c.errcount)
+func (c *Manager) ErrorCount() int {
+	c.errorLock.Lock()
+	defer c.errorLock.Unlock()
+	return len(c.errors)
+}
+
+func (c *Manager) GetErrorsString() []string {
+	r := make([]string, 0, len(c.errors))
+	for _, e := range c.errors {
+		r = append(r, e.Error())
+	}
+	return r
+}
+
+func (c *Manager) GetLogs() ([]string, error) {
+	scan := bufio.NewScanner(c.logs)
+	r := []string{}
+	for scan.Scan() {
+		r = append(r, scan.Text())
+	}
+	if err := scan.Err(); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 func (c *Manager) TotalScore() int64 {
+	if c.overError {
+		return 0
+	}
 	score := c.GetScore()
 	demerit := score / (AllowErrorMax * 2)
 
 	// エラーが多いと最大スコアが半分になる
-	return score - demerit*c.ErrorCount()
+	return score - demerit*int64(c.ErrorCount())
 }
 
 func (c *Manager) GetLevel() uint {

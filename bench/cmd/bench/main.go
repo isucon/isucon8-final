@@ -4,7 +4,9 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"flag"
+	"log"
 	"math/rand"
 	"os"
 	"time"
@@ -18,27 +20,53 @@ var (
 	logep        = flag.String("logep", "https://compose.isucon8.flying-chair.net:5516", "isulog endpoint")
 	internalbank = flag.String("internalbank", "https://localhost.isucon8.flying-chair.net:5515", "isubank endpoint (for internal)")
 	internallog  = flag.String("internallog", "https://localhost.isucon8.flying-chair.net:5516", "isulog endpoint (for internal)")
-	log          = bench.NewLogger(os.Stderr)
+	jobid        = flag.String("jobid", "", "portal jobid")
+	logoutput    = flag.String("log", "", "output log path (default stderror)")
+	result       = flag.String("result", "", "result json path (default stdout)")
+	logout       = os.Stderr
+	out          = os.Stdout
 )
 
 func main() {
 	flag.Parse()
-	if err := run(); err != nil {
+	var err error
+	if *result != "" {
+		out, err = os.Create(*result)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer out.Close()
+	}
+	if *logoutput != "" {
+		logout, err = os.Create(*logoutput)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer logout.Close()
+	}
+	log.SetOutput(logout)
+	if err = run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func run() error {
-	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank, *internallog)
+	mgr, err := bench.NewManager(logout, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}
 	defer mgr.Close()
+	msg := "ok"
 	bm := bench.NewRunner(mgr)
 	if err = bm.Run(context.Background()); err != nil {
-		return err
+		msg = err.Error()
+		mgr.Logger().Printf(msg)
 	}
-	bm.Result()
+	result := bm.Result()
+	result.JobID = *jobid
+	result.IPAddrs = *appep
+	result.Message = msg
+	json.NewEncoder(out).Encode(result)
 	return nil
 }
 
