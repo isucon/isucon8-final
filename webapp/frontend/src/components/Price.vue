@@ -2,20 +2,25 @@
   <div class="list">
     <div class="item">
       最安売値
-      <span class="price">$300</span>
+      <span class="price">{{ info ? info.lowest_sell_price + '円' : '----円' }}</span>
     </div>
     <div class="item">
       最高買値
-      <span class="price">$300</span>
+      <span class="price">{{ info ? info.highest_buy_price + '円' : '----円' }}</span>
     </div>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapState } from 'vuex'
 
 export default Vue.extend({
   name: 'Price',
+
+  computed: {
+    ...mapState(['info']),
+  },
 })
 </script>
 
