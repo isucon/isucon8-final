@@ -29,7 +29,7 @@ benchマーカーと対になるように用意したい
 #### 開発用の起動方法
 
     cd blackbox
-    docker-compose up [-d]
+    docker-compose -f docker-compose.local.yml up [-d]
 
 ## bench
 

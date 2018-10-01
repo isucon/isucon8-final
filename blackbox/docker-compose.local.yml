@@ -1,0 +1,49 @@
+version: '2'
+services:
+  nginx:
+    image: openresty/openresty:1.13.6.2-alpine
+    volumes:
+      - ./nginx:/etc/nginx:ro
+    ports:
+      - "5515:5515"
+      - "5516:5516"
+    links:
+      - isubank
+      - logger
+    command:
+      - "/usr/local/openresty/bin/openresty"
+      - "-c"
+      - "/etc/nginx/nginx.local.conf"
+
+  isubank:
+    image: golang:1.11
+    command: bash -c "go get ./... && go run main.go -port=5515 -dbhost=mysql -dbuser=root -dbpass=root"
+    links:
+      - mysql
+    working_dir: /go/src/bank
+    volumes:
+      - isubankgopath:/go
+      - ./bank:/go/src/bank
+
+  logger:
+    image: golang:1.11
+    command: bash -c "go get ./... && go run main.go -port=5516"
+    working_dir: /go/src/logger
+    volumes:
+      - loggergopath:/go
+      - ./logger:/go/src/logger
+
+  mysql:
+    image: mysql:8
+    environment:
+      - "TZ=Asia/Tokyo"
+      - "MYSQL_ROOT_PASSWORD=root"
+    volumes:
+      - mysql:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d
+      - ./conf.d:/etc/mysql/conf.d
+
+volumes:
+  isubankgopath:
+  loggergopath:
+  mysql:
