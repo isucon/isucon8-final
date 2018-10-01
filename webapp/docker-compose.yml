@@ -1,15 +1,15 @@
 version: '2'
 services:
   mockservice:
-    image: golang:1.10
-    working_dir: /go/src/mockservice
-    volumes:
-      - gopath:/go
-      - ./mockservice:/go/src/mockservice
-    ports:
-      - "14690:14690"
-      - "14809:14809"
-    command: sh ./docker-run.sh
+   image: golang:1.10
+   working_dir: /go/src/mockservice
+   volumes:
+     - gopath:/go
+     - ./mockservice:/go/src/mockservice
+   ports:
+     - "14690:14690"
+     - "14809:14809"
+   command: sh ./docker-run.sh
 
   nginx:
     image: nginx:1.15.3-alpine
@@ -21,8 +21,11 @@ services:
       - isucoin
 
   isucoin:
-    image: golang:1.10
-    command: bash -c "go get ./... && go run main.go const.go handler.go isubank.go logger.go"
+    build: go
+    command:
+      - "sh"
+      - "-c"
+      - "dep ensure && go run main.go const.go handler.go isubank.go logger.go"
     environment:
       ISU_APP_PORT:    '5000'
       ISU_DB_HOST:     'mysql'
@@ -31,14 +34,14 @@ services:
       ISU_DB_PASSWORD: 'root'
       ISU_DB_NAME:     'isucoin'
       ISU_PUBLIC_DIR:  '/public'
+      ISU_DATA_DIR:    '/data'
     links:
       - mysql
-      - mockservice
     working_dir: /go/src/webapp
     volumes:
-      - gopath:/go
       - ./go:/go/src/webapp
       - ./public:/public
+      - ./sql:/data
 
   mysql:
     image: mysql:8
@@ -48,6 +51,7 @@ services:
     volumes:
       - mysql:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
+      - ./mysql/conf.d:/etc/mysql/conf.d
 
 volumes:
   gopath:

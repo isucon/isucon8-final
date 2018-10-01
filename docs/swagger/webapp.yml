@@ -199,6 +199,9 @@ paths:
                 type: array
                 items:
                   $ref: "#/definitions/CandlestickData"
+              enable_share:
+                type: boolean
+                description: SNSへのシェアボタンを有効化するかどうか
         401:
           description: "Unauthorized"
 

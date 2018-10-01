@@ -20,17 +20,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kayac/inhouse-isucon-2018/bench"
+	"github.com/ken39arg/isucon2018-final/bench"
 	"github.com/pkg/errors"
 )
 
 var (
-	//groupName  = os.Getenv("ISU7_GROUP_NAME")
-	groupName  = "1"
-	errNoJob   = errors.Errorf("No task: %s", groupName)
-	nodeName   = "unknown"
-	portalUrl  = flag.String("portal", "http://172.18.0.1:3333", "portal host")
-	pathPrefix = flag.String("prefix", "kayacno-isuisuconconisuconcon/", "path prefix")
+	errNoJob   = errors.New("No task")
+	hostname   = "unknown"
+	pathPrefix = "bench/"
+
+	portalUrl = flag.String("portal", "http://172.18.0.1:3333", "portal host")
+	tempDir   = flag.String("temdir", "", "path to temp dir")
 )
 
 type BenchResult struct {
@@ -49,28 +49,44 @@ type BenchResult struct {
 }
 
 type Job struct {
-	ID      int    `json:"id"`
-	TeamID  int    `json:"team_id"`
-	IPAddrs string `json:"ip_addrs"`
+	ID       int    `json:"id"`
+	TeamID   int    `json:"team_id"`
+	TargetIP string `json:"target_ip"`
 }
 
 func main() {
 	flag.Parse()
-	if err := run(); err != nil {
-		log.Fatal(err)
+
+	portal := strings.TrimSuffix(*portalUrl, "/")
+	run(*tempDir, portal)
+}
+
+func updateHostname() {
+	name, err := os.Hostname()
+	if err == nil {
+		hostname = name
 	}
 }
 
-func run() (err error) {
-	*portalUrl = strings.TrimSuffix(*portalUrl, "/")
+func run(tempDir, portalUrl string) {
+	for _, arg := range os.Args {
+		if strings.HasPrefix(arg, "-remotes") ||
+			strings.HasPrefix(arg, "-output") {
+			log.Fatalln("Cannot use the option", arg, "on workermode")
+		}
+	}
 
-	nodeName, err = os.Hostname()
-	if err != nil {
-		return errors.Wrap(err, "cannnot get Hostname()")
+	updateHostname()
+
+	var baseArgs []string
+	for _, arg := range os.Args {
+		if !strings.HasPrefix(arg, "-workermode") {
+			baseArgs = append(baseArgs, arg)
+		}
 	}
 
 	getUrl := func(path string) (*url.URL, error) {
-		u, err := url.Parse(*portalUrl + path)
+		u, err := url.Parse(portalUrl + path)
 		if err != nil {
 			return nil, err
 		}
@@ -81,12 +97,15 @@ func run() (err error) {
 	}
 
 	getJob := func() (*Job, error) {
-		u, err := getUrl("/" + *pathPrefix + "job/new")
+		u, err := getUrl("/" + pathPrefix + "job")
 		if err != nil {
 			return nil, err
 		}
 
-		res, err := http.PostForm(u.String(), url.Values{"bench_node": {nodeName}, "bench_group": {groupName}})
+		q := u.Query()
+		q.Set("hostname", hostname)
+		u.RawQuery = q.Encode()
+		res, err := http.Get(u.String())
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +139,7 @@ func run() (err error) {
 		}
 	}
 
-	postResult := func(job *Job, result BenchResult, l io.Reader) error {
+	postResult := func(job *Job, result BenchResult, l io.Reader, aborted bool) error {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 
@@ -136,13 +155,16 @@ func run() (err error) {
 
 		writer.Close()
 
-		u, err := getUrl("/" + *pathPrefix + "job/result")
+		u, err := getUrl("/" + pathPrefix + "job/result")
 		if err != nil {
 			return err
 		}
 
 		q := u.Query()
-		q.Set("jobid", fmt.Sprint(job.ID))
+		q.Set("job_id", fmt.Sprint(job.ID))
+		if aborted {
+			q.Set("is_aborted", "1")
+		}
 		u.RawQuery = q.Encode()
 
 		req, err := http.NewRequest("POST", u.String(), body)
@@ -169,31 +191,38 @@ func run() (err error) {
 
 	for {
 		job := getJobLoop()
-
 		out := &bytes.Buffer{}
 		result := func() BenchResult {
 			result := BenchResult{
 				JobID:     strconv.Itoa(job.ID),
-				IPAddrs:   job.IPAddrs,
+				IPAddrs:   job.TargetIP,
 				StartTime: time.Now(),
 			}
-			bm, err := bench.NewBenchmarker(out, bench.BenchmarkerParams{
-				Domain: "http://" + job.IPAddrs,
-				Time:   time.Minute,
-			})
+			var (
+				// TODO
+				bankEndpoint           string
+				loggerEndpoint         string
+				bankInternalEndpoint   string
+				loggerInternalEndpoint string
+			)
+			mgr, err := bench.NewManager(out, "http://"+job.TargetIP, bankEndpoint, loggerEndpoint, bankInternalEndpoint, loggerInternalEndpoint)
 			if err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("benchmarker の初期化に失敗しました. err: %s", err))
 				result.Message = "システムエラーです。運営に連絡してください"
 				return result
 			}
+			defer mgr.Close()
+			bm := bench.NewRunner(mgr)
 			if err = bm.Run(context.Background()); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("benchmark が正常に終了しませんでした. err: %s", err))
-				result.Message = "システムエラーです。運営に連絡してください"
-				return result
+				result.Errors = append(result.Errors, err.Error())
 			}
-			result.Pass = 0 < bm.Score()
-			result.Score = bm.Score()
-			result.LoadLevel = bm.LoadLevel()
+			bm.Result()
+
+			result.Score = mgr.TotalScore()
+			result.Pass = 0 < result.Score
+			result.LoadLevel = int(mgr.GetLevel())
+			// TODO
+			// result.Logs
 			if result.Pass {
 				result.Message = "Success"
 			} else {
@@ -202,15 +231,14 @@ func run() (err error) {
 			return result
 		}()
 		result.EndTime = time.Now()
+		aborted := false // TODO
 
-		err = postResult(job, result, out)
-		if err != nil {
+		if err := postResult(job, result, out, aborted); err != nil {
 			log.Println(err)
 		}
 
 		time.Sleep(time.Second)
 	}
-	return nil
 }
 
 func init() {

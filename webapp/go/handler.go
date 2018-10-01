@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -88,11 +90,12 @@ func errcode(err string, code int) error {
 	return errcodeWrap(errors.New(err), code)
 }
 
-func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler {
+func NewServer(db *sql.DB, store sessions.Store, publicdir, datadir string) http.Handler {
 
 	h := &Handler{
-		db:    db,
-		store: store,
+		db:      db,
+		store:   store,
+		datadir: datadir,
 	}
 
 	router := httprouter.New()
@@ -104,18 +107,40 @@ func NewServer(db *sql.DB, store sessions.Store, publicdir string) http.Handler 
 	router.POST("/orders", h.AddOrders)
 	router.GET("/orders", h.GetOrders)
 	router.DELETE("/order/:id", h.DeleteOrders)
-	router.NotFound = http.FileServer(http.Dir(publicdir))
+	router.NotFound = http.FileServer(http.Dir(publicdir)).ServeHTTP
 
 	return h.commonHandler(router)
 }
 
 type Handler struct {
-	db    *sql.DB
-	store sessions.Store
+	db      *sql.DB
+	store   sessions.Store
+	datadir string
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	cmd := exec.Command("sh", h.datadir+"/init")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
+		return
+	}
 	err := txScorp(h.db, func(tx *sql.Tx) error {
+		var dt time.Time
+		if err := tx.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
+			return errors.Wrap(err, "get last traded")
+		}
+		diffmin := int64(time.Now().Sub(dt).Minutes())
+		if _, err := tx.Exec("update trade set created_at = (created_at + interval ? minute)", diffmin); err != nil {
+			return errors.Wrap(err, "update trade.created_at")
+		}
+		if _, err := tx.Exec("update orders set created_at = (created_at + interval ? minute)", diffmin); err != nil {
+			return errors.Wrap(err, "update orders.created_at")
+		}
+		if _, err := tx.Exec("update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null", diffmin); err != nil {
+			return errors.Wrap(err, "update orders.closed_at")
+		}
 		query := `INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`
 		for _, k := range []string{
 			BankEndpoint,
@@ -127,20 +152,12 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 				return errors.Wrapf(err, "set setting failed. %s", k)
 			}
 		}
-		for _, q := range []string{
-			"DELETE FROM user",
-			"DELETE FROM orders",
-			"DELETE FROM trade",
-		} {
-			if _, err := tx.Exec(q); err != nil {
-				return errors.Wrapf(err, "query failed. %s", q)
-			}
-		}
 		return nil
 	})
 	if err != nil {
 		h.handleError(w, err, 500)
 	} else {
+		time.Sleep(10 * time.Second)
 		h.handleSuccess(w, empty)
 	}
 }
@@ -354,6 +371,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	default:
 		res["highest_buy_price"] = highestBuyOrder.Price
 	}
+	res["enable_share"] = false
 
 	h.handleSuccess(w, res)
 }
@@ -570,7 +588,7 @@ func (h *Handler) userByRequest(r *http.Request) (*User, error) {
 	if id, ok := v.(int64); ok {
 		return getUserByID(h.db, id)
 	}
-	return nil, errors.New("Not userByRequestenticate")
+	return nil, errors.New("Not authenticated")
 }
 
 func (h *Handler) handleSuccess(w http.ResponseWriter, data interface{}) {

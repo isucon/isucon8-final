@@ -9,18 +9,14 @@ import (
 )
 
 type Runner struct {
-	mgr      *Manager
-	timeout  time.Duration
-	interval time.Duration
-	done     chan struct{}
+	mgr  *Manager
+	done chan struct{}
 }
 
-func NewRunner(mgr *Manager, timeout, interval time.Duration) *Runner {
+func NewRunner(mgr *Manager) *Runner {
 	return &Runner{
-		mgr:      mgr,
-		timeout:  timeout,
-		interval: interval,
-		done:     make(chan struct{}),
+		mgr:  mgr,
+		done: make(chan struct{}),
 	}
 }
 
@@ -71,7 +67,7 @@ func (r *Runner) runBenchmark(ctx context.Context) error {
 
 	go r.runTicker(worker)
 
-	wc, cancel := context.WithTimeout(ctx, r.timeout)
+	wc, cancel := context.WithTimeout(ctx, BenchMarkTime)
 	defer cancel()
 	err = worker.Run(wc, tasks)
 	if err == context.DeadlineExceeded {
@@ -109,7 +105,7 @@ func (r *Runner) runTicker(worker *taskworker.Worker) {
 		select {
 		case <-r.done:
 			return
-		case <-time.After(r.interval):
+		case <-time.After(TickerInterval):
 			// nextが終わってから次のloopとしたいのでtickerではない
 			tasks, err := r.mgr.Next()
 			if err != nil {

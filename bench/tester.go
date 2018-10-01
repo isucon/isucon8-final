@@ -3,6 +3,7 @@ package bench
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
@@ -11,28 +12,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type tester struct {
+type PreTester struct {
 	appep   string
 	isulog  *isulog.Isulog
 	isubank *isubank.Isubank
 }
 
-func newtester(a string, l *isulog.Isulog, b *isubank.Isubank) *tester {
-	return &tester{a, l, b}
-}
-
-type PreTester struct {
-	*tester
-}
-
-func NewPreTester(a string, l *isulog.Isulog, b *isubank.Isubank) *PreTester {
-	return &PreTester{
-		tester: newtester(a, l, b),
-	}
-}
-
 func (t *PreTester) Run() error {
+	// TODO: 並列化できるところをする
 	now := time.Now()
+	var highestBuyPrice, lowestSellPrice int64
+
 	account1 := fmt.Sprintf("asuzuki%d@isucon.net", now.Unix())
 	account2 := fmt.Sprintf("tmorris%d@isucon.net", now.Unix())
 	name1, name2 := "鈴木 明", "トニー モリス"
@@ -61,7 +51,21 @@ func (t *PreTester) Run() error {
 		if info.TradedOrders != nil && len(info.TradedOrders) > 0 {
 			return errors.Errorf("GET /info ゲストユーザーのtraded_ordersが設定されています")
 		}
-		// TODO 初期データを入れてテスト
+		if info.LowestSellPrice <= info.HighestBuyPrice {
+			// 注文個数によってはあり得るのでそうならないシナリオにしたい
+			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
+		}
+		highestBuyPrice, lowestSellPrice = info.HighestBuyPrice, info.LowestSellPrice
+		// TODO: more test CandlestickData
+		if len(info.ChartBySec) < 5742 {
+			return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
+		}
+		if len(info.ChartByMin) < 98 {
+			return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
+		}
+		if len(info.ChartByHour) < 2 {
+			return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
+		}
 	}
 	{
 		// アカウントがない
@@ -77,6 +81,49 @@ func (t *PreTester) Run() error {
 			return errors.Wrap(err, "POST /signin に失敗しました")
 		}
 	}
+	{
+		// 既存ユーザー
+		defaultaccounts := []struct {
+			account, name, pass string
+			order, traded       int
+		}{
+			{"59yyu6fu7g", "藍田 麻美", "xbcw43ezg79gp9", 137, 131},
+			{"cda92cfda9", "菅谷 翔", "r2ejjzbqsby2ju", 125, 120},
+			{"kjcbfebp5", "斎藤 真美", "mnxpq6v3p9xafny", 100, 99},
+		}
+		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
+		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)
+		if err != nil {
+			return errors.Wrap(err, "create new client failed")
+		}
+		if err := gc.Signin(); err != nil {
+			return err
+		}
+		info, err := gc.Info(0)
+		if err != nil {
+			return err
+		}
+		if len(info.TradedOrders) < gd.traded {
+			return errors.Errorf("GET /info traded_ordersの件数が少ないです")
+		}
+		orders, err := gc.GetOrders()
+		if err != nil {
+			return err
+		}
+		if o := len(orders); o < gd.traded || gd.order < o {
+			return errors.Errorf("GET /orders 件数があいません")
+		}
+		count := 0
+		for _, o := range orders {
+			if o.Trade != nil {
+				count++
+			}
+		}
+		if count != len(info.TradedOrders) {
+			return errors.Errorf("GET /orders trade が正しく設定されていない可能性があります")
+		}
+	}
+
 	{
 		// BANK IDが存在しない
 		err := c1.Signup()
@@ -165,7 +212,7 @@ func (t *PreTester) Run() error {
 
 	// 売り注文は成功する
 	{
-		o, err := c1.AddOrder(TradeTypeSell, 1, 2000)
+		o, err := c1.AddOrder(TradeTypeSell, 1, highestBuyPrice+1000)
 		if err != nil {
 			return err
 		}
@@ -203,19 +250,20 @@ func (t *PreTester) Run() error {
 	}
 
 	{
+		_ = lowestSellPrice // TODO 価格帯をいい感じにする
 		// 注文をして成立させる
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
 			log.Printf("[INFO] run c1 tasks")
-			if err := t.isubank.AddCredit(account1, 550); err != nil {
+			if err := t.isubank.AddCredit(account1, 29000); err != nil {
 				return err
 			}
 			for _, ap := range [][]int64{
-				{5, 100}, // キャンセルされる
-				{2, 80},
-				{1, 90},
-				{3, 99},  // 足りない
-				{2, 100}, // 99とマッチング
+				{5, 5105}, // キャンセルされる
+				{2, 5100},
+				{1, 5099},
+				{3, 5104}, // 足りない
+				{2, 5106}, // 99とマッチング
 			} {
 				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
@@ -226,7 +274,7 @@ func (t *PreTester) Run() error {
 					return err
 				}
 				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 順番が注文時間の昇順になっていません % v", orders)
+					return errors.Errorf("GET /orders 買い注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
 				}
 			}
 			log.Printf("[INFO] send order finish")
@@ -272,7 +320,7 @@ func (t *PreTester) Run() error {
 			if err != nil {
 				return err
 			}
-			if rest+buyed != 550 {
+			if rest+buyed != 29000 {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK(c1)")
@@ -340,12 +388,12 @@ func (t *PreTester) Run() error {
 		eg.Go(func() error {
 			log.Printf("[INFO] run c2 tasks")
 			for _, ap := range [][]int64{
-				{6, 100},
-				{2, 105},
-				{3, 100},
-				{7, 99}, // 足りない
-				{1, 99}, // - 2, 100
-				{1, 99}, // -
+				{6, 5106},
+				{2, 5110},
+				{3, 5106},
+				{7, 5104}, // 足りない
+				{1, 5104}, // - 2, 100
+				{1, 5104}, // -
 			} {
 				order, err := c2.AddOrder(TradeTypeSell, ap[0], ap[1])
 				if err != nil {
@@ -356,7 +404,7 @@ func (t *PreTester) Run() error {
 					return err
 				}
 				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 順番が注文時間の昇順になっていません % v", orders)
+					return errors.Errorf("GET /orders 売り注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
 				}
 			}
 			err := func() error {
@@ -472,17 +520,152 @@ func (t *PreTester) Run() error {
 }
 
 type PostTester struct {
-	*tester
-}
-
-func NewPostTester(a string, l *isulog.Isulog, b *isubank.Isubank) *PostTester {
-	return &PostTester{
-		tester: newtester(a, l, b),
-	}
+	appep     string
+	isulog    *isulog.Isulog
+	isubank   *isubank.Isubank
+	investors []Investor
 }
 
 func (t *PostTester) Run() error {
-	return nil
+	deadline := time.Now().Add(LogAllowedDelay)
+	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
+	var trade *Trade
+	for _, investor := range t.investors {
+		for _, order := range investor.Orders() {
+			if order.Trade != nil {
+				if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
+					trade = order.Trade
+					latest = investor
+				}
+			}
+		}
+	}
+	eg := new(errgroup.Group)
+
+	eg.Go(func() error {
+		timeout := time.After(deadline.Sub(time.Now()))
+		next := make(chan bool, 1)
+		defer close(next)
+		next <- true
+		for {
+			select {
+			case <-timeout:
+				return errors.Errorf("ログが欠損しています [trade:%d]", trade.ID)
+			case <-next:
+				logs, err := t.isulog.GetTradeLogs(trade.ID)
+				if err != nil {
+					return errors.Wrap(err, "isulog get trade logs failed")
+				}
+				ok := func() bool {
+					if countLog(logs, isulog.TagTrade) < 1 {
+						return false
+					}
+					var bnum, snum int64
+					for _, l := range filetrLogs(logs, isulog.TagBuyTrade) {
+						bnum += l.BuyTrade.Amount
+					}
+					for _, l := range filetrLogs(logs, isulog.TagSellTrade) {
+						snum += l.SellTrade.Amount
+					}
+					if bnum != trade.Amount || snum != trade.Amount {
+						return false
+					}
+					return true
+				}()
+				if ok {
+					log.Printf("[INFO] 取引ログチェックOK [trade:%d]", trade.ID)
+					return nil
+				}
+			}
+			time.Sleep(PollingInterval)
+			next <- true
+		}
+	})
+	for _, inv := range []Investor{first, latest, random} {
+
+		investor := inv
+		eg.Go(func() error {
+			timeout := time.After(deadline.Sub(time.Now()))
+			if err := investor.FetchOrders(); err != nil {
+				return err
+			}
+			credit, err := t.isubank.GetCredit(investor.BankID())
+			if err != nil {
+				return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
+			}
+			if credit != investor.Credit() {
+				return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+			}
+			var buy, sell, buyt, sellt, buyd, selld int
+			for _, order := range investor.Orders() {
+				switch order.Type {
+				case TradeTypeBuy:
+					buy++
+					if order.TradeID > 0 {
+						buyt++
+					} else if order.Removed() {
+						buyd++
+					}
+				case TradeTypeSell:
+					sell++
+					if order.TradeID > 0 {
+						sellt++
+					} else if order.Removed() {
+						selld++
+					}
+				}
+			}
+			next := make(chan bool, 1)
+			defer close(next)
+			next <- true
+			for {
+				select {
+				case <-timeout:
+					return errors.Errorf("ログが欠損しています [user:%d]", investor.UserID())
+				case <-next:
+					logs, err := t.isulog.GetUserLogs(investor.UserID())
+					if err != nil {
+						return errors.Wrap(err, "isulog get user logs failed")
+					}
+					ok := func() bool {
+						if countLog(logs, isulog.TagSignup) == 0 {
+							return false
+						}
+						if countLog(logs, isulog.TagSignin) == 0 {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyOrder) < buy {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyTrade) < buyt {
+							return false
+						}
+						if countLog(logs, isulog.TagBuyDelete) < buyd {
+							return false
+						}
+						if countLog(logs, isulog.TagSellOrder) < sell {
+							return false
+						}
+						if countLog(logs, isulog.TagSellTrade) < sellt {
+							return false
+						}
+						if countLog(logs, isulog.TagSellDelete) < selld {
+							return false
+						}
+						return true
+					}()
+					if ok {
+						log.Printf("[INFO] ユーザーログチェックOK [user:%d]", investor.UserID())
+						return nil
+					}
+				}
+				time.Sleep(PollingInterval)
+				next <- true
+			}
+		})
+	}
+
+	return eg.Wait()
 }
 
 func filetrLogs(logs []*isulog.Log, tag string) []*isulog.Log {
@@ -493,4 +676,14 @@ func filetrLogs(logs []*isulog.Log, tag string) []*isulog.Log {
 		}
 	}
 	return ret
+}
+
+func countLog(logs []*isulog.Log, tag string) int {
+	r := 0
+	for _, l := range logs {
+		if l.Tag == tag {
+			r++
+		}
+	}
+	return r
 }
