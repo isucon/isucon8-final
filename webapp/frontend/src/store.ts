@@ -33,9 +33,11 @@ export default new Vuex.Store({
       commit('setModalType', 'signin')
       commit('openModal')
     },
-    async getInfo({ commit }) {
+    async getInfo({ commit }, cursor?) {
+      const config = cursor ? { params: { cursor } } : undefined
+
       try {
-        const response = await axios.get('/info')
+        const response = await axios.get('/info', config)
         commit('setInfo', response.data)
       } catch (error) {
         // tslint:disable
