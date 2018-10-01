@@ -70,7 +70,7 @@ func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
 		return nil, errors.Wrap(err, "GetOrderByIDWithLock sell_order")
 	}
 	if order.ClosedAt != nil {
-		return nil, errClosedOrder
+		return nil, ErrOrderAlreadyClosed
 	}
 	order.User, err = GetUserByIDWithLock(tx, order.UserID)
 	if err != nil {
