@@ -34,7 +34,7 @@ export default new Vuex.Store({
       commit('openModal')
     },
     async getInfo({ commit }, cursor?) {
-      const config = cursor ? { params: { cursor } } : undefined
+      const config = cursor ? { params: { cursor: cursor + 1 } } : undefined
 
       try {
         const response = await axios.get('/info', config)
