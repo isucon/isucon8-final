@@ -59,7 +59,6 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 }
 
 func (c *Manager) Close() {
-	close(c.idlist)
 	for _, i := range c.investors {
 		i.Close()
 	}
