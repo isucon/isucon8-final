@@ -183,28 +183,25 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	}
 
 	bySecTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
-	chartBySec, err := model.GetCandlestickData(h.db, bySecTime, "%Y-%m-%d %H:%i:%s")
+	res["chart_by_sec"], err = model.GetCandlestickData(h.db, bySecTime, "%Y-%m-%d %H:%i:%s")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by sec"), 500)
 		return
 	}
-	res["chart_by_sec"] = chartBySec
 
 	byMinTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
-	chartByMin, err := model.GetCandlestickData(h.db, byMinTime, "%Y-%m-%d %H:%i:00")
+	res["chart_by_min"], err = model.GetCandlestickData(h.db, byMinTime, "%Y-%m-%d %H:%i:00")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by min"), 500)
 		return
 	}
-	res["chart_by_min"] = chartByMin
 
 	byHourTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
-	chartByHour, err := model.GetCandlestickData(h.db, byHourTime, "%Y-%m-%d %H:00:00")
+	res["chart_by_hour"], err = model.GetCandlestickData(h.db, byHourTime, "%Y-%m-%d %H:00:00")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by hour"), 500)
 		return
 	}
-	res["chart_by_hour"] = chartByHour
 
 	lowestSellOrder, err := model.GetLowestSellOrder(h.db)
 	switch {
@@ -236,13 +233,12 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 		h.handleError(w, err, 401)
 		return
 	}
-
+	amount, _ := strconv.ParseInt(r.FormValue("amount"), 10, 64)
+	price, _ := strconv.ParseInt(r.FormValue("price"), 10, 64)
 	var order *model.Order
-	err = h.txScorp(func(tx *sql.Tx) error {
-		amount, _ := strconv.ParseInt(r.FormValue("amount"), 10, 64)
-		price, _ := strconv.ParseInt(r.FormValue("price"), 10, 64)
+	err = h.txScorp(func(tx *sql.Tx) (err error) {
 		order, err = model.AddOrder(tx, r.FormValue("type"), user.ID, amount, price)
-		return err
+		return
 	})
 	switch {
 	case err == model.ErrParameterInvalid || err == model.ErrCreditInsufficient:
@@ -293,11 +289,7 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 		h.handleError(w, err, 401)
 		return
 	}
-	id, err := strconv.ParseInt(p.ByName("id"), 10, 64)
-	if err != nil {
-		h.handleError(w, errors.Wrap(err, "id parse failed"), 400)
-		return
-	}
+	id, _ := strconv.ParseInt(p.ByName("id"), 10, 64)
 	err = h.txScorp(func(tx *sql.Tx) error {
 		return model.DeleteOrder(tx, user.ID, id, "canceled")
 	})
