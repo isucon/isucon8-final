@@ -4,17 +4,26 @@
     <div id="content">
       <router-view/>
     </div>
+    <Modal v-if="isModalOpen"/>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapState } from 'vuex'
 import Header from '@/components/Header.vue'
+import Modal from '@/components/Modal.vue'
 
 export default Vue.extend({
   name: 'App',
+
   components: {
     Header,
+    Modal,
+  },
+
+  computed: {
+    ...mapState(['isModalOpen']),
   },
 })
 </script>

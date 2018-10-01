@@ -2,17 +2,22 @@
   <header class='header'>
     <h1 class='title'>ISUCOIN</h1>
     <ul class="list">
-      <li class="item">Sign up</li>
-      <li class="item">Sign in</li>
+      <li class="item" @click="openSignupModal()">Sign up</li>
+      <li class="item" @click="openSigninModal()">Sign in</li>
     </ul>
   </header>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapActions, mapMutations } from 'vuex'
 
 export default Vue.extend({
   name: 'Header',
+
+  methods: {
+    ...mapActions(['openSignupModal', 'openSigninModal']),
+  },
 })
 </script>
 
