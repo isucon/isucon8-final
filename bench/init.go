@@ -2,6 +2,7 @@ package bench
 
 import (
 	"log"
+	"os"
 	"time"
 )
 
@@ -15,4 +16,5 @@ func init() {
 
 	// 見せない内部ログ用
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
+	log.SetOutput(os.Stderr)
 }

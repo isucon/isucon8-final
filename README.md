@@ -3,7 +3,7 @@
 #### 起動方法
 
     cd webapp
-    docker-compose up [-d] isucoin-go
+    docker-compose up [-d]
 
 ### mockserviceの利用
 
@@ -39,3 +39,12 @@ benchマーカーと対になるように用意したい
         -logep=https://compose.isucon8.flying-chair.net:5516 \
         -internalbank=https://localhost.isucon8.flying-chair.net:5515 \
         -internallog=https://localhost.isucon8.flying-chair.net:5516 \
+        -result=/path/to/result.json \
+        -log=/path/to/stderr.log
+
+    # 上記はdefaultなので下記で良いです
+    go run ./bench/cmd/bench/main.go
+
+    # defaultのresultはstdout, logはstderrなのでjqを使うと結果が見やすいです
+    go run ./bench/cmd/bench/main.go | jq .
+
