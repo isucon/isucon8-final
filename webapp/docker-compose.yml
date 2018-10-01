@@ -1,5 +1,16 @@
 version: '2'
 services:
+  mockservice:
+   image: golang:1.10
+   working_dir: /go/src/mockservice
+   volumes:
+     - gopath:/go
+     - ./mockservice:/go/src/mockservice
+   ports:
+     - "14690:14690"
+     - "14809:14809"
+   command: sh ./docker-run.sh
+
   nginx:
     image: nginx:1.15.3-alpine
     volumes:
@@ -43,4 +54,5 @@ services:
       - ./mysql/conf.d:/etc/mysql/conf.d
 
 volumes:
+  gopath:
   mysql:

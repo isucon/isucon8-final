@@ -13,7 +13,7 @@ blackbox APIを利用するためmockserverを利用する方法です。
 
 上記のdocker-composeでappを起動している場合mockserviceは一緒に起動しますが `/initialize` でmockserviceを使うように指定する必要があります。
 
-    curl http://127.0.0.1:12510/initialize \
+    curl https://localhost.isucon8.flying-chair.net/initialize \
         -d bank_endpoint=http://mockservice:14809 \
         -d bank_appid=mockbank \
         -d log_endpoint=http://mockservice:14690 \
@@ -34,7 +34,8 @@ benchマーカーと対になるように用意したい
 ## bench
 
     go run ./bench/cmd/bench/main.go \
-        -appep=http://127.0.0.1:12510 \
+        -appep=https://localhost.isucon8.flying-chair.net \
         -bankep=https://compose.isucon8.flying-chair.net:5515 \
         -logep=https://compose.isucon8.flying-chair.net:5516 \
-        -internalbank=https://localhost.isucon8.flying-chair.net:5515
+        -internalbank=https://localhost.isucon8.flying-chair.net:5515 \
+        -internallog=https://localhost.isucon8.flying-chair.net:5516 \
