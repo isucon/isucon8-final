@@ -13,6 +13,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapActions } from 'vuex'
 import Price from '@/components/Price.vue'
 import Chart from '@/components/Chart.vue'
 import Order from '@/components/Order.vue'
@@ -20,11 +21,20 @@ import Log from '@/components/Log.vue'
 
 export default Vue.extend({
   name: 'home',
+
   components: {
     Price,
     Chart,
     Order,
     Log,
+  },
+
+  mounted() {
+    this.getInfo()
+  },
+
+  methods: {
+    ...mapActions(['getInfo']),
   },
 })
 </script>
