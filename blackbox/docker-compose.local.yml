@@ -4,16 +4,22 @@ services:
     image: openresty/openresty:1.13.6.2-alpine
     volumes:
       - ./nginx:/etc/nginx:ro
-    network_mode: host
+    ports:
+      - "5515:5515"
+      - "5516:5516"
+    links:
+      - isubank
+      - logger
     command:
       - "/usr/local/openresty/bin/openresty"
       - "-c"
-      - "/etc/nginx/nginx.conf"
+      - "/etc/nginx/nginx.local.conf"
 
   isubank:
     image: golang:1.11
-    command: bash -c "go get ./... && go run main.go -port=5515 -dbhost=127.0.0.1 -dbuser=root -dbpass=root"
-    network_mode: host
+    command: bash -c "go get ./... && go run main.go -port=5515 -dbhost=mysql -dbuser=root -dbpass=root"
+    links:
+      - mysql
     working_dir: /go/src/bank
     volumes:
       - isubankgopath:/go
@@ -22,7 +28,6 @@ services:
   logger:
     image: golang:1.11
     command: bash -c "go get ./... && go run main.go -port=5516"
-    network_mode: host
     working_dir: /go/src/logger
     volumes:
       - loggergopath:/go
@@ -30,7 +35,6 @@ services:
 
   mysql:
     image: mysql:8
-    network_mode: host
     environment:
       - "TZ=Asia/Tokyo"
       - "MYSQL_ROOT_PASSWORD=root"
