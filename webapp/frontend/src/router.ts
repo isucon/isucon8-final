@@ -13,10 +13,5 @@ export default new Router({
       name: 'top',
       component: Top,
     },
-    {
-      path: '/info',
-      name: 'info',
-      component: () => import(/* webpackChunkName: "info" */ './views/Info.vue'),
-    },
   ],
 })
