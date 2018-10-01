@@ -29,7 +29,7 @@ func GetUserByID(d QueryExecuter, id int64) (*User, error) {
 }
 
 func GetUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
-	return scanUser(tx.QueryRow("SELECT * FROM user WHERE id ? FOR UPDATE", id))
+	return scanUser(tx.QueryRow("SELECT * FROM user WHERE id = ? FOR UPDATE", id))
 }
 
 func UserSignup(tx *sql.Tx, name, bankID, password string) error {
