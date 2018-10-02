@@ -3,8 +3,8 @@
     <h3 class="title">履歴</h3>
     <ul class="orders">
       <li class="order" v-for='order in orders' :key='order.id'>
-        {{ order.price }}
-        <button class="cancel">×</button>
+        {{ `${getDate(order.created_at)}, 脚数: ${order.amount}, 単価: ${order.price}` }}
+        <button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button>
       </li>
     </ul>
   </div>  
@@ -12,13 +12,31 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { mapState } from 'vuex'
+import { mapActions, mapState } from 'vuex'
+import axios from 'axios'
+
+declare const moment: any
 
 export default Vue.extend({
   name: 'Log',
 
   computed: {
     ...mapState(['orders']),
+  },
+
+  methods: {
+    ...mapActions(['getOrders']),
+    async deleteOrders(orderId: number) {
+      try {
+        await axios.delete(`/order/${orderId}`)
+        await this.getOrders()
+      } catch (error) {
+        throw error
+      }
+    },
+    getDate(datestring: string) {
+      return moment(datestring).format('YYYY/MM/DD')
+    },
   },
 })
 </script>
@@ -47,7 +65,7 @@ export default Vue.extend({
   justify-content: space-between
   align-items: center
   margin-bottom: 12px
-  font-size: 16px
+  font-size: 12px
 
 .cancel
   appearance: none
