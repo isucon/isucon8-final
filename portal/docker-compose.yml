@@ -21,7 +21,7 @@ services:
     command:
       - sh
       - "-c"
-      - "carton exec plackup --port 8888 -s Gazelle -E production -a script/isucon8-portal-server"
+      - "exec carton exec start_server --port 8888 -- plackup -s Gazelle -E production -a script/isucon8-portal-server"
     env_file:
       - env.sh
     links:
