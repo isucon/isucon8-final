@@ -33,7 +33,7 @@ var (
 
 	portalUrl = flag.String("portal", "https://portal."+portal.Domain, "portal host")
 	tempDir   = flag.String("temdir", "", "path to temp dir")
-	benchcmd  = flag.String("bench", "bench", "path to temp dir")
+	benchcmd  = flag.String("bench", "bench", "path to benchmark command")
 )
 
 func main() {
