@@ -2,8 +2,7 @@
   <header class='header'>
     <h1 class='title'>ISUCOIN</h1>
     <ul class="list" v-if='user'>
-      <li class="item" >{{ 'ID: ' + user.id }}</li>
-      <li class="item" >{{ 'username: ' + user.name }}</li>
+      <li class="item" >{{ user.name }}</li>
     </ul>
     <ul class="list" v-else>
       <li class="item" @click="openSignupModal()">Sign up</li>
