@@ -2,16 +2,8 @@
   <div class="log">
     <h3 class="title">履歴</h3>
     <ul class="orders">
-      <li class="order">
-        オーダー
-        <button class="cancel">×</button>
-      </li>
-      <li class="order">
-        オーダー
-        <button class="cancel">×</button>
-      </li>
-      <li class="order">
-        オーダー
+      <li class="order" v-for='order in orders' :key='order.id'>
+        {{ order.price }}
         <button class="cancel">×</button>
       </li>
     </ul>
@@ -20,9 +12,14 @@
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapState } from 'vuex'
 
 export default Vue.extend({
   name: 'Log',
+
+  computed: {
+    ...mapState(['orders']),
+  },
 })
 </script>
 
