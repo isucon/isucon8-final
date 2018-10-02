@@ -321,7 +321,17 @@ func (h *Handler) CommonMiddleware(f http.Handler) http.Handler {
 		if _userID, ok := session.Values["user_id"]; ok {
 			userID := _userID.(int64)
 			user, err := model.GetUserByID(h.db, userID)
-			if err != nil {
+			switch {
+			case err == sql.ErrNoRows:
+				session.Values["user_id"] = 0
+				session.Options = &sessions.Options{MaxAge: -1}
+				if err = session.Save(r, w); err != nil {
+					h.handleError(w, err, 500)
+					return
+				}
+				h.handleError(w, errors.New("セッションが切断されました"), 404)
+				return
+			case err != nil:
 				h.handleError(w, err, 500)
 				return
 			}
