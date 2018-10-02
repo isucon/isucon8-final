@@ -38,10 +38,14 @@ export default Vue.extend({
   },
 
   methods: {
-    ...mapActions(['getInfo']),
+    ...mapActions(['getInfo', 'getOrders']),
     async updateInfo() {
       try {
         await this.getInfo(this.info ? this.info.cursor : null)
+        if (this.info && this.info.traded_orders) {
+          this.getOrders()
+        }
+
         setTimeout(() => this.updateInfo(), 1000)
       } catch (error) {
         throw error
