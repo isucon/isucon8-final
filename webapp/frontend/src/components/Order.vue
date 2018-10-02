@@ -2,24 +2,62 @@
   <div class="order">
     <div class="row">
       脚数
-      <input type="text" class="input">
+      <input type="number" class="input" v-model='amount'>
     </div>
     <div class="row">
       単価
-      <input type="text" class="input">
+      <input type="number" class="input" v-model='price'>
     </div>
     <div class="buttons">
-      <button class="button">売り</button>
-      <button class="button">買い</button>
+      <button class="button" @click.prevent='sell()'>売り</button>
+      <button class="button" @click.prevent='buy()'>買い</button>
     </div>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapActions, mapState } from 'vuex'
+import axios from 'axios'
 
 export default Vue.extend({
   name: 'Order',
+
+  data() {
+    return {
+      amount: 0,
+      price: 0,
+    }
+  },
+
+  computed: {
+    ...mapState(['orders']),
+  },
+
+  methods: {
+    ...mapActions(['getOrders']),
+    async postOrders(type: string) {
+      const params = new URLSearchParams()
+      params.append('type', type)
+      params.append('amount', String(this.amount))
+      params.append('price', String(this.price))
+
+      try {
+        const response = await axios.post('/orders', params)
+        if (response.status === 200) {
+          await this.getOrders()
+        }
+      } catch (error) {
+        throw error
+      }
+    },
+    buy() {
+      this.postOrders('buy')
+    },
+    sell() {
+      this.postOrders('sell')
+    },
+  },
 })
 </script>
 

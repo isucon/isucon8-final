@@ -4,6 +4,31 @@ import axios from 'axios'
 
 Vue.use(Vuex)
 
+interface User {
+  id: number
+  name: string
+}
+
+interface Trade {
+  id: number
+  amount: number
+  price: number
+  created_at: ''
+}
+
+interface Order {
+  id: number
+  type: string
+  user_id: number
+  amount: number
+  price: number
+  closed_at: string | null
+  trade_id: number
+  created_at: string
+  user: User
+  trade: Trade
+}
+
 export default new Vuex.Store({
   state: {
     chartType: 'min',
@@ -12,6 +37,7 @@ export default new Vuex.Store({
     info: null,
     isModalOpen: false,
     modalType: 'signup',
+    orders: [],
     user: null,
   },
   mutations: {
@@ -44,6 +70,9 @@ export default new Vuex.Store({
     },
     setUser(state, user) {
       state.user = user
+    },
+    setOrders(state, orders) {
+      state.orders = orders
     },
   },
   actions: {
@@ -80,6 +109,16 @@ export default new Vuex.Store({
         }
       } catch (error) {
         commit('showSigninError')
+        throw error
+      }
+    },
+    async getOrders({ commit }) {
+      try {
+        const response = await axios.get('/orders')
+        if (response.status === 200) {
+          commit('setOrders', response.data as Order[])
+        }
+      } catch (error) {
         throw error
       }
     },

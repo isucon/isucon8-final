@@ -32,7 +32,7 @@ export default Vue.extend({
 <style scoped lang="sass">
 .header
   display: flex
-  justify-content: space-between;
+  justify-content: space-between
   align-items: center
   position: fixed
   top: 0
