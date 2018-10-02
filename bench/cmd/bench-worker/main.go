@@ -31,7 +31,7 @@ var (
 	hostname   = "unknown"
 	pathPrefix = "bench/"
 
-	portalUrl = flag.String("portal", "http://172.18.0.1:3333", "portal host")
+	portalUrl = flag.String("portal", "https://portal."+portal.Domain, "portal host")
 	tempDir   = flag.String("temdir", "", "path to temp dir")
 	benchcmd  = flag.String("bench", "bench", "path to temp dir")
 )
@@ -85,6 +85,10 @@ func run(tempDir, portalUrl string) {
 		j := new(portal.Job)
 		dec := json.NewDecoder(res.Body)
 		err = dec.Decode(j)
+		if err != nil {
+			return nil, err
+		}
+		err = j.Setup()
 		if err != nil {
 			return nil, err
 		}
@@ -170,11 +174,11 @@ func run(tempDir, portalUrl string) {
 
 		var args []string
 		args = append(args, fmt.Sprintf("-jobid=%d", job.ID))
-		args = append(args, fmt.Sprintf("-appep=%s", job.TargetIP))
-		args = append(args, fmt.Sprintf("-bankep=%s", job.BankIP))
-		args = append(args, fmt.Sprintf("-logep=%s", job.LogIP))
-		args = append(args, fmt.Sprintf("-internalbank=%s", job.BankIP))
-		args = append(args, fmt.Sprintf("-internallog=%s", job.LogIP))
+		args = append(args, fmt.Sprintf("-appep=%s", job.TargetURL))
+		args = append(args, fmt.Sprintf("-bankep=%s", job.BankURL))
+		args = append(args, fmt.Sprintf("-logep=%s", job.LogURL))
+		args = append(args, fmt.Sprintf("-internalbank=%s", job.InternalBankURL))
+		args = append(args, fmt.Sprintf("-internallog=%s", job.InternalLogURL))
 		args = append(args, fmt.Sprintf("-result=%s", result))
 		args = append(args, fmt.Sprintf("-log=%s", logpath))
 
