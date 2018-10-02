@@ -2,6 +2,7 @@ package portal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,11 +43,16 @@ func (j *Job) Setup() error {
 	if len(octets) != 4 {
 		return errors.Errorf("invalid IPv4 address: %s", j.TargetIP)
 	}
-	team, num := octets[2], octets[3]
-	j.TargetURL = fmt.Sprintf("https://b%d-%d.%s", num, team, Domain)
-	j.BankURL = fmt.Sprintf("https://bank-%d.%s", team, Domain)
-	j.LogURL = fmt.Sprintf("https://logger-%d.%s", team, Domain)
-	j.InternalBankURL = fmt.Sprintf("https://bank-%d.%s", team, Domain)
-	j.InternalLogURL = fmt.Sprintf("https://loggerp-%d.%s", team, Domain)
+	_team, num := octets[2], octets[3]
+	team, err := strconv.ParseInt(_team, 10, 64)
+	if err != nil {
+		return errors.Errorf("invalid team id %s", _team)
+	}
+	team = team - 1 // bench subnet - 1
+	j.TargetURL = fmt.Sprintf("https://b%s-%s.%s", num, team, Domain)
+	j.BankURL = fmt.Sprintf("https://bank-%s.%s", team, Domain)
+	j.LogURL = fmt.Sprintf("https://logger-%s.%s", team, Domain)
+	j.InternalBankURL = fmt.Sprintf("https://bank-%s.%s", team, Domain)
+	j.InternalLogURL = fmt.Sprintf("https://loggerp-%s.%s", team, Domain)
 	return nil
 }
