@@ -23,7 +23,7 @@ paths:
       summary: "初期化"
       description: |
         ベンチマークの初期化時に一度だけ外部APIに必要な情報をPOSTします
-        このAPIは10秒以内にレスポンスを返す必要があります
+        このAPIは30秒以内にレスポンスを返す必要があります
       operationId: "Initialize"
 
       parameters:
@@ -32,25 +32,24 @@ paths:
         description: ISUBANK API エンドポイント
         required: true
         type: string
-        example: http://isubank.example.com/api/
+
       - name: "bank_appid"
         in: formData
         description: ISUBANK アプリケーションID
         required: true
         type: string
-        example: isubankapp123 
+
       - name: "log_endpoint"
         in: formData
         description: ISU Logger API エンドポイント
         required: true
         type: string
-        example: http://logger.example.com/endpoint/
+
       - name: "log_appid"
         in: formData
         description: ISU Logger アプリケーションID
         required: true
         type: string
-        example: logger123 
 
       produces:
         - "text/plain"
@@ -76,7 +75,7 @@ paths:
         description: "ISUCOIN上で利用するユーザー名"
         required: true
         type: string
-        example: 鈴木 明
+
       - in: formData
         name: bank_id
         description: |
@@ -84,7 +83,7 @@ paths:
           ユニークである必要があります
         required: true
         type: string
-        example: isubankuser123
+
       - in: formData
         name: password 
         description: Password
@@ -122,7 +121,7 @@ paths:
           ユニークである必要があります
         required: true
         type: string
-        example: isubankuser123
+
       - in: formData
         name: password 
         description: Password
@@ -153,7 +152,8 @@ paths:
       - "info"
       summary: "ページ情報取得"
       description: |
-        クライアントはこのAPIをポーリングして情報を取得します
+        クライアントはこのAPIをポーリングして情報を取得します。
+        このAPIは1秒以内の遅延は許容されています
       operationId: "getInfo"
 
       parameters:
@@ -213,6 +213,7 @@ paths:
       description: |
         自分が行ったすべての注文履歴を取得します
         注文履歴には成立した注文は含まれますが、キャンセルした注文は含まれません
+        注文の内容は即座に反映されなければいけません
       operationId: "getOrders"
 
       produces:
@@ -246,13 +247,14 @@ paths:
         required: true
         type: string
         enum: ['buy', 'sell']
-        example: isubankuser123
+
       - in: formData
         name: amount
         description: 注文脚数
         required: true
         type: integer
         minimum: 1
+
       - in: formData
         name: price
         description: |
@@ -393,9 +395,8 @@ definitions:
       low:
         type: integer
         description: 安値
-  OrderLog:
 
-logs:
+x-logs:
   Signup:
     tag: "signup"
     description: "登録時"

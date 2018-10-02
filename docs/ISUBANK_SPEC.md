@@ -1,6 +1,6 @@
-# ISUBANK API
+# いすこん銀行 API
 
-超すごい最新鋭のネット銀行 ISUBANK のAPI
+超すごい最新鋭のネット銀行 いすこん銀行 のAPI
 
 ## End Points
 
@@ -16,8 +16,6 @@ Authorization: Bearer <APP_ID>
 ```
 
 ### `POST /check`
-
-*与信API*
 
 銀行残高を確認します。
 ※ ただし予約分を含みません
@@ -36,13 +34,11 @@ Authorization: Bearer <APP_ID>
 
 ### `POST /reserve`
 
-*決済予約API*
-
 口座から資金を確保し決済予約を行います
 
-reserveの有効期限は1分間
+reserveの有効期限は3分間
 
-1分以内のcommitは保証されます
+3分以内のcommitは保証されます
 
 - request: application/json
     - bank_id
@@ -61,8 +57,6 @@ reserveの有効期限は1分間
 
 ### `POST /commit`
 
-*決済確定API*
-
 reserve APIで予約した決済を確定します
 
 - request: application/json
@@ -76,8 +70,6 @@ reserve APIで予約した決済を確定します
 
 ### `POST /cancel`
 
-*決済取り消しAPI*
-
 reserve APIで予約した決済を取り消します
 
 - request: application/json
@@ -88,27 +80,3 @@ reserve APIで予約した決済を取り消します
         - error: app_id not found
     - status: 404
         - error: reserve_id not found
-
-### `POST /register` (secret API)
-
-*ユーザー登録API*
-
-- request: application/json
-    - bank_id
-
-### `POST /add_credit` (secret API)
-
-*入金API*
-
-- request: application/json
-    - bank_id
-    - price
-
-### `GET /credit` (secret API)
-
-*残高API*
-
-- request: query
-    - bank_id
-- response: application/json
-    - credit
