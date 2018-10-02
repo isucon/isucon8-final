@@ -17,20 +17,13 @@
 #### `GET /`
 
 - response: text/html 
-    - $orders: 自分の注文リスト (ログインしている場合)
-    - $trades: 全体の成立した売買
-    - 売り注文フォーム (未ログインの場合は非活性)
-    - 買い注文フォーム (未ログインの場合は非活性)
-
-- Memo
-    - SPA
 
 ### 登録
 
 #### `POST /signup`
 
 - request: application/form-url-encoded
-    - name
+    - name : 登録名(重複可)
     - bank_id : ISUBANKのid
     - password 
 
@@ -52,24 +45,26 @@
 
 - request: application/form-url-encoded
     - bank_id : ISUBANKのid
-        - id:   $user.id
-        - name: $user.name
     - password 
 
 - response
     - status: 200
+        - id:   $user.id
+        - name: $user.name
     - status: 404
         - error: bank_id or password is not match
 - log
     - tag:signin
         - user_id: $user_id
 
-### 売り注文
+### 注文
 
 #### `POST /orders`
 
 - request: application/form-url-encoded
-    - type:   sell=売り注文, buy=買い注文
+    - type:
+        - sell: 売り注文
+        - buy:  買い注文
     - amount: 注文脚数 (Uint)
     - price:  指値(1脚あたりの最低額) (Uint)
 
@@ -91,10 +86,8 @@
         - error: $error
         - amount: $amount
         - price: $price
-- memo
-    - 買い注文の場合、資金があるか処理前に与信APIを叩く(これを叩かないとfail)
-    - 処理後にマッチングをする
-    - 直後にGET /ordersを叩く
+- note 
+    - 買い注文の場合、資金があるか処理前にISUBANKの残高チェックAPIによって確認をする必要がある
 
 #### `DELETE /order/{id}`
 
@@ -111,10 +104,6 @@
     - tag:{$type}.delete
         - order_id: $order_id
         - reason:   canceled
-
-- memo
-    - 買い注文の場合、資金があるか処理前に与信APIを叩く(これを叩かないとfail)
-    - 処理後にマッチングをする
 
 #### `GET /orders`
 
