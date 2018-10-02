@@ -1,0 +1,31 @@
+version: '2'
+services:
+  app:
+    build: .
+    working_dir: /app
+    ports:
+      - "8888:8888"
+    command:
+      - sh
+      - "-c"
+      - "carton exec plackup --port 8888 -s Gazelle -E production -a script/isucon8-portal-server"
+    env_file:
+      - env.sh
+    links:
+      - mysql
+    volumes:
+      - ./lib:/app/lib
+      - ./tmpl:/app/tmpl
+      - ./static:/app/static
+      - ./script:/app/script
+      - ./log:/app/log
+      - ./config:/app/config
+
+  mysql:
+    image: mysql:5.7
+    environment:
+      - "TZ=Asia/Tokyo"
+      - "MYSQL_ROOT_PASSWORD=root"
+    volumes:
+      - ./mysql:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d

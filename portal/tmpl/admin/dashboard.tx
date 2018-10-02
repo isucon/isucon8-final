@@ -1,0 +1,121 @@
+: cascade "include/admin/layout.tx"
+
+: override content -> {
+<div class="column is-9">
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="/admin">ISUCON8</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Dashboard</a></li>
+        </ul>
+    </nav>
+
+    <section class="hero welcome is-small is-danger">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title">
+                    いままでで最高のアドミン体験
+                </h1>
+                <h2 class="subtitle">すべてがまったく新しい管理ページ。あらゆる情報を思いのままに操ることができます。</h2>
+            </div>
+        </div>
+    </section>
+
+    <section class="graph">
+        <canvas id="myChart" width="400" height="300"></canvas>
+    </section>
+    <section class="table-list">
+        <div class="card events-card">
+            <header class="card-header is-dark">
+                <p class="card-header-title">
+                    <span class="icon">
+                        <i class="fas fa-list-alt"></i>
+                    </span>
+                    <span>Processing Jobs</span>
+                </p>
+            </header>
+            <div class="card-table">
+                <div class="content">
+                    <table class="table is-fullwidth is-striped">
+                        <thead>
+                            <tr>
+                                <th>TeamId</th>
+                                <th>JobId</th>
+                                <th>Status</th>
+                                <th>State</th>
+                                <th>UpdatedAt</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            : for $processiong_jobs -> $row {
+                                <tr>
+                                    <td class="has-text-right"><: $row.team_id :></td>
+                                    <td class="has-text-right"><: $row.id :></td>
+                                    <td><: $row.result_status :></td>
+                                    <td><: $row.state :></td>
+                                    <td><: $row.updated_at | unixtime2time :></td>
+                                    <td><a class="button is-small is-link" href="/admin/jobs/<: $row.id :>">show</a></td>
+                                </tr>
+                            : }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <footer class="card-footer">
+                <a href="/admin/jobs" class="card-footer-item">View All</a>
+            </footer>
+        </div>
+    </section>
+    <section class="table-list">
+        <div class="card events-card">
+            <header class="card-header is-danger">
+                <p class="card-header-title">
+                    <span class="icon">
+                        <i class="fas fa-chart-area"></i>
+                    </span>
+                    <span>Top Teams</span>
+                </p>
+            </header>
+            <div class="card-table">
+                <div class="content">
+                    <table class="table is-fullwidth is-striped">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Id</th>
+                                <th>Name</th>
+                                <th>Members</th>
+                                <th>LatestScore</th>
+                                <th>BestScore</th>
+                                <th>FinishTime</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            : for $scores -> $row {
+                            <tr <: if $row.team_id == $team.id { :>class="is-selected"<: } :>>
+                                <td class="has-text-right"><: $~row.count :></td>
+                                <td class="has-text-right"><: $row.team_id :></td>
+                                <td><a href="/admin/teams/<: $row.team_id :>"><: ellipsis($row.name, 30) :></a></td>
+                                <td class="has-text-right"><: $row.category_display_name :></td>
+                                <td class="has-text-right"><: $row.latest_score | commify :></td>
+                                <td class="has-text-right"><: $row.best_score   | commify :></td>
+                                <td><: $row.updated_at | unixtime2time :></td>
+                            </tr>
+                            : }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <footer class="card-footer">
+                <a href="/admin/scores" class="card-footer-item">View All</a>
+            </footer>
+        </div>
+    </section>
+</div>                
+: }
+
+: override script -> {
+<script>
+: include "include/graph.tx"
+</script>
+: }
