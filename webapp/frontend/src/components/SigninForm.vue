@@ -33,14 +33,15 @@ export default Vue.extend({
   },
 
   methods: {
-    ...mapActions(['signin']),
+    ...mapActions(['signin', 'getOrders']),
     ...mapMutations(['closeModal', 'showSigninError', 'hideSigninError']),
     async postSignin() {
       const data = {
         bank_id: this.bank_id,
         password: this.password,
       }
-      this.signin(data)
+      await this.signin(data)
+      await this.getOrders()
     },
   },
 

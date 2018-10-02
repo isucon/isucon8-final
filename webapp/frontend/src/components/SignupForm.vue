@@ -38,7 +38,7 @@ export default Vue.extend({
   },
 
   methods: {
-    ...mapActions(['signin']),
+    ...mapActions(['signin', 'getOrders']),
     ...mapMutations(['closeModal', 'showSignupError', 'hideSignupError']),
     async signup() {
       const params = new URLSearchParams()
@@ -49,8 +49,12 @@ export default Vue.extend({
       try {
         const response = await axios.post('/signup', params)
         if (response.status === 200) {
-          await this.signin({ bank_id: this.bank_id, password: this.password })
-          this.closeModal()
+          const data = {
+            bank_id: this.bank_id,
+            password: this.password,
+          }
+          await this.signin(data)
+          await this.getOrders()
         }
       } catch (error) {
         this.showSignupError()
