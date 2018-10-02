@@ -135,7 +135,7 @@ func run(tempDir, portalUrl string) {
 		}
 
 		q := u.Query()
-		q.Set("jobid", fmt.Sprint(job.ID))
+		q.Set("job_id", fmt.Sprint(job.ID))
 		if aborted {
 			q.Set("aborted", "yes")
 		}
