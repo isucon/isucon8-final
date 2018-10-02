@@ -1,26 +1,73 @@
 <template>
   <div>
+    <p class="error-message" v-if='hasSignupError'>登録に失敗しました</p>
     <div class="row">
       bank id
-      <input type="text" class="input">
+      <input type="text" class="input" v-model='bank_id'>
     </div>
     <div class="row">
       password
-      <input type="text" class="input">
+      <input type="password" class="input" v-model='password'>
     </div>
-    <button class="button">ログイン</button>
+    <button class="button" @click.prevent='singin()'>ログイン</button>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
+import { mapState, mapMutations } from 'vuex'
+import axios from 'axios'
 
 export default Vue.extend({
   name: 'SigninForm',
+
+  data() {
+    return {
+      bank_id: '',
+      password: '',
+    }
+  },
+
+  computed: {
+    ...mapState(['hasSigninError']),
+  },
+
+  methods: {
+    ...mapMutations(['closeModal', 'showSigninError', 'hideSigninError']),
+    async singin() {
+      const params = new URLSearchParams()
+      params.append('bank_id', this.bank_id)
+      params.append('password', this.password)
+
+      try {
+        const response = await axios.post('/signin', params)
+        if (response.status === 200) {
+          this.closeModal()
+        }
+      } catch (error) {
+        this.showSigninError()
+        throw error
+      }
+    },
+  },
+
+  watch: {
+    bank_id() {
+      this.hideSigninError()
+    },
+    password() {
+      this.hideSigninError()
+    },
+  },
 })
 </script>
 
 <style lang="sass" scoped>
+.error-message
+  font-size: 16px
+  color: rgb(255,0,0)
+  text-align: center
+
 .row
   width: 320px
   margin-bottom: 24px
