@@ -12,6 +12,7 @@
       <button class="button" @click.prevent='sell()'>売り</button>
       <button class="button" @click.prevent='buy()'>買い</button>
     </div>
+    <ShareButton v-if='didOrder' />
   </div>
 </template>
 
@@ -19,13 +20,19 @@
 import Vue from 'vue'
 import { mapActions, mapState } from 'vuex'
 import axios from 'axios'
+import ShareButton from '@/components/ShareButton.vue'
 
 export default Vue.extend({
   name: 'Order',
 
+  components: {
+    ShareButton,
+  },
+
   data() {
     return {
       amount: 0,
+      didOrder: false,
       price: 0,
     }
   },
@@ -45,6 +52,7 @@ export default Vue.extend({
       try {
         const response = await axios.post('/orders', params)
         if (response.status === 200) {
+          this.didOrder = true
           await this.getOrders()
         }
       } catch (error) {
@@ -104,6 +112,7 @@ export default Vue.extend({
   display: block
   border: none
   outline: none
+  margin-bottom: 24px
   padding: 8px 32px
   background-color: rgba(245,245,245,1)
   box-shadow: 0px 3px 1px -2px rgba(0,0,0,0.2), 0px 2px 2px 0px rgba(0,0,0,0.14), 0px 1px 5px 0px rgba(0,0,0,0.12)
