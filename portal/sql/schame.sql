@@ -1,4 +1,4 @@
-USE isucon8q_portal;
+USE isucon8f_portal;
 
 CREATE TABLE IF NOT EXISTS sessions (
     `session_id` varchar(60) NOT NULL,

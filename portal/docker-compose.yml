@@ -1,5 +1,16 @@
 version: '2'
 services:
+  nginx:
+    image: nginx:1.15.3-alpine
+    ports:
+      - "443:443"
+    links:
+      - app
+    volumes:
+      - ./nginx:/etc/nginx
+      - ./static:/app/static
+      - ./log/nginx:/var/log/nginx
+
   app:
     build: .
     working_dir: /app
@@ -18,7 +29,7 @@ services:
       - ./tmpl:/app/tmpl
       - ./static:/app/static
       - ./script:/app/script
-      - ./log:/app/log
+      - ./log/app:/app/log
       - ./config:/app/config
 
   mysql:
@@ -27,5 +38,6 @@ services:
       - "TZ=Asia/Tokyo"
       - "MYSQL_ROOT_PASSWORD=root"
     volumes:
-      - ./mysql:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - ./mysql/data:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
