@@ -1,7 +1,11 @@
 <template>
   <header class='header'>
     <h1 class='title'>ISUCOIN</h1>
-    <ul class="list">
+    <ul class="list" v-if='user'>
+      <li class="item" >{{ 'ID: ' + user.id }}</li>
+      <li class="item" >{{ 'username: ' + user.name }}</li>
+    </ul>
+    <ul class="list" v-else>
       <li class="item" @click="openSignupModal()">Sign up</li>
       <li class="item" @click="openSigninModal()">Sign in</li>
     </ul>
@@ -10,10 +14,14 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { mapActions, mapMutations } from 'vuex'
+import { mapActions, mapMutations, mapState } from 'vuex'
 
 export default Vue.extend({
   name: 'Header',
+
+  computed: {
+    ...mapState(['user']),
+  },
 
   methods: {
     ...mapActions(['openSignupModal', 'openSigninModal']),
