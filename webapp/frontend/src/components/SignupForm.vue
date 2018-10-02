@@ -48,6 +48,22 @@ export default Vue.extend({
       try {
         const response = await axios.post('/signup', params)
         if (response.status === 200) {
+          await this.signin()
+          this.closeModal()
+        }
+      } catch (error) {
+        this.showSignupError()
+        throw error
+      }
+    },
+    async signin() {
+      const params = new URLSearchParams()
+      params.append('bank_id', this.bank_id)
+      params.append('password', this.password)
+
+      try {
+        const response = await axios.post('/signin', params)
+        if (response.status === 200) {
           this.closeModal()
         }
       } catch (error) {
