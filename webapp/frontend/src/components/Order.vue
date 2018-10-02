@@ -17,7 +17,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { mapActions } from 'vuex'
+import { mapActions, mapState } from 'vuex'
 import axios from 'axios'
 
 export default Vue.extend({
@@ -30,6 +30,10 @@ export default Vue.extend({
     }
   },
 
+  computed: {
+    ...mapState(['orders']),
+  },
+
   methods: {
     ...mapActions(['getOrders']),
     async postOrders(type: string) {
@@ -39,8 +43,10 @@ export default Vue.extend({
       params.append('price', String(this.price))
 
       try {
-        await axios.post('/orders', params)
-        await this.getOrders()
+        const response = await axios.post('/orders', params)
+        if (response.status === 200) {
+          await this.getOrders()
+        }
       } catch (error) {
         throw error
       }

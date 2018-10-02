@@ -122,29 +122,5 @@ export default new Vuex.Store({
         throw error
       }
     },
-    async postOrders({ commit }, { type, amount, price }) {
-      const params = {
-        type,
-        amount,
-        price
-      }
-
-      try {
-        await axios.post('/orders', params)
-      } catch (error) {
-        throw error
-      }
-    },
-    async deleteOrders({ commit }, orderId) {
-      const params = {
-        id: orderId 
-      }
-
-      try {
-        await axios.delete('/orders', { params })
-      } catch (error) {
-        throw error
-      }
-    }
   },
 })
