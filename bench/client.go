@@ -52,7 +52,7 @@ type ErrorWithStatus struct {
 func errorWithStatus(err error, code int, body string) *ErrorWithStatus {
 	return &ErrorWithStatus{
 		StatusCode: code,
-		Body:       body,
+		Body:       strings.TrimSpace(body),
 		err:        err,
 	}
 }
