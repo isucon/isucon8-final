@@ -79,6 +79,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	m.Logger().Printf("# post test")
 	if err := m.PostTest(); err != nil {
+		r.fail = true
 		return errors.Wrap(err, "負荷走行後のテストに失敗しました")
 	}
 
