@@ -7,6 +7,8 @@ Vue.use(Vuex)
 export default new Vuex.Store({
   state: {
     chartType: 'min',
+    hasSigninError: false,
+    hasSignupError: false,
     info: null,
     isModalOpen: false,
     modalType: 'signup',
@@ -26,6 +28,18 @@ export default new Vuex.Store({
     },
     setChartType(state, type) {
       state.chartType = type
+    },
+    showSigninError(state) {
+       state.hasSigninError = true
+    },
+    hideSigninError(state) {
+      state.hasSigninError = false
+    },
+    showSignupError(state) {
+      state.hasSignupError = true
+    },
+    hideSignupError(state) {
+      state.hasSignupError = false
     },
   },
   actions: {
