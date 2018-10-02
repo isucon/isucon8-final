@@ -19,7 +19,7 @@
 
 <script lang="ts">
 import Vue from 'vue'
-import { mapState, mapMutations } from 'vuex'
+import { mapActions, mapState, mapMutations } from 'vuex'
 import axios from 'axios'
 
 export default Vue.extend({
@@ -38,6 +38,7 @@ export default Vue.extend({
   },
 
   methods: {
+    ...mapActions(['signin']),
     ...mapMutations(['closeModal', 'showSignupError', 'hideSignupError']),
     async signup() {
       const params = new URLSearchParams()
@@ -48,22 +49,7 @@ export default Vue.extend({
       try {
         const response = await axios.post('/signup', params)
         if (response.status === 200) {
-          await this.signin()
-          this.closeModal()
-        }
-      } catch (error) {
-        this.showSignupError()
-        throw error
-      }
-    },
-    async signin() {
-      const params = new URLSearchParams()
-      params.append('bank_id', this.bank_id)
-      params.append('password', this.password)
-
-      try {
-        const response = await axios.post('/signin', params)
-        if (response.status === 200) {
+          await this.signin({ bank_id: this.bank_id, password: this.password })
           this.closeModal()
         }
       } catch (error) {

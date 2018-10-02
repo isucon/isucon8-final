@@ -12,6 +12,7 @@ export default new Vuex.Store({
     info: null,
     isModalOpen: false,
     modalType: 'signup',
+    user: null,
   },
   mutations: {
     openModal(state) {
@@ -41,6 +42,9 @@ export default new Vuex.Store({
     hideSignupError(state) {
       state.hasSignupError = false
     },
+    setUser(state, user) {
+      state.user = user
+    },
   },
   actions: {
     openSignupModal({ commit }) {
@@ -60,6 +64,22 @@ export default new Vuex.Store({
       } catch (error) {
         // tslint:disable
         console.error('failed to fetch /info')
+        throw error
+      }
+    },
+    async signin({ commit }, { bank_id, password }) {
+      const params = new URLSearchParams()
+      params.append('bank_id', bank_id)
+      params.append('password', password)
+
+      try {
+        const response = await axios.post('/signin', params)
+        if (response.status === 200) {
+          commit('setUser', response.data)
+          commit('closeModal')
+        }
+      } catch (error) {
+        commit('showSigninError')
         throw error
       }
     },

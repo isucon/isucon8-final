@@ -1,6 +1,6 @@
 <template>
   <div>
-    <p class="error-message" v-if='hasSignupError'>登録に失敗しました</p>
+    <p class="error-message" v-if='hasSigninError'>ログインに失敗しました</p>
     <div class="row">
       bank id
       <input type="text" class="input" v-model='bank_id'>
@@ -9,13 +9,13 @@
       password
       <input type="password" class="input" v-model='password'>
     </div>
-    <button class="button" @click.prevent='singin()'>ログイン</button>
+    <button class="button" @click.prevent='postSignin()'>ログイン</button>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue'
-import { mapState, mapMutations } from 'vuex'
+import { mapActions, mapState, mapMutations } from 'vuex'
 import axios from 'axios'
 
 export default Vue.extend({
@@ -33,21 +33,14 @@ export default Vue.extend({
   },
 
   methods: {
+    ...mapActions(['signin']),
     ...mapMutations(['closeModal', 'showSigninError', 'hideSigninError']),
-    async singin() {
-      const params = new URLSearchParams()
-      params.append('bank_id', this.bank_id)
-      params.append('password', this.password)
-
-      try {
-        const response = await axios.post('/signin', params)
-        if (response.status === 200) {
-          this.closeModal()
-        }
-      } catch (error) {
-        this.showSigninError()
-        throw error
+    async postSignin() {
+      const data = {
+        bank_id: this.bank_id,
+        password: this.password,
       }
+      this.signin(data)
     },
   },
 
