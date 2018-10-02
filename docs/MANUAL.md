@@ -91,8 +91,7 @@ chou-daifugo-{001..100}
 TODO: 事前解答ではgolangのみです
 
 ```
-cd webapp
-docker-compose up -d
+sudo systemctl (start|stop) isucon
 ```
 
 ## リカバリ方法
