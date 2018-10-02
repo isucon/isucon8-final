@@ -5,10 +5,10 @@ clean:
 	rm -rf isucoin
 
 init:
+	mkdir -p bin
 	GOPATH=`pwd`; DEP_RELEASE_TAG=v0.5.0 curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 
 deps:
-	mkdir -p bin
 	GOPATH=`pwd`; cd ${GOPATH}/src/isucon8/isucoin; ${GOPATH}/bin/dep ensure
 
 .PHONY: build
