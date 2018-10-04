@@ -15,17 +15,17 @@ const (
 	LogAppid     = "log_appid"
 )
 
-func SetSetting(d QueryExecuter, k, v string) error {
+func SetSetting(d QueryExecutor, k, v string) error {
 	_, err := d.Exec(`INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`, k, v)
 	return err
 }
 
-func GetSetting(d QueryExecuter, k string) (v string, err error) {
+func GetSetting(d QueryExecutor, k string) (v string, err error) {
 	err = d.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
 	return
 }
 
-func Isubank(d QueryExecuter) (*isubank.Isubank, error) {
+func Isubank(d QueryExecutor) (*isubank.Isubank, error) {
 	ep, err := GetSetting(d, BankEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", BankEndpoint)
@@ -37,7 +37,7 @@ func Isubank(d QueryExecuter) (*isubank.Isubank, error) {
 	return isubank.NewIsubank(ep, id)
 }
 
-func Logger(d QueryExecuter) (*isulogger.Isulogger, error) {
+func Logger(d QueryExecutor) (*isulogger.Isulogger, error) {
 	ep, err := GetSetting(d, LogEndpoint)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getSetting failed. %s", LogEndpoint)
@@ -49,7 +49,7 @@ func Logger(d QueryExecuter) (*isulogger.Isulogger, error) {
 	return isulogger.NewIsulogger(ep, id)
 }
 
-func sendLog(d QueryExecuter, tag string, v interface{}) {
+func sendLog(d QueryExecutor, tag string, v interface{}) {
 	logger, err := Logger(d)
 	if err != nil {
 		log.Printf("[WARN] new logger failed. tag: %s, v: %v, err:%s", tag, v, err)

@@ -99,7 +99,7 @@
     - status: 404
         - error: no order
     - status: 40x
-        - error: alreay trade
+        - error: already trade
 - log
     - tag:{$type}.delete
         - order_id: $order_id

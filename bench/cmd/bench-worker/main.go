@@ -32,7 +32,7 @@ var (
 	pathPrefix = "bench/"
 
 	portalUrl = flag.String("portal", "https://portal."+portal.Domain, "portal host")
-	tempDir   = flag.String("temdir", "", "path to temp dir")
+	tempDir   = flag.String("tempdir", "", "path to temp dir")
 	benchcmd  = flag.String("bench", "bench", "path to benchmark command")
 )
 

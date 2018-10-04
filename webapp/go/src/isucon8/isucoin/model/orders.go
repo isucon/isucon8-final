@@ -45,7 +45,7 @@ func scanOrder(r RowScanner) (*Order, error) {
 	return &v, nil
 }
 
-func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, error) {
+func queryOrders(d QueryExecutor, query string, args ...interface{}) ([]*Order, error) {
 	rows, err := d.Query(query, args...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
@@ -65,11 +65,11 @@ func queryOrders(d QueryExecuter, query string, args ...interface{}) ([]*Order, 
 	return orders, nil
 }
 
-func GetOrdersByUserID(d QueryExecuter, userID int64) ([]*Order, error) {
+func GetOrdersByUserID(d QueryExecutor, userID int64) ([]*Order, error) {
 	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC", userID)
 }
 
-func GetOrdersByUserIDAndTradeIds(d QueryExecuter, userID int64, tradeIDs []int64) ([]*Order, error) {
+func GetOrdersByUserIDAndTradeIds(d QueryExecutor, userID int64, tradeIDs []int64) ([]*Order, error) {
 	if len(tradeIDs) == 0 {
 		tradeIDs = []int64{0}
 	}
@@ -99,7 +99,7 @@ func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
 	return order, nil
 }
 
-func getOrderByID(d QueryExecuter, id int64) (*Order, error) {
+func getOrderByID(d QueryExecutor, id int64) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
 }
 
@@ -107,15 +107,15 @@ func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
 	return scanOrder(tx.QueryRow("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
 }
 
-func GetLowestSellOrder(d QueryExecuter) (*Order, error) {
+func GetLowestSellOrder(d QueryExecutor) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1", OrderTypeSell))
 }
 
-func GetHighestBuyOrder(d QueryExecuter) (*Order, error) {
+func GetHighestBuyOrder(d QueryExecutor) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1", OrderTypeBuy))
 }
 
-func FetchOrderRelation(d QueryExecuter, order *Order) error {
+func FetchOrderRelation(d QueryExecutor, order *Order) error {
 	var err error
 	order.User, err = GetUserByID(d, order.UserID)
 	if err != nil {
@@ -198,7 +198,7 @@ func DeleteOrder(tx *sql.Tx, userID, orderID int64, reason string) error {
 	return cancelOrder(tx, order, reason)
 }
 
-func cancelOrder(d QueryExecuter, order *Order, reason string) error {
+func cancelOrder(d QueryExecutor, order *Order, reason string) error {
 	if _, err := d.Exec(`UPDATE orders SET closed_at = NOW(6) WHERE id = ?`, order.ID); err != nil {
 		return errors.Wrap(err, "update orders for cancel")
 	}

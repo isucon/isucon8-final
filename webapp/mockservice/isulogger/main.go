@@ -16,7 +16,7 @@ const (
 )
 
 var (
-	port = flag.Int("port", 14690, "log app ranning port")
+	port = flag.Int("port", 14690, "log app running port")
 	dump = flag.Bool("dump", false, "request dump enable")
 	logw = ioutil.Discard
 )

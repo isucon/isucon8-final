@@ -43,10 +43,10 @@ type investorBase struct {
 	c                 *Client
 	defcredit         int64
 	credit            int64
-	resvedCredit      int64
+	reservedCredit    int64
 	defisu            int64
 	isu               int64
-	resvedIsu         int64
+	reservedIsu       int64
 	orders            []*Order
 	lowestSellPrice   int64
 	highestBuyPrice   int64
@@ -259,7 +259,7 @@ func (i *investorBase) FetchOrders() error {
 		}
 	}
 
-	var resvedCredit, resvedIsu, tradedIsu, tradedCredit int64
+	var reservedCredit, reservedIsu, tradedIsu, tradedCredit int64
 	for _, o := range i.orders {
 		if o.Removed() {
 			continue
@@ -296,14 +296,14 @@ func (i *investorBase) FetchOrders() error {
 			tradedCredit -= order.Amount * order.Trade.Price
 		case order.Type == TradeTypeSell:
 			// 売り注文
-			resvedIsu += order.Amount
+			reservedIsu += order.Amount
 		case order.Type == TradeTypeBuy:
 			// 買い注文
-			resvedCredit += order.Amount * order.Price
+			reservedCredit += order.Amount * order.Price
 		}
 	}
-	i.resvedIsu = resvedIsu
-	i.resvedCredit = resvedCredit
+	i.reservedIsu = reservedIsu
+	i.reservedCredit = reservedCredit
 	i.credit = i.defcredit + tradedCredit
 	i.isu = i.defisu + tradedIsu
 	return nil
@@ -461,8 +461,8 @@ func (i *RandomInvestor) UpdateOrderTask() taskworker.Task {
 	if !update {
 		return nil
 	}
-	logicalCredit := i.credit - i.resvedCredit
-	logicalIsu := i.isu - i.resvedIsu
+	logicalCredit := i.credit - i.reservedCredit
+	logicalIsu := i.isu - i.reservedIsu
 	waitingOrders := make([]*Order, 0, len(i.orders))
 	for _, o := range i.orders {
 		if o.ClosedAt == nil {
