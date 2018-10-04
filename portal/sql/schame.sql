@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS admin_users (
     `name` varchar(64) NOT NULL,
     `password` varchar(64) NOT NULL,
+    `is_visitor` tinyint(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
