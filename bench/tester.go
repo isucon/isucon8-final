@@ -341,7 +341,7 @@ func (t *PreTester) Run() error {
 						}
 						ok, err := func() (bool, error) {
 							var fl []*isulog.Log
-							fl = filetrLogs(logs, isulog.TagSignup)
+							fl = filterLogs(logs, isulog.TagSignup)
 							if len(fl) == 0 {
 								return false, nil
 							}
@@ -351,22 +351,22 @@ func (t *PreTester) Run() error {
 							if fl[0].Signup.BankID != account1 {
 								return false, errors.Errorf("log.signup のbank_idが正しくありません")
 							}
-							fl = filetrLogs(logs, isulog.TagSignin)
+							fl = filterLogs(logs, isulog.TagSignin)
 							if len(fl) == 0 {
 								return false, nil
 							}
-							fl = filetrLogs(logs, isulog.TagBuyError)
+							fl = filterLogs(logs, isulog.TagBuyError)
 							if len(fl) < 2 {
 								return false, nil
 							}
 							if fl[0].BuyError.Amount != 1 || fl[0].BuyError.Price != 2000 {
 								return false, errors.Errorf("log.buy.errorが正しくありません")
 							}
-							fl = filetrLogs(logs, isulog.TagBuyOrder)
+							fl = filterLogs(logs, isulog.TagBuyOrder)
 							if len(fl) < 5 {
 								return false, nil
 							}
-							fl = filetrLogs(logs, isulog.TagBuyTrade)
+							fl = filterLogs(logs, isulog.TagBuyTrade)
 							if len(fl) < 1 {
 								return false, nil
 							}
@@ -473,7 +473,7 @@ func (t *PreTester) Run() error {
 						}
 						ok, err := func() (bool, error) {
 							var fl []*isulog.Log
-							fl = filetrLogs(logs, isulog.TagSignup)
+							fl = filterLogs(logs, isulog.TagSignup)
 							if len(fl) == 0 {
 								return false, nil
 							}
@@ -483,15 +483,15 @@ func (t *PreTester) Run() error {
 							if fl[0].Signup.BankID != account2 {
 								return false, errors.Errorf("log.signup のbank_idが正しくありません")
 							}
-							fl = filetrLogs(logs, isulog.TagSignin)
+							fl = filterLogs(logs, isulog.TagSignin)
 							if len(fl) == 0 {
 								return false, nil
 							}
-							fl = filetrLogs(logs, isulog.TagSellOrder)
+							fl = filterLogs(logs, isulog.TagSellOrder)
 							if len(fl) < 5 {
 								return false, nil
 							}
-							fl = filetrLogs(logs, isulog.TagSellTrade)
+							fl = filterLogs(logs, isulog.TagSellTrade)
 							if len(fl) < 2 {
 								return false, nil
 							}
@@ -561,10 +561,10 @@ func (t *PostTester) Run() error {
 						return false
 					}
 					var bnum, snum int64
-					for _, l := range filetrLogs(logs, isulog.TagBuyTrade) {
+					for _, l := range filterLogs(logs, isulog.TagBuyTrade) {
 						bnum += l.BuyTrade.Amount
 					}
-					for _, l := range filetrLogs(logs, isulog.TagSellTrade) {
+					for _, l := range filterLogs(logs, isulog.TagSellTrade) {
 						snum += l.SellTrade.Amount
 					}
 					if bnum != trade.Amount || snum != trade.Amount {
@@ -668,7 +668,7 @@ func (t *PostTester) Run() error {
 	return eg.Wait()
 }
 
-func filetrLogs(logs []*isulog.Log, tag string) []*isulog.Log {
+func filterLogs(logs []*isulog.Log, tag string) []*isulog.Log {
 	ret := make([]*isulog.Log, 0, len(logs))
 	for _, l := range logs {
 		if l.Tag == tag {

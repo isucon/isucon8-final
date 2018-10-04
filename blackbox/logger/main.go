@@ -30,7 +30,7 @@ var mu sync.Mutex
 
 func main() {
 	var (
-		port = flag.Int("port", 5516, "log app ranning port")
+		port = flag.Int("port", 5516, "log app running port")
 	)
 
 	flag.Parse()

@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	ErrAlreadyRetired = errors.New("alreay retired client")
+	ErrAlreadyRetired = errors.New("already retired client")
 )
 
 type ResponseWithElapsedTime struct {
@@ -132,7 +132,7 @@ type Client struct {
 	retireto time.Duration
 }
 
-func NewClient(base, bankid, name, password string, timout, retire time.Duration) (*Client, error) {
+func NewClient(base, bankid, name, password string, timeout, retire time.Duration) (*Client, error) {
 	b, err := url.Parse(base)
 	if err != nil {
 		return nil, errors.Wrapf(err, "base url parse Failed.")
@@ -148,7 +148,7 @@ func NewClient(base, bankid, name, password string, timout, retire time.Duration
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-		Timeout: timout,
+		Timeout: timeout,
 	}
 	return &Client{
 		base:     b,
@@ -179,7 +179,7 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 		var err error
 		reqbody, err = ioutil.ReadAll(req.Body) // for retry
 		if err != nil {
-			return nil, errors.Wrapf(err, "reqbody read faild")
+			return nil, errors.Wrapf(err, "reqbody read failed")
 		}
 	}
 	start := time.Now()
@@ -475,10 +475,10 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	return r, nil
 }
 
-func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) {
+func (c *Client) AddOrder(ordertype string, amount, price int64) (*Order, error) {
 	path := "/orders"
 	v := url.Values{}
-	v.Set("type", ordertyp)
+	v.Set("type", ordertype)
 	v.Set("amount", strconv.FormatInt(amount, 10))
 	v.Set("price", strconv.FormatInt(price, 10))
 	//log.Printf("[DEBUG] POST /orders [user:%d]", c.UserID())
@@ -509,7 +509,7 @@ func (c *Client) AddOrder(ordertyp string, amount, price int64) (*Order, error) 
 		ID:     r.ID,
 		Amount: amount,
 		Price:  price,
-		Type:   ordertyp,
+		Type:   ordertype,
 	}, nil
 }
 

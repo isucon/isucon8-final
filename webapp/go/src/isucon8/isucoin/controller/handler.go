@@ -73,7 +73,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
 	if name == "" || bankID == "" || password == "" {
-		h.handleError(w, errors.New("all paramaters are required"), 400)
+		h.handleError(w, errors.New("all parameters are required"), 400)
 		return
 	}
 	err := h.txScorp(func(tx *sql.Tx) error {
@@ -95,7 +95,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	bankID := r.FormValue("bank_id")
 	password := r.FormValue("password")
 	if bankID == "" || password == "" {
-		h.handleError(w, errors.New("all paramaters are required"), 400)
+		h.handleError(w, errors.New("all parameters are required"), 400)
 		return
 	}
 	user, err := model.UserLogin(h.db, bankID, password)

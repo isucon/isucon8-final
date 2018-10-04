@@ -21,7 +21,7 @@ var (
 	internalbank = flag.String("internalbank", "https://localhost.isucon8.flying-chair.net:5515", "isubank endpoint (for internal)")
 	internallog  = flag.String("internallog", "https://localhost.isucon8.flying-chair.net:5516", "isulog endpoint (for internal)")
 	jobid        = flag.String("jobid", "", "portal jobid")
-	logoutput    = flag.String("log", "", "output log path (default stderror)")
+	logoutput    = flag.String("log", "", "output log path (default stderr)")
 	result       = flag.String("result", "", "result json path (default stdout)")
 	logout       = os.Stderr
 	out          = os.Stdout
