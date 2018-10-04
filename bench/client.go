@@ -438,7 +438,7 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	path := "/info"
 	v := url.Values{}
 	v.Set("cursor", strconv.FormatInt(cursor, 10))
-	//log.Printf("[DEBUG] GET /info?curson=%d [user:%d]", cursor, c.UserID())
+	//log.Printf("[DEBUG] GET /info?cursor=%d [user:%d]", cursor, c.UserID())
 	res, err := c.get(path, v)
 	if err != nil {
 		if err == ErrAlreadyRetired {
@@ -465,7 +465,7 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	// 	return nil, errors.Errorf("GET %s chart length is broken?", path)
 	// }
 	if r.Cursor == 0 {
-		return nil, errors.Errorf("GET %s curson is zero", path)
+		return nil, errors.Errorf("GET %s cursor is zero", path)
 	}
 	if r.TradedOrders != nil && len(r.TradedOrders) > 0 {
 		if err := c.testMyOrder(path, r.TradedOrders); err != nil {

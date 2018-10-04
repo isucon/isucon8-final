@@ -315,12 +315,12 @@ func (t *PreTester) Run() error {
 			if orders[3].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			buyed := orders[3].Trade.Price * 2
+			bought := orders[3].Trade.Price * 2
 			rest, err := t.isubank.GetCredit(account1)
 			if err != nil {
 				return err
 			}
-			if rest+buyed != 29000 {
+			if rest+bought != 29000 {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK(c1)")
@@ -447,12 +447,12 @@ func (t *PreTester) Run() error {
 			if orders[5].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			buyed := orders[4].Trade.Price + orders[5].Trade.Price
+			bought := orders[4].Trade.Price + orders[5].Trade.Price
 			rest, err := t.isubank.GetCredit(account2)
 			if err != nil {
 				return err
 			}
-			if rest != buyed {
+			if rest != bought {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK(c2)")

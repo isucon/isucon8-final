@@ -62,8 +62,8 @@ func main() {
 		log.Fatal(http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			server.ServeHTTP(w, r)
-			elasped := time.Now().Sub(start)
-			log.Printf("%s\t%s\t%s\t%.5f", start.Format("2006-01-02T15:04:05.000"), r.Method, r.URL.Path, elasped.Seconds())
+			elapsed := time.Now().Sub(start)
+			log.Printf("%s\t%s\t%s\t%.5f", start.Format("2006-01-02T15:04:05.000"), r.Method, r.URL.Path, elapsed.Seconds())
 		})))
 	} else {
 		log.Fatal(http.ListenAndServe(addr, server))
@@ -126,9 +126,9 @@ func appID(r *http.Request) (string, error) {
 }
 
 var (
-	CreditIsInsufficient     = errors.New("credit is insufficient")
-	ReserveIsExpires         = errors.New("reserve is already expired")
-	ReserveIsAlreadyCommited = errors.New("reserve is already commited")
+	CreditIsInsufficient      = errors.New("credit is insufficient")
+	ReserveIsExpires          = errors.New("reserve is already expired")
+	ReserveIsAlreadyCommitted = errors.New("reserve is already committed")
 )
 
 func Error(w http.ResponseWriter, err string, code int) {
@@ -427,7 +427,7 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 			return errors.Wrap(err, "select reserves failed")
 		}
 		if len(reserves) != l {
-			return ReserveIsAlreadyCommited
+			return ReserveIsAlreadyCommitted
 		}
 
 		// userのlock
@@ -455,7 +455,7 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
+		if err == ReserveIsExpires || err == ReserveIsAlreadyCommitted {
 			Error(w, err.Error(), http.StatusBadRequest)
 		} else {
 			log.Printf("[WARN] commit credit failed. err: %s", err)
@@ -502,7 +502,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 			return errors.Wrap(err, "count reserve failed")
 		}
 		if count < l {
-			return ReserveIsAlreadyCommited
+			return ReserveIsAlreadyCommitted
 		}
 
 		// reserveの取得(for update)
@@ -528,7 +528,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 			return errors.Wrap(err, "select reserves failed")
 		}
 		if len(reserves) != l {
-			return ReserveIsAlreadyCommited
+			return ReserveIsAlreadyCommitted
 		}
 
 		// userのlock
@@ -549,7 +549,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		if err == ReserveIsExpires || err == ReserveIsAlreadyCommited {
+		if err == ReserveIsExpires || err == ReserveIsAlreadyCommitted {
 			Error(w, err.Error(), http.StatusBadRequest)
 		} else {
 			log.Printf("[WARN] cancel credit failed. err: %s", err)
