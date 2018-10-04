@@ -42,7 +42,7 @@ sub post_login {
         });
     }
 
-    $c->session->set(admin => $user->{name});
+    $c->session->set(admin => $user);
     return $c->redirect('/admin');
 }
 

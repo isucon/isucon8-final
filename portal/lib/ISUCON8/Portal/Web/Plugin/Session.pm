@@ -24,9 +24,15 @@ sub init {
 
             if ($path =~ m|^/admin|) {
                 if ($path ne '/admin/login') {
-                    unless ($c->session->get('admin')) {
+                    my $admin = $c->session->get('admin');
+                    unless ($admin) {
                         $c->session->expire;
                         return $c->redirect('/admin/login');
+                    }
+                    if ($admin->{is_visitor} && $method eq 'POST') {
+                        return $c->create_simple_status_page(
+                            405, 'visitor not allowed'
+                        );
                     }
                 }
             }

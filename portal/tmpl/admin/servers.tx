@@ -46,6 +46,7 @@
                                     <td><: $server_data.node :></td>
                                 </tr>
                             </tbody>
+                            : if !$admin.is_visitor {
                             <thead>
                                 <tr>
                                     <th>Hostname</th>
@@ -66,6 +67,7 @@
                                     </tr>
                                 : }
                             </tbody>
+                            : }
                         </table>
                     : }
                 </div>

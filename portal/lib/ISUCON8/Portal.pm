@@ -126,6 +126,7 @@ sub render_admin {
     my ($c, $tmpl, $args) = @_;
     $args //= {};
     $args->{is_admin} = 1;
+    $args->{admin}    = $c->session->get('admin');
     $c->render($tmpl, $args);
 }
 

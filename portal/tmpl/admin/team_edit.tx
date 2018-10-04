@@ -75,6 +75,7 @@
             </div>
         </div>
     </section>
+    : if !$admin.is_visitor {
     <section class="table-list">
         <div class="card events-card">
             <header class="card-header is-info">
@@ -113,8 +114,8 @@
                 </table>
             </div>
         </div>
-    </section>    
-
+    </section>
+    : }
     <section class="graph">
         <canvas id="myChart" width="400" height="200"></canvas>
     </section>
@@ -159,7 +160,7 @@
             </div>
         </div>
     </section>
-
+    : if !$admin.is_visitor {
     <section class="team-edit">
         <article class="message is-danger">
             <div class="message-header">
@@ -235,6 +236,7 @@
             </div>
         </article>
     </section>
+    : }
 </div>
 : }
 
