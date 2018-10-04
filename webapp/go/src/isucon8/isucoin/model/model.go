@@ -22,13 +22,13 @@ type RowScanner interface {
 	Scan(...interface{}) error
 }
 
-type QueryExecuter interface {
+type QueryExecutor interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 	QueryRow(string, ...interface{}) *sql.Row
 	Query(string, ...interface{}) (*sql.Rows, error)
 }
 
-func InitBenchmark(d QueryExecuter) error {
+func InitBenchmark(d QueryExecutor) error {
 	var dt time.Time
 	if err := d.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
 		return errors.Wrap(err, "get last traded")

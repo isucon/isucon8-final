@@ -33,11 +33,11 @@ func scanTrade(r RowScanner) (*Trade, error) {
 	return &v, nil
 }
 
-func GetTradeByID(d QueryExecuter, id int64) (*Trade, error) {
+func GetTradeByID(d QueryExecutor, id int64) (*Trade, error) {
 	return scanTrade(d.QueryRow("SELECT * FROM trade WHERE id = ?", id))
 }
 
-func GetTradesByLastID(d QueryExecuter, lastID int64) ([]*Trade, error) {
+func GetTradesByLastID(d QueryExecutor, lastID int64) ([]*Trade, error) {
 	rows, err := d.Query("SELECT * FROM trade WHERE id > ? ORDER BY id ASC", lastID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetTradesByLastID Query failed. lastID:%d", lastID)
@@ -57,7 +57,7 @@ func GetTradesByLastID(d QueryExecuter, lastID int64) ([]*Trade, error) {
 	return trades, nil
 }
 
-func GetCandlestickData(d QueryExecuter, mt time.Time, tf string) ([]CandlestickData, error) {
+func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]CandlestickData, error) {
 	query := fmt.Sprintf(`
 		SELECT m.t, a.price, b.price, m.h, m.l
 		FROM (
@@ -94,7 +94,7 @@ func GetCandlestickData(d QueryExecuter, mt time.Time, tf string) ([]Candlestick
 	return datas, nil
 }
 
-func HasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
+func HasTradeChanceByOrder(d QueryExecutor, orderID int64) (bool, error) {
 	order, err := getOrderByID(d, orderID)
 	if err != nil {
 		return false, err
@@ -131,7 +131,7 @@ func HasTradeChanceByOrder(d QueryExecuter, orderID int64) (bool, error) {
 	return false, nil
 }
 
-func reserveOrder(d QueryExecuter, order *Order, price int64) (int64, error) {
+func reserveOrder(d QueryExecutor, order *Order, price int64) (int64, error) {
 	bank, err := Isubank(d)
 	if err != nil {
 		return 0, errors.Wrap(err, "isubank init failed")

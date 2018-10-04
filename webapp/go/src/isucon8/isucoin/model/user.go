@@ -24,7 +24,7 @@ func scanUser(r RowScanner) (*User, error) {
 	return &v, nil
 }
 
-func GetUserByID(d QueryExecuter, id int64) (*User, error) {
+func GetUserByID(d QueryExecutor, id int64) (*User, error) {
 	return scanUser(d.QueryRow("SELECT * FROM user WHERE id = ?", id))
 }
 
@@ -66,7 +66,7 @@ func UserSignup(tx *sql.Tx, name, bankID, password string) error {
 	return nil
 }
 
-func UserLogin(d QueryExecuter, bankID, password string) (*User, error) {
+func UserLogin(d QueryExecutor, bankID, password string) (*User, error) {
 	user, err := scanUser(d.QueryRow("SELECT * FROM user WHERE bank_id = ?", bankID))
 	switch {
 	case err == sql.ErrNoRows:
