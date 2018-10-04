@@ -39,7 +39,7 @@ func InitBenchmark(d QueryExecuter) error {
 		"update orders set created_at = (created_at + interval ? minute)",
 		"update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null",
 	} {
-		if _, err := d.Exec("update trade set created_at = (created_at + interval ? minute)", diffmin); err != nil {
+		if _, err := d.Exec(q, diffmin); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)
 		}
 	}
