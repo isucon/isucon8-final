@@ -30,14 +30,26 @@ type QueryExecutor interface {
 
 func InitBenchmark(d QueryExecutor) error {
 	var dt time.Time
-	if err := d.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
+	if err := d.QueryRow(`select max(created_at) from orders`).Scan(&dt); err != nil {
 		return errors.Wrap(err, "get last traded")
 	}
+	// 前回の10:00:00+0900までのデータを消す
+	stop := time.Now()
+	if stop.Hour() >= 10 {
+		stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Local())
+	} else {
+		stop = time.Date(stop.Year(), stop.Month(), stop.Day()-1, 10, 0, 0, 0, stop.Local())
+	}
+	p := string[]{}
+	for dt.After(stop) {
+		p = append(p, dt.Format("p2006010215"))
+	}
+
 	diffmin := int64(time.Now().Sub(dt).Minutes())
 	for _, q := range []string{
-		"update trade set created_at = (created_at + interval ? minute)",
-		"update orders set created_at = (created_at + interval ? minute)",
-		"update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null",
+		fmt.Sprintf("ALTER TABLE orders TRUNCATE PARTITION %s", strings.Join(p, ",")),
+		fmt.Sprintf("ALTER TABLE trade TRUNCATE PARTITION %s", strings.Join(p, ",")),
+		fmt.Sprintf("DELETE FROM user WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
 	} {
 		if _, err := d.Exec(q, diffmin); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)

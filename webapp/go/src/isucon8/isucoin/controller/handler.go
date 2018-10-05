@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -37,13 +35,6 @@ func NewHandler(db *sql.DB, store sessions.Store, datadir string) *Handler {
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	cmd := exec.Command("sh", h.datadir+"/init")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		h.handleError(w, errors.Wrapf(err, "init.sh failed"), 500)
-		return
-	}
 	err := h.txScorp(func(tx *sql.Tx) error {
 		if err := model.InitBenchmark(tx); err != nil {
 			return err
@@ -63,7 +54,7 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 	if err != nil {
 		h.handleError(w, err, 500)
 	} else {
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 		h.handleSuccess(w, struct{}{})
 	}
 }
