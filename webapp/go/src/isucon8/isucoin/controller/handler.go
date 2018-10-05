@@ -81,6 +81,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	})
 	switch {
 	case err == model.ErrBankUserNotFound:
+		// TODO: 失敗が多いときに403を返すBanの仕様に対応
 		h.handleError(w, err, 404)
 	case err == model.ErrBankUserConflict:
 		h.handleError(w, err, 409)
@@ -101,6 +102,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 	user, err := model.UserLogin(h.db, bankID, password)
 	switch {
 	case err == model.ErrUserNotFound:
+		// TODO: 失敗が多いときに403を返すBanの仕様に対応
 		h.handleError(w, err, 404)
 	case err != nil:
 		h.handleError(w, err, 500)
