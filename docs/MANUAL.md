@@ -91,7 +91,7 @@ chou-daifugo-{001..100}
 TODO: 事前解答ではgolangのみです
 
 ```
-sudo systemctl (start|stop) isucon
+sudo systemctl (start|stop) isucoin
 ```
 
 ## リカバリ方法
