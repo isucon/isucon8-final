@@ -29,10 +29,14 @@
 
 - response
     - status: 200
-    - status: 40x
-        - error: bank_id conflict
     - status: 400
+        - error: parameters failed
+    - status: 404
         - error: bank user not found
+    - status: 409
+        - error: bank_id conflict
+    - status: 500
+        - error: server error
 - log
     - tag:signup
         - name: $name
@@ -51,8 +55,12 @@
     - status: 200
         - id:   $user.id
         - name: $user.name
+    - status: 400
+        - error: invalid parameters
     - status: 404
         - error: bank_id or password is not match
+    - status: 500
+        - error: server error
 - log
     - tag:signin
         - user_id: $user_id
@@ -73,8 +81,11 @@
         - id: $order_id
     - status: 400
         - error: invalid params
-    - status: 40x
         - error: 残高不足
+    - status: 401
+        - error: unautholize
+    - status: 500
+        - error: server error
 - log
     - tag:{$type}.order
         - order_id: $order_id
@@ -97,9 +108,10 @@
     - status: 401
         - error: unautholize
     - status: 404
-        - error: no order
-    - status: 40x
-        - error: already trade
+        - error: not found
+        - error: already closed
+    - status: 500
+        - error: server error
 - log
     - tag:{$type}.delete
         - order_id: $order_id
@@ -108,23 +120,28 @@
 #### `GET /orders`
 
 - response: application/json
-    - list
-        - id         : $order_id
-        - type       : $type
-        - user_id    : $user_id
-        - amount     : $amount
-        - price      : $price (注文価格)
-        - closed_at  : $closed_at (注文成立または取り消しの時間、その他はnull)
-        - trade_id   : $trade_id  (注文成立時に注文番号、未成立の場合はキーなし)
-        - created_at : $created_at (注文時間)
-        - user: 
-            - id   : $user_id
-            - name : $user.name
-        - trade: 
-            - id         : $trade_id
-            - amount     : $amount (取引脚数)
-            - price      : $price (取引価格)
-            - created_at : $created_at (成立時間)
+    - status: 200
+        - list
+            - id         : $order_id
+            - type       : $type
+            - user_id    : $user_id
+            - amount     : $amount
+            - price      : $price (注文価格)
+            - closed_at  : $closed_at (注文成立または取り消しの時間、その他はnull)
+            - trade_id   : $trade_id  (注文成立時に注文番号、未成立の場合はキーなし)
+            - created_at : $created_at (注文時間)
+            - user: 
+                - id   : $user_id
+                - name : $user.name
+            - trade: 
+                - id         : $trade_id
+                - amount     : $amount (取引脚数)
+                - price      : $price (取引価格)
+                - created_at : $created_at (成立時間)
+    - status: 401
+        - error: unautholize
+    - status: 500
+        - error: server error
 
 ### 更新情報API
 
@@ -134,15 +151,18 @@
     - cursor: 全リクエストでのcursor
 
 - response: application/json
-    - cursor: 次のリクエストに渡すcursor
-    - traded_orders: トレードの成立した注文
-        - [$order]
-    - chart_by_sec: ロウソクチャート用の単位秒取引結果
-    - chart_by_min: ロウソクチャート用の単位分取引結果
-    - chart_by_hour: ロウソクチャート用の単位時間取引結果
-    - lowest_sell_price: $price
-    - highest_buy_price: $price
-    - enable_share: シェアボタン有効化フラグ
+    - status: 200
+        - cursor: 次のリクエストに渡すcursor
+        - traded_orders: トレードの成立した注文
+            - [$order]
+        - chart_by_sec: ロウソクチャート用の単位秒取引結果
+        - chart_by_min: ロウソクチャート用の単位分取引結果
+        - chart_by_hour: ロウソクチャート用の単位時間取引結果
+        - lowest_sell_price: $price
+        - highest_buy_price: $price
+        - enable_share: シェアボタン有効化フラグ
+    - status: 500
+        - error: server error
 
 ## 取引処理
 

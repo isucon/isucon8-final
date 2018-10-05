@@ -98,9 +98,11 @@ paths:
         400:
           description: "Invalid parameters"
         404:
-          description: "bank id not found"
+          description: "bank user not found"
         409:
           description: "bank_id conflict"
+        500:
+          description: "server error"
       x-logs:
         - $ref: "#/logs/Singup"
 
@@ -143,6 +145,8 @@ paths:
           description: "Invalid parameters"
         404:
           description: "bank id or password not match"
+        500:
+          description: "server error"
       x-logs:
         - $ref: "#/logs/Singin"
 
@@ -202,8 +206,8 @@ paths:
               enable_share:
                 type: boolean
                 description: SNSへのシェアボタンを有効化するかどうか
-        401:
-          description: "Unauthorized"
+        500:
+          description: "server error"
 
   /orders:
     get:
@@ -227,6 +231,8 @@ paths:
               $ref: "#/definitions/Order"
         401:
           description: "Unauthorized"
+        500:
+          description: "server error"
 
     post:
       tags:
@@ -281,6 +287,8 @@ paths:
           description: "Invalid parameters or Credit Insufficient"
         401:
           description: "Unauthorized"
+        500:
+          description: "server error"
 
       x-logs:
         - $ref: "#/logs/BuyOrder"
@@ -308,10 +316,12 @@ paths:
                 type: integer
                 format: int64
                 description: 注文番号
-        400:
+        401:
           description: "Unauthorized"
         404:
           description: "No Order or already closed"
+        500:
+          description: "server error"
 
       x-logs:
         - $ref: "#/logs/BuyDelete"
