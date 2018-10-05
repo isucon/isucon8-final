@@ -117,7 +117,7 @@ TODO: 動画等に置き換え
 椅子の買い注文と売り注文を行うことができ、注文の条件を満たせば取引が成立します。
 成立した取引を示すロウソクチャートは毎秒更新されており、チャートはゲストユーザーからも参照することができます。
 
-- 詳細仕様: docs/WEBAPP_SPEC.md
+- 詳細仕様: [docs/WEBAPP_SPEC.md](WEBAPP_SPEC.md)
 
 ## 外部API
 
@@ -127,7 +127,7 @@ TODO: 動画等に置き換え
 
 口座の入出金や残高確認を行うAPI
 
-- 詳細仕様: docs/ISUBANK_SPEC.md
+- 詳細仕様: [docs/ISUBANK_SPEC.md](ISUBANK_SPEC.md)
 
 
 ### 分析API (isulogger)
@@ -139,7 +139,7 @@ TODO: 動画等に置き換え
 
 同時に発行できるリクエストは最大10並列、20req/secまでに制限されています。制限を超過すると 429 Too Many Requests が返ります。
 
-- 詳細仕様: docs/ISULOGGER_SPEC.md
+- 詳細仕様: [docs/ISULOGGER_SPEC.md](ISULOGGER_SPEC.md)
 
 
 # ルール詳細
