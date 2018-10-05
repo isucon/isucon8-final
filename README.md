@@ -7,17 +7,16 @@
 
 ### mockserviceの利用
 
-blackbox APIを利用するためmockserverを利用する方法です。
+blackbox APIを利用するためmockserviceを利用する方法です。
 
-※ 尚、本番では初期状態でローカルに立てているmockserverを使うようにしたい
-
-上記のdocker-composeでappを起動している場合mockserviceは一緒に起動しますが `/initialize` でmockserviceを使うように指定する必要があります。
+1. docker-composeでアプリの`links` に`mockservice`を追加してください
+2. `/initialize` を手動で叩いてmockserviceを使うようにします
 
     curl https://localhost.isucon8.flying-chair.net/initialize \
         -d bank_endpoint=http://mockservice:14809 \
         -d bank_appid=mockbank \
         -d log_endpoint=http://mockservice:14690 \
-        -log_appid=mocklog
+        -d log_appid=mocklog
 
 ## blackbox
 

@@ -222,6 +222,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 	default:
 		res["highest_buy_price"] = highestBuyOrder.Price
 	}
+	// TODO: trueにするとシェアボタンが有効になるが、アクセスが増えてヤバイので一旦falseにしておく
 	res["enable_share"] = false
 
 	h.handleSuccess(w, res)

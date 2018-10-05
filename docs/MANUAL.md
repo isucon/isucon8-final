@@ -60,8 +60,6 @@
 
 ## 2. アプリケーションの動作確認
 
-初期状態ではサーバーのグローバルIPアドレスに、ブラウザからアクセスするとアプリが表示されます。
-
 ポータルのサーバ情報の hostname を元に `https://{hostname}.isucon8.flying-chair.net` というURLでアクセスしてください。
 
 `GET /` へアクセスすることで、トップページにアクセスすることができます。
@@ -73,7 +71,7 @@
 それぞれ残高は10億あります。
 
 ```
-chou-daifugo-{001..100}
+isucon-{001..100}
 ```
 
 
@@ -93,7 +91,7 @@ chou-daifugo-{001..100}
 TODO: 事前解答ではgolangのみです
 
 ```
-sudo systemctl (start|stop) isucon
+sudo systemctl (start|stop) isucoin
 ```
 
 ## リカバリ方法
