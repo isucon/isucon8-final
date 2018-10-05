@@ -164,7 +164,9 @@ func writeTradeSQL(w io.Writer, trades []Trade) error {
 
 func main() {
 	var (
-		dir = flag.String("dir", "isucondata", "output dir")
+		dir   = flag.String("dir", "isucondata", "output dir")
+		start = flag.String("start", "2018-10-10T10:00:00Z09:00", "data start time RFC3339")
+		end   = flag.String("end", "2018-10-20T10:00:00Z09:00", "data end time RFC3339")
 	)
 	flag.Parse()
 	loc, err := time.LoadLocation("Asia/Tokyo")
@@ -172,47 +174,62 @@ func main() {
 		log.Fatal(err)
 	}
 	time.Local = loc
-	if err := run(*dir); err != nil {
+	if err := run(*dir, *start, *end); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(dir string) error {
+func run(dir, starts, ends string) error {
 	if err := os.MkdirAll(dir, 0775); err != nil {
 		return err
 	}
-
 	banksql, err := os.Create(filepath.Join(dir, "bank.init.sql"))
 	if err != nil {
 		return err
 	}
 	defer banksql.Close()
+	fmt.Fprintln(banksql, "use isubank;")
+	fmt.Fprintln(banksql, "truncate credit;")
+	fmt.Fprintln(banksql, "truncate reserve;")
+	fmt.Fprintln(banksql, "truncate user;")
 
 	usersql, err := os.Create(filepath.Join(dir, "app.user.sql"))
 	if err != nil {
 		return err
 	}
 	defer usersql.Close()
+	fmt.Fprintln(usersql, "use isucoin;")
+	fmt.Fprintln(banksql, "truncate user;")
 
 	tradesql, err := os.Create(filepath.Join(dir, "app.trade.sql"))
 	if err != nil {
 		return err
 	}
 	defer tradesql.Close()
+	fmt.Fprintln(tradesql, "use isucoin;")
+	fmt.Fprintln(banksql, "truncate trade;")
 
 	ordersql, err := os.Create(filepath.Join(dir, "app.order.sql"))
 	if err != nil {
 		return err
 	}
 	defer ordersql.Close()
+	fmt.Fprintln(ordersql, "use isucoin;")
+	fmt.Fprintln(banksql, "truncate order;")
 
-	r, err := bench.NewRandom()
+	tm, err := time.Parse(time.RFC3339, starts)
 	if err != nil {
 		return err
 	}
 
-	type p struct {
-		s, e string
+	end, err := time.Parse(time.RFC3339, ends)
+	if err != nil {
+		return err
+	}
+
+	r, err := bench.NewRandom()
+	if err != nil {
+		return err
 	}
 
 	var (
@@ -230,26 +247,37 @@ func run(dir string) error {
 		banks           = make([]Bank, 0, 10000)
 		keepusers       = make([]User, 0, 10)
 		price     int64 = 5000
-		//tm              = time.Date(2019, 9, 20, 10, 0, 0, 0, time.Local)
-		tm    = time.Date(2018, 10, 10, 10, 0, 0, 0, time.Local)
-		end   = time.Date(2018, 10, 20, 10, 0, 0, 0, time.Local)
-		eg    = new(errgroup.Group)
-		pchan = make(chan p, 1000)
+		eg              = new(errgroup.Group)
+		uchan           = make(chan User, 1000)
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	for i := 0; i <= 10; i++ {
+	for i := 0; i <= 50; i++ {
 		go func() {
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				default:
+					cost := 1
+					switch rand.Intn(20) {
+					case 3:
+						cost = 3
+					case 5:
+						cost = 5
+					case 10:
+						cost = 10
+					}
 					pass := r.Password()
-					ep, _ := bcrypt.GenerateFromPassword([]byte(pass), rand.Intn(3))
-					pchan <- p{pass, string(ep)}
+					ep, _ := bcrypt.GenerateFromPassword([]byte(pass), cost)
+					uchan <- User{
+						Name:     r.Name(),
+						BankID:   r.ID(),
+						Password: pass,
+						pass:     string(ep),
+					}
 				}
 			}
 		}()
@@ -322,16 +350,10 @@ func run(dir string) error {
 	}
 
 	pickUser := func(tm time.Time) User {
-		if len(users) < 100 || rand.Intn(50) == 1 {
-			_p := <-pchan
-			user := User{
-				ID:        atomic.AddInt64(&userID, 1),
-				Name:      r.Name(),
-				BankID:    r.ID(),
-				Password:  _p.s,
-				pass:      _p.e,
-				CreatedAt: tm,
-			}
+		if len(users) < 50 || rand.Intn(50) == 1 {
+			user := <-uchan
+			user.ID = atomic.AddInt64(&userID, 1)
+			user.CreatedAt = tm
 			users = append(users, user)
 			banks = append(banks, Bank{
 				ID:        atomic.AddInt64(&bankID, 1),
@@ -346,7 +368,7 @@ func run(dir string) error {
 			banks = writeBank(banks, false)
 			return user
 		}
-		if rand.Intn(100) == 1 {
+		if rand.Intn(200) == 1 {
 			return keepusers[rand.Intn(len(keepusers))]
 		}
 		return users[rand.Intn(len(users))]
@@ -366,7 +388,7 @@ func run(dir string) error {
 		tm = tm.Add(time.Millisecond * 50)
 		u1 := pickUser(tm)
 
-		tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(100)))
+		tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(100)+50))
 		u2 := pickUser(tm)
 
 		tm = tm.Add(time.Duration(rand.Int63n(500)+200) * time.Millisecond)
@@ -405,15 +427,23 @@ func run(dir string) error {
 			order1.ClosedAt = trade.CreatedAt
 			order2.ClosedAt = trade.CreatedAt
 		} else {
-			order1.Price = trade.Price + 100 + rand.Int63n(100)
-			order2.Price = trade.Price - 100 - rand.Int63n(100)
-			order1.ClosedAt = tm.Add(time.Millisecond + time.Duration(rand.Int63n(20000)+800))
-			order2.ClosedAt = tm.Add(time.Millisecond + time.Duration(rand.Int63n(20000)+800))
+			order1.Price = price + 100 + rand.Int63n(100)
+			order2.Price = price - 100 - rand.Int63n(100)
+			order1.ClosedAt = tm.Add(time.Millisecond + time.Duration(rand.Int63n(2000)+800))
+			order2.ClosedAt = tm.Add(time.Millisecond + time.Duration(rand.Int63n(2000)+800))
 		}
 
 		orders = append(orders, order1, order2)
 		orders = writeOrder(orders, false)
-		tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(500)+200))
+		switch rand.Intn(10) {
+		case 1, 2, 3:
+			tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(300)+500))
+		case 8:
+			tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(1000)+1500))
+		case 9:
+			tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(500)+1000))
+		}
+		tm = tm.Add(time.Millisecond * time.Duration(rand.Int63n(300)+200))
 	}
 
 	writeUser(users, true)
