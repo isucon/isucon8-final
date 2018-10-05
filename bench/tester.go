@@ -280,14 +280,11 @@ func (t *PreTester) Run() error {
 			log.Printf("[INFO] send order finish")
 			err := func() error {
 				timeout := time.After(TestTradeTimeout)
-				next := make(chan bool, 1)
-				defer close(next)
-				next <- true
 				for {
 					select {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c1)")
-					case <-next:
+					default:
 						info, err := c1.Info(0)
 						if err != nil {
 							return err
@@ -296,7 +293,6 @@ func (t *PreTester) Run() error {
 							return nil
 						}
 						time.Sleep(PollingInterval)
-						next <- true
 					}
 				}
 			}()
@@ -327,14 +323,11 @@ func (t *PreTester) Run() error {
 
 			return func() error {
 				timeout := time.After(LogAllowedDelay)
-				next := make(chan bool, 1)
-				defer close(next)
-				next <- true
 				for {
 					select {
 					case <-timeout:
 						return errors.Errorf("ログが送信されていません(c1)")
-					case <-next:
+					default:
 						logs, err := t.isulog.GetUserLogs(c1.UserID())
 						if err != nil {
 							return errors.Wrap(err, "isulog get user logs failed")
@@ -380,7 +373,6 @@ func (t *PreTester) Run() error {
 							return nil
 						}
 						time.Sleep(PollingInterval)
-						next <- true
 					}
 				}
 			}()
@@ -409,14 +401,11 @@ func (t *PreTester) Run() error {
 			}
 			err := func() error {
 				timeout := time.After(TestTradeTimeout)
-				next := make(chan bool, 1)
-				defer close(next)
-				next <- true
 				for {
 					select {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c2)")
-					case <-next:
+					default:
 						info, err := c2.Info(0)
 						if err != nil {
 							return err
@@ -425,7 +414,6 @@ func (t *PreTester) Run() error {
 							return nil
 						}
 						time.Sleep(PollingInterval)
-						next <- true
 					}
 				}
 			}()
@@ -459,14 +447,11 @@ func (t *PreTester) Run() error {
 
 			return func() error {
 				timeout := time.After(LogAllowedDelay)
-				next := make(chan bool, 1)
-				defer close(next)
-				next <- true
 				for {
 					select {
 					case <-timeout:
 						return errors.Errorf("ログが送信されていません(c2)")
-					case <-next:
+					default:
 						logs, err := t.isulog.GetUserLogs(c2.UserID())
 						if err != nil {
 							return errors.Wrap(err, "isulog get user logs failed")
@@ -505,7 +490,6 @@ func (t *PreTester) Run() error {
 							return nil
 						}
 						time.Sleep(PollingInterval)
-						next <- true
 					}
 				}
 			}()
@@ -544,14 +528,11 @@ func (t *PostTester) Run() error {
 
 	eg.Go(func() error {
 		timeout := time.After(deadline.Sub(time.Now()))
-		next := make(chan bool, 1)
-		defer close(next)
-		next <- true
 		for {
 			select {
 			case <-timeout:
 				return errors.Errorf("ログが欠損しています [trade:%d]", trade.ID)
-			case <-next:
+			default:
 				logs, err := t.isulog.GetTradeLogs(trade.ID)
 				if err != nil {
 					return errors.Wrap(err, "isulog get trade logs failed")
@@ -578,7 +559,6 @@ func (t *PostTester) Run() error {
 				}
 			}
 			time.Sleep(PollingInterval)
-			next <- true
 		}
 	})
 	for _, inv := range []Investor{first, latest, random} {
@@ -615,14 +595,11 @@ func (t *PostTester) Run() error {
 					}
 				}
 			}
-			next := make(chan bool, 1)
-			defer close(next)
-			next <- true
 			for {
 				select {
 				case <-timeout:
 					return errors.Errorf("ログが欠損しています [user:%d]", investor.UserID())
-				case <-next:
+				default:
 					logs, err := t.isulog.GetUserLogs(investor.UserID())
 					if err != nil {
 						return errors.Wrap(err, "isulog get user logs failed")
@@ -660,7 +637,6 @@ func (t *PostTester) Run() error {
 					}
 				}
 				time.Sleep(PollingInterval)
-				next <- true
 			}
 		})
 	}
