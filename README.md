@@ -2,6 +2,13 @@
 
 - [MANUAL](docs/MANUAL.md) はこちら
 
+## 動作環境
+
+- [Docker](https://www.docker.com/)
+- [docker-compose](https://docs.docker.com/compose/)
+- [Golang](https://golang.org/)
+- [dep](https://golang.github.io/dep/docs/installation.html)
+
 ## webapp
 
 ### 起動方法
@@ -45,6 +52,17 @@ curl https://localhost.isucon8.flying-chair.net/initialize \
 
 ## bench
 
+### 準備
+
+[Golang](https://golang.org/) 及び [dep](https://golang.github.io/dep/docs/installation.html) は予めinstallしておいてください
+
+```
+cd bench
+dep ensure
+```
+
+### 実行
+
 ベンチマークを実行するときは、webapp, blackbox の両方を起動した上で下記コマンドを実行してください
 
 ```
@@ -62,6 +80,11 @@ go run ./bench/cmd/bench/main.go \
     -internallog=https://localhost.isucon8.flying-chair.net:5516 \
     -result=/path/to/result.json \
     -log=/path/to/stderr.log
+
+# ビルドしておくと少し早いかもしれません
+mkdir bin
+go build -o bin/bench ./bench/cmd/bench/main.go
+./bin/bench
 ```
 
 ### 負荷試験前のテストのみを行う
@@ -80,4 +103,9 @@ go run ./bench/cmd/isucointest/main.go \
     -logep=https://compose.isucon8.flying-chair.net:5516 \
     -internalbank=https://localhost.isucon8.flying-chair.net:5515 \
     -internallog=https://localhost.isucon8.flying-chair.net:5516
+
+# ビルドしておくと少し早いかもしれません
+mkdir bin
+go build -o bin/test ./bench/cmd/isucointest/main.go
+./bin/test
 ```
