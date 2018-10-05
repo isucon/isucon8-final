@@ -15,7 +15,7 @@ baseurlは各アプリケーションごとにユニークなURLを払い出す
 
 #### Authorization
 
-アプリケーションへの認証は Authorization にユニークなappidをしてする
+アプリケーションへの認証は Authorization にユニークなappidを指定する
 ```
 Authorization: Bearer <APP_ID>
 ```
@@ -51,5 +51,5 @@ Authorization: Bearer <APP_ID>
         - error: invalid data
     - status: 413
         - error: request body too large
-    - status: 503
+    - status: 429
         - rate limit exceeded
