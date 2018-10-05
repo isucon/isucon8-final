@@ -17,17 +17,17 @@ const (
 )
 
 var (
-	port = flag.Int("port", 14809, "log app running port")
-	dump = flag.Bool("dump", false, "request dump enable")
-	logw = ioutil.Discard
+	port             = flag.Int("port", 14809, "log app running port")
+	silent           = flag.Bool("silent", false, "disable request dump")
+	logw   io.Writer = os.Stdout
 )
 
 func main() {
 	flag.Parse()
 
 	addr := fmt.Sprintf(":%d", *port)
-	if *dump {
-		logw = os.Stdout
+	if *silent {
+		logw = ioutil.Discard
 	}
 
 	server := http.NewServeMux()
