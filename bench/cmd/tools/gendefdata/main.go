@@ -402,14 +402,13 @@ func run(dir, starts, ends string) error {
 
 	for tm.Before(end) {
 		// random work
-		switch rand.Intn(3) {
-		case 0:
+		switch rand.Intn(10) {
+		case 0, 1, 2, 3:
 			price++
-		case 1:
+		case 4:
+			price += 2
+		case 5, 6, 7:
 			price--
-			if price < 3000 {
-				price += 2
-			}
 		}
 		tm = tm.Add(time.Millisecond * 50)
 		u1 := pickUser(tm)
