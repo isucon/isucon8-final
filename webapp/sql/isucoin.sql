@@ -19,7 +19,7 @@ CREATE TABLE user (
 CREATE TABLE orders (
     id BIGINT NOT NULL AUTO_INCREMENT,
     type VARCHAR(4) NOT NULL,
-    user_id VARBINARY(191) NOT NULL,
+    user_id BIGINT NOT NULL,
     amount BIGINT NOT NULL,
     price BIGINT NOT NULL,
     closed_at DATETIME(6),
