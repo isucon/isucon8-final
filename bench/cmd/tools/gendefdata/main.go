@@ -56,6 +56,26 @@ const (
 	DF = "2006-01-02 15:04:05.000000"
 )
 
+func writePartition(w io.Writer, table string, st, ed time.Time) error {
+	if _, err := fmt.Fprintf(w, "ALTER TABLE %s DROP PRIMARY KEY, ADD PRIMARY KEY (id, created_at);", table); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "ALTER TABLE %s PARTITION BY RANGE COLUMNS(created_at) (", table); err != nil {
+		return err
+	}
+	tm := st
+	for tm.Before(ed) {
+		if _, err := fmt.Fprintf(w, "PARTITION p%s VALUES LESS THAN ('%s'),", tm.Format("2006010215"), tm.Format("2006-01-02 15:00:00")); err != nil {
+			return err
+		}
+		tm = tm.Add(time.Hour)
+	}
+	if _, err := fmt.Fprintln(w, "PARTITION pmax VALUES LESS THAN MAXVALUE);"); err != nil {
+		return err
+	}
+	return nil
+}
+
 func writeBankSQL(w io.Writer, users []Bank) error {
 	if _, err := fmt.Fprint(w, "INSERT INTO user (id,bank_id,credit,created_at) VALUES "); err != nil {
 		return err
@@ -165,8 +185,8 @@ func writeTradeSQL(w io.Writer, trades []Trade) error {
 func main() {
 	var (
 		dir   = flag.String("dir", "isucondata", "output dir")
-		start = flag.String("start", "2018-10-10T10:00:00Z09:00", "data start time RFC3339")
-		end   = flag.String("end", "2018-10-20T10:00:00Z09:00", "data end time RFC3339")
+		start = flag.String("start", "2018-10-10T10:00:00+09:00", "data start time RFC3339")
+		end   = flag.String("end", "2018-10-20T10:00:00+09:00", "data end time RFC3339")
 	)
 	flag.Parse()
 	loc, err := time.LoadLocation("Asia/Tokyo")
@@ -199,7 +219,7 @@ func run(dir, starts, ends string) error {
 	}
 	defer usersql.Close()
 	fmt.Fprintln(usersql, "use isucoin;")
-	fmt.Fprintln(banksql, "truncate user;")
+	fmt.Fprintln(usersql, "truncate user;")
 
 	tradesql, err := os.Create(filepath.Join(dir, "app.trade.sql"))
 	if err != nil {
@@ -207,7 +227,7 @@ func run(dir, starts, ends string) error {
 	}
 	defer tradesql.Close()
 	fmt.Fprintln(tradesql, "use isucoin;")
-	fmt.Fprintln(banksql, "truncate trade;")
+	fmt.Fprintln(tradesql, "truncate trade;")
 
 	ordersql, err := os.Create(filepath.Join(dir, "app.order.sql"))
 	if err != nil {
@@ -215,7 +235,7 @@ func run(dir, starts, ends string) error {
 	}
 	defer ordersql.Close()
 	fmt.Fprintln(ordersql, "use isucoin;")
-	fmt.Fprintln(banksql, "truncate order;")
+	fmt.Fprintln(ordersql, "truncate orders;")
 
 	tm, err := time.Parse(time.RFC3339, starts)
 	if err != nil {
@@ -224,6 +244,12 @@ func run(dir, starts, ends string) error {
 
 	end, err := time.Parse(time.RFC3339, ends)
 	if err != nil {
+		return err
+	}
+	if err = writePartition(tradesql, "trade", tm, end.Add(time.Hour*38)); err != nil {
+		return err
+	}
+	if err = writePartition(ordersql, "orders", tm, end.Add(time.Hour*38)); err != nil {
 		return err
 	}
 
@@ -261,13 +287,13 @@ func run(dir, starts, ends string) error {
 				case <-ctx.Done():
 					return
 				default:
-					cost := 1
+					cost := 4
 					switch rand.Intn(20) {
-					case 3:
-						cost = 3
-					case 5:
+					case 1:
 						cost = 5
-					case 10:
+					case 2:
+						cost = 7
+					case 10, 11, 12:
 						cost = 10
 					}
 					pass := r.Password()
