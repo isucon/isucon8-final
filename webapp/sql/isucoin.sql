@@ -25,7 +25,7 @@ CREATE TABLE orders (
     closed_at DATETIME(6),
     trade_id BIGINT,
     created_at DATETIME(6) NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 CREATE TABLE trade (
@@ -33,5 +33,5 @@ CREATE TABLE trade (
     amount BIGINT NOT NULL,
     price BIGINT NOT NULL,
     created_at DATETIME(6) NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
