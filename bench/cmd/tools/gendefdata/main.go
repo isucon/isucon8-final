@@ -240,18 +240,20 @@ func run(dir string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				pass := r.Password()
-				ep, _ := bcrypt.GenerateFromPassword([]byte(pass), rand.Intn(5))
-				pchan <- p{pass, string(ep)}
+	for i := 0; i <= 10; i++ {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					pass := r.Password()
+					ep, _ := bcrypt.GenerateFromPassword([]byte(pass), rand.Intn(3))
+					pchan <- p{pass, string(ep)}
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	for i := 1; i <= 100; i++ {
 		banks = append(banks, Bank{
@@ -320,7 +322,7 @@ func run(dir string) error {
 	}
 
 	pickUser := func(tm time.Time) User {
-		if len(users) < 100 || rand.Intn(10) == 1 {
+		if len(users) < 100 || rand.Intn(50) == 1 {
 			_p := <-pchan
 			user := User{
 				ID:        atomic.AddInt64(&userID, 1),
