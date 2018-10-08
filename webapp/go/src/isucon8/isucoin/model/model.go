@@ -2,6 +2,8 @@ package model
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -36,11 +38,11 @@ func InitBenchmark(d QueryExecutor) error {
 	// 前回の10:00:00+0900までのデータを消す
 	stop := time.Now()
 	if stop.Hour() >= 10 {
-		stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Local())
+		stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Location())
 	} else {
-		stop = time.Date(stop.Year(), stop.Month(), stop.Day()-1, 10, 0, 0, 0, stop.Local())
+		stop = time.Date(stop.Year(), stop.Month(), stop.Day()-1, 10, 0, 0, 0, stop.Location())
 	}
-	p := string[]{}
+	p := []string{}
 	for dt.After(stop) {
 		p = append(p, dt.Format("p2006010215"))
 	}
