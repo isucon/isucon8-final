@@ -2,9 +2,7 @@ package model
 
 import (
 	"database/sql"
-	"fmt"
 	"isucon8/isubank"
-	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -69,19 +67,8 @@ func GetOrdersByUserID(d QueryExecutor, userID int64) ([]*Order, error) {
 	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC", userID)
 }
 
-func GetOrdersByUserIDAndTradeIds(d QueryExecutor, userID int64, tradeIDs []int64) ([]*Order, error) {
-	if len(tradeIDs) == 0 {
-		tradeIDs = []int64{0}
-	}
-	win := strings.Repeat(",?", len(tradeIDs))
-	win = win[1:]
-	args := make([]interface{}, 0, len(tradeIDs)+1)
-	args = append(args, userID)
-	for _, id := range tradeIDs {
-		args = append(args, id)
-	}
-	query := fmt.Sprintf(`SELECT * FROM orders WHERE user_id = ? AND trade_id IN (%s) ORDER BY created_at ASC`, win)
-	return queryOrders(d, query, args...)
+func GetOrdersByUserIDAndLastTradeId(d QueryExecutor, userID int64, tradeID int64) ([]*Order, error) {
+	return queryOrders(d, `SELECT * FROM orders WHERE user_id = ? AND trade_id IS NOT NULL AND trade_id > ? ORDER BY created_at ASC`, userID, tradeID)
 }
 
 func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {

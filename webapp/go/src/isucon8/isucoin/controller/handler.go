@@ -145,33 +145,26 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 			}
 		}
 	}
-	res["cursor"] = lastTradeID
-	trades, err := model.GetTradesByLastID(h.db, lastTradeID)
+	latestTrade, err := model.GetLatestTrade(h.db)
 	if err != nil {
-		h.handleError(w, errors.Wrap(err, "getTradesByLastID failed"), 500)
+		h.handleError(w, errors.Wrap(err, "GetLatestTrade failed"), 500)
 		return
 	}
+	res["cursor"] = latestTrade.ID
 	user, _ := h.userByRequest(r)
-	if l := len(trades); l > 0 {
-		res["cursor"] = trades[l-1].ID
-		if user != nil {
-			tradeIDs := make([]int64, len(trades))
-			for i, trade := range trades {
-				tradeIDs[i] = trade.ID
-			}
-			orders, err := model.GetOrdersByUserIDAndTradeIds(h.db, user.ID, tradeIDs)
-			if err != nil {
+	if user != nil {
+		orders, err := model.GetOrdersByUserIDAndLastTradeId(h.db, user.ID, lastTradeID)
+		if err != nil {
+			h.handleError(w, err, 500)
+			return
+		}
+		for _, order := range orders {
+			if err = model.FetchOrderRelation(h.db, order); err != nil {
 				h.handleError(w, err, 500)
 				return
 			}
-			for _, order := range orders {
-				if err = model.FetchOrderRelation(h.db, order); err != nil {
-					h.handleError(w, err, 500)
-					return
-				}
-			}
-			res["traded_orders"] = orders
 		}
+		res["traded_orders"] = orders
 	}
 
 	bySecTime := time.Now().Add(-300 * time.Second)
