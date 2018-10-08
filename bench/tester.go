@@ -83,13 +83,32 @@ func (t *PreTester) Run() error {
 	}
 	{
 		// 既存ユーザー
+		// | id   | name      | bank_id      | o   | t   | pass
+		// | 1235 | 藍田 奈菜 | jz67jt77rpnb | 501 | 424 | 7g39gnwr26ze
+		// | 1236 | 池野 歩   | 2z82n5q      | 559 | 459 | 2s4s829vm2bg9
+		// | 1237 | 阿部 俊介 | k2vutw       | 557 | 449 | kgt7e2yv863d5
+		// | 1238 | 古閑 麻美 | yft3f5d5g    | 543 | 422 | 5m99r6vt8qssunb7
+		// | 1239 | 川崎 大輝 | pcsuktmvqn   | 549 | 443 | fkpcy2amcp9pkmx
+		// | 1240 | 吉田 一   | hpnwwt       | 547 | 447 | 5y62vet3dcepg
+		// | 1241 | 相田 大悟 | 2q5m84je     | 521 | 420 | qme4bak7x3ng
+		// | 1242 | 泉 結子   | cymy39gqttm  | 545 | 441 | 8fnw4226kd63tv
+		// | 1243 | 谷本 楓花 | 2e633gvuk8r  | 563 | 447 | 6f2fkzybgmhxynxp
+		// | 1244 | 桑原 楓花 | qdyj7z5vj5   | 523 | 431 | 54f67y4exumtw
+
 		defaultaccounts := []struct {
 			account, name, pass string
 			order, traded       int
 		}{
-			{"59yyu6fu7g", "藍田 麻美", "xbcw43ezg79gp9", 137, 131},
-			{"cda92cfda9", "菅谷 翔", "r2ejjzbqsby2ju", 125, 120},
-			{"kjcbfebp5", "斎藤 真美", "mnxpq6v3p9xafny", 100, 99},
+			{"jz67jt77rpnb", "藍田 奈菜", "7g39gnwr26ze", 501, 424},
+			{"2z82n5q", "池野 歩", "2s4s829vm2bg9", 559, 459},
+			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
+			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
+			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
+			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
+			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
+			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
+			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
+			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
 		}
 		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
 		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)
