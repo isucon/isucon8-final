@@ -122,15 +122,15 @@ func (t *PreTester) Run() error {
 			return err
 		}
 		// TODO: Fix
-		// if len(info.TradedOrders) < gd.traded {
-		// 	return errors.Errorf("GET /info traded_ordersの件数が少ないです")
-		// }
+		if len(info.TradedOrders) < gd.traded {
+			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.traded)
+		}
 		orders, err := gc.GetOrders()
 		if err != nil {
 			return err
 		}
-		if o := len(orders); o < gd.traded || gd.order < o {
-			return errors.Errorf("GET /orders 件数があいません")
+		if o := len(orders); o < gd.traded {
+			return errors.Errorf("GET /orders 件数があいません user:%d, got: %d, expected: %d", gc.UserID(), o, gd.traded)
 		}
 		count := 0
 		for _, o := range orders {
