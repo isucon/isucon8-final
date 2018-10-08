@@ -54,7 +54,6 @@ func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httproute
 	if err != nil {
 		h.handleError(w, err, 500)
 	} else {
-		time.Sleep(5 * time.Second)
 		h.handleSuccess(w, struct{}{})
 	}
 }
@@ -175,21 +174,30 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		}
 	}
 
-	bySecTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
+	bySecTime := time.Now().Add(-300 * time.Second)
+	if lt.After(bySecTime) {
+		bySecTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
+	}
 	res["chart_by_sec"], err = model.GetCandlestickData(h.db, bySecTime, "%Y-%m-%d %H:%i:%s")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by sec"), 500)
 		return
 	}
 
-	byMinTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
+	byMinTime := time.Now().Add(-300 * time.Minute)
+	if lt.After(byMinTime) {
+		byMinTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
+	}
 	res["chart_by_min"], err = model.GetCandlestickData(h.db, byMinTime, "%Y-%m-%d %H:%i:00")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by min"), 500)
 		return
 	}
 
-	byHourTime := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
+	byHourTime := time.Now().Add(-48 * time.Hour)
+	if lt.After(byHourTime) {
+		byHourTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
+	}
 	res["chart_by_hour"], err = model.GetCandlestickData(h.db, byHourTime, "%Y-%m-%d %H:00:00")
 	if err != nil {
 		h.handleError(w, errors.Wrap(err, "model.GetCandlestickData by hour"), 500)
