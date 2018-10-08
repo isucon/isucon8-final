@@ -54,11 +54,22 @@ curl https://localhost.isucon8.flying-chair.net/initialize \
 
 ### 準備
 
+#### ベンチマーカー
+
 [Golang](https://golang.org/) 及び [dep](https://golang.github.io/dep/docs/installation.html) は予めinstallしておいてください
 
 ```
 cd bench
 dep ensure
+```
+
+#### データセットの初期化
+
+ISUCON初日と同じデータ量にするため書きを実行します
+(もうちょっといい感じにできそうですが...)
+
+```
+go run bench/cmd/tools/initdatabase/main.go -dsn "root:root@tcp(127.0.0.1:13306)/isucoin"
 ```
 
 ### 実行
