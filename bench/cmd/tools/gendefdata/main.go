@@ -277,6 +277,18 @@ func run(dir, starts, ends string) error {
 		uchan           = make(chan User, 1000)
 	)
 
+	// ベンチの都合上固定
+	uchan <- User{Name: "藍田 奈菜", BankID: "jz67jt77rpnb", Password: "7g39gnwr26ze", pass: "$2a$04$6ieL8BBW6oiDZAYOmdgViOR/026O9JHw7diR342/RyEhMhRI9IhFm"}
+	uchan <- User{Name: "池野 歩", BankID: "2z82n5q", Password: "2s4s829vm2bg9", pass: "$2a$04$K4tqCfXVxQ7BUtC4Rx9S.Odc2LfjrJkv7ShMy5pYWQTqYNkIcKCgK"}
+	uchan <- User{Name: "阿部 俊介", BankID: "k2vutw", Password: "kgt7e2yv863d5", pass: "$2a$04$qVEokzg7aANtQIn.R13Va.1vRDghvI7ChVA0J9cGsY0yq3hlxvZA6"}
+	uchan <- User{Name: "古閑 麻美", BankID: "yft3f5d5g", Password: "5m99r6vt8qssunb7", pass: "$2a$04$24hSHJsvweeAx9CakOgume1YXxnBZTTGv2j0Z4mc41DJxH9wUM0za"}
+	uchan <- User{Name: "川崎 大輝", BankID: "pcsuktmvqn", Password: "fkpcy2amcp9pkmx", pass: "$2a$04$MpuJEh8nrSyMpuxe7lp2ruGmBMtEjMwJcQJf3gFbVVzd/12z5kl.O"}
+	uchan <- User{Name: "吉田 一", BankID: "hpnwwt", Password: "5y62vet3dcepg", pass: "$2a$04$KyozK1u71Gwh2Plpxkriwu6vizkuIxHJ2LIXpX4rlAZi/tnAVGuO."}
+	uchan <- User{Name: "相田 大悟", BankID: "2q5m84je", Password: "qme4bak7x3ng", pass: "$2a$04$WnjM0.FfU47PvpwVwwnbiO3wS3vf6kieiNVDwZJHCWaLTZGtF4jem"}
+	uchan <- User{Name: "泉 結子", BankID: "cymy39gqttm", Password: "8fnw4226kd63tv", pass: "$2a$04$SvScAwzL4kZQfYwu7.em6uGQg1hcxZMhk0aEFBZY97ILKAKOngE.K"}
+	uchan <- User{Name: "谷本 楓花", BankID: "2e633gvuk8r", Password: "6f2fkzybgmhxynxp", pass: "$2a$04$D016sTFwcpsrLsV8DN5lqu.SRl/.YIHLzscaw4mMl6nxO0blETFK6"}
+	uchan <- User{Name: "桑原 楓花", BankID: "qdyj7z5vj5", Password: "54f67y4exumtw", pass: "$2a$05$4nuH6tXyHkzNagtFyBJK9ubAhUKqE32EnOUo5PkYVTWtqdXP8aT8."}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -317,7 +329,6 @@ func run(dir, starts, ends string) error {
 			CreatedAt: tm,
 		})
 	}
-
 	writeTrade := func(d []Trade, force bool) []Trade {
 		if force || len(d) == cap(d) {
 			c := make([]Trade, len(d))
