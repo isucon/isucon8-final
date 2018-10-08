@@ -220,6 +220,7 @@ func run(dir, starts, ends string) error {
 	defer usersql.Close()
 	fmt.Fprintln(usersql, "use isucoin;")
 	fmt.Fprintln(usersql, "truncate user;")
+	fmt.Fprintln(usersql, "set names utf8mb4;")
 
 	tradesql, err := os.Create(filepath.Join(dir, "app.trade.sql"))
 	if err != nil {
