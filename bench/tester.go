@@ -21,7 +21,6 @@ type PreTester struct {
 func (t *PreTester) Run() error {
 	// TODO: 並列化できるところをする
 	now := time.Now()
-	var highestBuyPrice, lowestSellPrice int64
 
 	account1 := fmt.Sprintf("asuzuki%d@isucon.net", now.Unix())
 	account2 := fmt.Sprintf("tmorris%d@isucon.net", now.Unix())
@@ -51,21 +50,21 @@ func (t *PreTester) Run() error {
 		if info.TradedOrders != nil && len(info.TradedOrders) > 0 {
 			return errors.Errorf("GET /info ゲストユーザーのtraded_ordersが設定されています")
 		}
-		if info.LowestSellPrice <= info.HighestBuyPrice {
+		// 初期状態では0
+		if info.LowestSellPrice < info.HighestBuyPrice {
 			// 注文個数によってはあり得るのでそうならないシナリオにしたい
 			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
 		}
-		highestBuyPrice, lowestSellPrice = info.HighestBuyPrice, info.LowestSellPrice
-		// TODO: more test CandlestickData
-		if len(info.ChartBySec) < 5742 {
-			return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
-		}
-		if len(info.ChartByMin) < 98 {
-			return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
-		}
-		if len(info.ChartByHour) < 2 {
-			return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
-		}
+		// 10時以降のデータは消えるので件数は変動する(特にsecもminも消える)
+		// if len(info.ChartBySec) < 5742 {
+		// 	return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
+		// }
+		// if len(info.ChartByMin) < 98 {
+		// 	return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
+		// }
+		// if len(info.ChartByHour) < 2 {
+		// 	return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
+		// }
 	}
 	{
 		// アカウントがない
@@ -116,15 +115,16 @@ func (t *PreTester) Run() error {
 			return errors.Wrap(err, "create new client failed")
 		}
 		if err := gc.Signin(); err != nil {
-			return err
+			return errors.Wrapf(err, "Signin(bank:%s,name:%s)", gd.account, gd.name)
 		}
 		info, err := gc.Info(0)
 		if err != nil {
 			return err
 		}
-		if len(info.TradedOrders) < gd.traded {
-			return errors.Errorf("GET /info traded_ordersの件数が少ないです")
-		}
+		// TODO: Fix
+		// if len(info.TradedOrders) < gd.traded {
+		// 	return errors.Errorf("GET /info traded_ordersの件数が少ないです")
+		// }
 		orders, err := gc.GetOrders()
 		if err != nil {
 			return err
@@ -231,7 +231,7 @@ func (t *PreTester) Run() error {
 
 	// 売り注文は成功する
 	{
-		o, err := c1.AddOrder(TradeTypeSell, 1, highestBuyPrice+1000)
+		o, err := c1.AddOrder(TradeTypeSell, 1, 1000)
 		if err != nil {
 			return err
 		}
@@ -269,7 +269,6 @@ func (t *PreTester) Run() error {
 	}
 
 	{
-		_ = lowestSellPrice // TODO 価格帯をいい感じにする
 		// 注文をして成立させる
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
