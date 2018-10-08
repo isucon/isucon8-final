@@ -3,6 +3,7 @@ package model
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -42,18 +43,20 @@ func InitBenchmark(d QueryExecutor) error {
 	} else {
 		stop = time.Date(stop.Year(), stop.Month(), stop.Day()-1, 10, 0, 0, 0, stop.Location())
 	}
-	p := []string{}
+	log.Printf("dt: %s, stop: %s", dt, stop)
+	p := []string{"pmax"}
 	for dt.After(stop) {
 		p = append(p, dt.Format("p2006010215"))
+		dt.Add(-time.Hour)
 	}
 
-	diffmin := int64(time.Now().Sub(dt).Minutes())
 	for _, q := range []string{
 		fmt.Sprintf("ALTER TABLE orders TRUNCATE PARTITION %s", strings.Join(p, ",")),
 		fmt.Sprintf("ALTER TABLE trade TRUNCATE PARTITION %s", strings.Join(p, ",")),
 		fmt.Sprintf("DELETE FROM user WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
 	} {
-		if _, err := d.Exec(q, diffmin); err != nil {
+		log.Printf("[INFO] %s", q)
+		if _, err := d.Exec(q); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)
 		}
 	}
