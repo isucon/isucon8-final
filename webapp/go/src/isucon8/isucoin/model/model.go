@@ -47,7 +47,7 @@ func InitBenchmark(d QueryExecutor) error {
 	p := []string{"pmax"}
 	for dt.After(stop) {
 		p = append(p, dt.Format("p2006010215"))
-		dt.Add(-time.Hour)
+		dt = dt.Add(-time.Hour)
 	}
 
 	for _, q := range []string{
