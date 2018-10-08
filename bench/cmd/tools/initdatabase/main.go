@@ -92,5 +92,7 @@ func run(db *sqlx.DB) error {
 	db.MustExec("drop table trade")
 	db.MustExec("rename table trade_new to trade")
 
+	db.MustExec("update user set created_at = created_at - INTERVAL ? SECOND", diffs)
+
 	return nil
 }
