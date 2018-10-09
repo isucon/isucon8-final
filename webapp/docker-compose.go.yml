@@ -1,0 +1,14 @@
+version: '2'
+services:
+  isucoin:
+    build: go
+    command:
+      - "sh"
+      - "-c"
+      - "dep ensure && go run ./webapp/main.go"
+    working_dir: /go/src/isucon8/isucoin
+    volumes:
+      - ./go/src/isucon8:/go/src/isucon8
+
+volumes:
+  gopath:
