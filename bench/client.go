@@ -2,6 +2,7 @@ package bench
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,7 +170,7 @@ func (c *Client) UserID() int64 {
 	return c.userID
 }
 
-func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) {
+func (c *Client) doRequest(ctx context.Context, req *http.Request) (*ResponseWithElapsedTime, error) {
 	if c.retired {
 		return nil, ErrAlreadyRetired
 	}
@@ -187,8 +188,14 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 		if reqbody != nil {
 			req.Body = ioutil.NopCloser(bytes.NewBuffer(reqbody))
 		}
+		if ctx != nil {
+			req = req.WithContext(ctx)
+		}
 		res, err := c.hc.Do(req)
 		if err != nil {
+			if err == context.Canceled {
+				return nil, err
+			}
 			elapsedTime := time.Now().Sub(start)
 			if e, ok := err.(*url.Error); ok {
 				if e.Timeout() {
@@ -225,7 +232,7 @@ func (c *Client) doRequest(req *http.Request) (*ResponseWithElapsedTime, error) 
 	}
 }
 
-func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, error) {
+func (c *Client) get(ctx context.Context, path string, val url.Values) (*ResponseWithElapsedTime, error) {
 	u, err := c.base.Parse(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
@@ -252,7 +259,7 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 		// }
 		cache.ApplyRequest(req)
 	}
-	res, err := c.doRequest(req)
+	res, err := c.doRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +276,7 @@ func (c *Client) get(path string, val url.Values) (*ResponseWithElapsedTime, err
 	return res, nil
 }
 
-func (c *Client) post(path string, val url.Values) (*ResponseWithElapsedTime, error) {
+func (c *Client) post(ctx context.Context, path string, val url.Values) (*ResponseWithElapsedTime, error) {
 	u, err := c.base.Parse(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
@@ -279,10 +286,10 @@ func (c *Client) post(path string, val url.Values) (*ResponseWithElapsedTime, er
 		return nil, errors.Wrap(err, "new request failed")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c.doRequest(req)
+	return c.doRequest(ctx, req)
 }
 
-func (c *Client) del(path string, val url.Values) (*ResponseWithElapsedTime, error) {
+func (c *Client) del(ctx context.Context, path string, val url.Values) (*ResponseWithElapsedTime, error) {
 	u, err := c.base.Parse(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "url parse failed")
@@ -295,16 +302,16 @@ func (c *Client) del(path string, val url.Values) (*ResponseWithElapsedTime, err
 	if err != nil {
 		return nil, errors.Wrap(err, "new request failed")
 	}
-	return c.doRequest(req)
+	return c.doRequest(ctx, req)
 }
 
-func (c *Client) Initialize(bankep, bankid, logep, logid string) error {
+func (c *Client) Initialize(ctx context.Context, bankep, bankid, logep, logid string) error {
 	v := url.Values{}
 	v.Set("bank_endpoint", bankep)
 	v.Set("bank_appid", bankid)
 	v.Set("log_endpoint", logep)
 	v.Set("log_appid", logid)
-	res, err := c.post("/initialize", v)
+	res, err := c.post(ctx, "/initialize", v)
 	if err != nil {
 		return errors.Wrap(err, "POST /initialize request failed")
 	}
@@ -319,16 +326,13 @@ func (c *Client) Initialize(bankep, bankid, logep, logid string) error {
 	return errorWithStatus(errors.Errorf("POST /initialize failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Signup() error {
+func (c *Client) Signup(ctx context.Context) error {
 	v := url.Values{}
 	v.Set("name", c.name)
 	v.Set("bank_id", c.bankid)
 	v.Set("password", c.pass)
-	res, err := c.post("/signup", v)
+	res, err := c.post(ctx, "/signup", v)
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return err
-		}
 		return errors.Wrap(err, "POST /signup request failed")
 	}
 	defer res.Body.Close()
@@ -342,15 +346,12 @@ func (c *Client) Signup() error {
 	return errorWithStatus(errors.Errorf("POST /signup failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Signin() error {
+func (c *Client) Signin(ctx context.Context) error {
 	v := url.Values{}
 	v.Set("bank_id", c.bankid)
 	v.Set("password", c.pass)
-	res, err := c.post("/signin", v)
+	res, err := c.post(ctx, "/signin", v)
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return err
-		}
 		return errors.Wrap(err, "POST /signin request failed")
 	}
 	defer res.Body.Close()
@@ -375,12 +376,9 @@ func (c *Client) Signin() error {
 	return nil
 }
 
-func (c *Client) Signout() error {
-	res, err := c.post("/signout", url.Values{})
+func (c *Client) Signout(ctx context.Context) error {
+	res, err := c.post(ctx, "/signout", url.Values{})
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return err
-		}
 		return errors.Wrap(err, "POST /signout request failed")
 	}
 	defer res.Body.Close()
@@ -394,7 +392,7 @@ func (c *Client) Signout() error {
 	return errorWithStatus(errors.Errorf("POST /signout failed."), res.StatusCode, string(b))
 }
 
-func (c *Client) Top() error {
+func (c *Client) Top(ctx context.Context) error {
 	for _, path := range []string{
 		"/",
 		"/favicon.ico",
@@ -409,11 +407,8 @@ func (c *Client) Top() error {
 		// "/js/popper.min.js",
 	} {
 		err := func(path string) error {
-			res, err := c.get(path, url.Values{})
+			res, err := c.get(ctx, path, url.Values{})
 			if err != nil {
-				if err == ErrAlreadyRetired {
-					return err
-				}
 				return errors.Wrapf(err, "GET %s request failed", path)
 			}
 			defer res.Body.Close()
@@ -434,16 +429,13 @@ func (c *Client) Top() error {
 	return nil
 }
 
-func (c *Client) Info(cursor int64) (*InfoResponse, error) {
+func (c *Client) Info(ctx context.Context, cursor int64) (*InfoResponse, error) {
 	path := "/info"
 	v := url.Values{}
 	v.Set("cursor", strconv.FormatInt(cursor, 10))
 	//log.Printf("[DEBUG] GET /info?cursor=%d [user:%d]", cursor, c.UserID())
-	res, err := c.get(path, v)
+	res, err := c.get(ctx, path, v)
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return nil, err
-		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -475,18 +467,15 @@ func (c *Client) Info(cursor int64) (*InfoResponse, error) {
 	return r, nil
 }
 
-func (c *Client) AddOrder(ordertype string, amount, price int64) (*Order, error) {
+func (c *Client) AddOrder(ctx context.Context, ordertype string, amount, price int64) (*Order, error) {
 	path := "/orders"
 	v := url.Values{}
 	v.Set("type", ordertype)
 	v.Set("amount", strconv.FormatInt(amount, 10))
 	v.Set("price", strconv.FormatInt(price, 10))
 	//log.Printf("[DEBUG] POST /orders [user:%d]", c.UserID())
-	res, err := c.post(path, v)
+	res, err := c.post(ctx, path, v)
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return nil, err
-		}
 		return nil, errors.Wrapf(err, "POST %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -513,13 +502,10 @@ func (c *Client) AddOrder(ordertype string, amount, price int64) (*Order, error)
 	}, nil
 }
 
-func (c *Client) GetOrders() ([]Order, error) {
+func (c *Client) GetOrders(ctx context.Context) ([]Order, error) {
 	path := "/orders"
-	res, err := c.get(path, url.Values{})
+	res, err := c.get(ctx, path, url.Values{})
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return nil, err
-		}
 		return nil, errors.Wrapf(err, "GET %s request failed", path)
 	}
 	defer res.Body.Close()
@@ -540,14 +526,11 @@ func (c *Client) GetOrders() ([]Order, error) {
 	return orders, nil
 }
 
-func (c *Client) DeleteOrders(id int64) error {
+func (c *Client) DeleteOrders(ctx context.Context, id int64) error {
 	path := fmt.Sprintf("/order/%d", id)
 	//log.Printf("[DEBUG] DELETE %s [user:%d]", path, c.UserID())
-	res, err := c.del(path, url.Values{})
+	res, err := c.del(ctx, path, url.Values{})
 	if err != nil {
-		if err == ErrAlreadyRetired {
-			return err
-		}
 		return errors.Wrapf(err, "DELETE %s request failed", path)
 	}
 	defer res.Body.Close()

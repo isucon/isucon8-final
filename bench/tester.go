@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,7 +19,7 @@ type PreTester struct {
 	isubank *isubank.Isubank
 }
 
-func (t *PreTester) Run() error {
+func (t *PreTester) Run(ctx context.Context) error {
 	// TODO: 並列化できるところをする
 	now := time.Now()
 
@@ -36,13 +37,13 @@ func (t *PreTester) Run() error {
 	}
 
 	// Top
-	if err := c2.Top(); err != nil {
+	if err := c2.Top(ctx); err != nil {
 		return err
 	}
 
 	{
 		// 非ログイン /info
-		info, err := c2.Info(0)
+		info, err := c2.Info(ctx, 0)
 		if err != nil {
 			return err
 		}
@@ -68,7 +69,7 @@ func (t *PreTester) Run() error {
 	}
 	{
 		// アカウントがない
-		err := c1.Signin()
+		err := c1.Signin(ctx)
 		if err == nil {
 			return errors.New("POST /signin 存在しないアカウントでログインに成功しました")
 		}
@@ -114,10 +115,10 @@ func (t *PreTester) Run() error {
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
 		}
-		if err := gc.Signin(); err != nil {
+		if err := gc.Signin(ctx); err != nil {
 			return errors.Wrapf(err, "Signin(bank:%s,name:%s)", gd.account, gd.name)
 		}
-		info, err := gc.Info(0)
+		info, err := gc.Info(ctx, 0)
 		if err != nil {
 			return err
 		}
@@ -125,7 +126,7 @@ func (t *PreTester) Run() error {
 		if len(info.TradedOrders) < gd.traded {
 			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.traded)
 		}
-		orders, err := gc.GetOrders()
+		orders, err := gc.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
@@ -145,7 +146,7 @@ func (t *PreTester) Run() error {
 
 	{
 		// BANK IDが存在しない
-		err := c1.Signup()
+		err := c1.Signup(ctx)
 		if err == nil {
 			return errors.New("POST /signup 銀行に存在しないアカウントサインアップに成功しました。アカウントチェックを指定ない可能性があります")
 		}
@@ -169,19 +170,19 @@ func (t *PreTester) Run() error {
 		for _, c0 := range []*Client{c1, c2} {
 			c := c0
 			eg.Go(func() error {
-				if err := c.Top(); err != nil {
+				if err := c.Top(ctx); err != nil {
 					return err
 				}
-				if _, err := c.Info(0); err != nil {
+				if _, err := c.Info(ctx, 0); err != nil {
 					return err
 				}
-				if err := c.Signup(); err != nil {
+				if err := c.Signup(ctx); err != nil {
 					return err
 				}
-				if err := c.Signin(); err != nil {
+				if err := c.Signin(ctx); err != nil {
 					return err
 				}
-				if _, err := c.GetOrders(); err != nil {
+				if _, err := c.GetOrders(ctx); err != nil {
 					return err
 				}
 				return nil
@@ -199,7 +200,7 @@ func (t *PreTester) Run() error {
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
 		}
-		err = c1x.Signup()
+		err = c1x.Signup(ctx)
 		if err == nil {
 			return errors.New("POST /signup 重複アカウントでのサインアップに成功しました")
 		}
@@ -215,7 +216,7 @@ func (t *PreTester) Run() error {
 
 	{
 		// お金がない状態でのorder
-		order, err := c1.AddOrder(TradeTypeBuy, 1, 2000)
+		order, err := c1.AddOrder(ctx, TradeTypeBuy, 1, 2000)
 		if err == nil {
 			return errors.Errorf("POST /orders 銀行に残高が足りない買い注文に成功しました [order_id:%d]", order.ID)
 		}
@@ -231,11 +232,11 @@ func (t *PreTester) Run() error {
 
 	// 売り注文は成功する
 	{
-		o, err := c1.AddOrder(TradeTypeSell, 1, 1000)
+		o, err := c1.AddOrder(ctx, TradeTypeSell, 1, 1000)
 		if err != nil {
 			return err
 		}
-		orders, err := c1.GetOrders()
+		orders, err := c1.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
@@ -255,10 +256,10 @@ func (t *PreTester) Run() error {
 			return errors.Errorf("GET /orders Typeが正しくありません[got:%s, want:%s]", g, w)
 		}
 
-		if err = c1.DeleteOrders(o.ID); err != nil {
+		if err = c1.DeleteOrders(ctx, o.ID); err != nil {
 			return err
 		}
-		orders, err = c1.GetOrders()
+		orders, err = c1.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
@@ -283,11 +284,11 @@ func (t *PreTester) Run() error {
 				{3, 5104}, // 足りない
 				{2, 5106}, // 99とマッチング
 			} {
-				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
+				order, err := c1.AddOrder(ctx, TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
 					return errors.Wrapf(err, "POST /orders 買い注文に失敗しました [amount:%d, price:%d]", ap[0], ap[1])
 				}
-				orders, err := c1.GetOrders()
+				orders, err := c1.GetOrders(ctx)
 				if err != nil {
 					return err
 				}
@@ -303,7 +304,7 @@ func (t *PreTester) Run() error {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c1)")
 					default:
-						info, err := c1.Info(0)
+						info, err := c1.Info(ctx, 0)
 						if err != nil {
 							return err
 						}
@@ -319,7 +320,7 @@ func (t *PreTester) Run() error {
 			}
 			log.Printf("[INFO] trade sucess OK(c1)")
 
-			orders, err := c1.GetOrders()
+			orders, err := c1.GetOrders(ctx)
 			if err != nil {
 				return err
 			}
@@ -405,11 +406,11 @@ func (t *PreTester) Run() error {
 				{1, 5104}, // - 2, 100
 				{1, 5104}, // -
 			} {
-				order, err := c2.AddOrder(TradeTypeSell, ap[0], ap[1])
+				order, err := c2.AddOrder(ctx, TradeTypeSell, ap[0], ap[1])
 				if err != nil {
 					return errors.Wrap(err, "POST /orders 売り注文に失敗しました")
 				}
-				orders, err := c2.GetOrders()
+				orders, err := c2.GetOrders(ctx)
 				if err != nil {
 					return err
 				}
@@ -424,7 +425,7 @@ func (t *PreTester) Run() error {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c2)")
 					default:
-						info, err := c2.Info(0)
+						info, err := c2.Info(ctx, 0)
 						if err != nil {
 							return err
 						}
@@ -440,7 +441,7 @@ func (t *PreTester) Run() error {
 			}
 			log.Printf("[INFO] trade sucess OK(c2)")
 
-			orders, err := c2.GetOrders()
+			orders, err := c2.GetOrders(ctx)
 			if err != nil {
 				return err
 			}
@@ -528,7 +529,7 @@ type PostTester struct {
 	investors []Investor
 }
 
-func (t *PostTester) Run() error {
+func (t *PostTester) Run(ctx context.Context) error {
 	deadline := time.Now().Add(LogAllowedDelay)
 	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
 	var trade *Trade
@@ -599,7 +600,7 @@ func (t *PostTester) Run() error {
 						log.Printf("[INFO] 残高チェックOK (point1) [user:%d]", investor.UserID())
 						break
 					}
-					if err = investor.FetchOrders(); err != nil {
+					if err = investor.FetchOrders(ctx); err != nil {
 						return err
 					}
 					if credit == investor.Credit() {
