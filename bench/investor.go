@@ -325,7 +325,7 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task 
 		order, err := i.c.AddOrder(ot, amount, price)
 		if err != nil {
 			// 残高不足はOKとする
-			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+			if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 400 && strings.Index(err.Error(), "残高") > -1 {
 				return nil
 			}
 			return err
