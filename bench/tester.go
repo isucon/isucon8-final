@@ -531,6 +531,9 @@ type PostTester struct {
 
 func (t *PostTester) Run(ctx context.Context) error {
 	deadline := time.Now().Add(LogAllowedDelay)
+	if len(t.investors) == 0 {
+		return errors.Errorf("ユーザーが全滅しています")
+	}
 	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
 	var trade *Trade
 	for _, investor := range t.investors {

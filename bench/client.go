@@ -193,14 +193,17 @@ func (c *Client) doRequest(ctx context.Context, req *http.Request) (*ResponseWit
 		}
 		res, err := c.hc.Do(req)
 		if err != nil {
-			if err == context.Canceled {
-				return nil, err
-			}
 			elapsedTime := time.Now().Sub(start)
 			if e, ok := err.(*url.Error); ok {
-				if e.Timeout() {
+				// log.Printf("[DEBUG] url.Error %#v", e)
+				if e.Timeout() && c.retireto <= elapsedTime {
 					c.retired = true
 					return nil, &ErrElapsedTimeOverRetire{e.Error()}
+				}
+				switch e.Err {
+				case context.Canceled, context.DeadlineExceeded:
+					// こっちはcontext timeout
+					return nil, e.Err
 				}
 			}
 			log.Printf("[WARN] err: %s, [%.5f] req.len:%d", err, elapsedTime.Seconds(), req.ContentLength)
