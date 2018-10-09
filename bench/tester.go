@@ -546,6 +546,9 @@ func (t *PostTester) Run(ctx context.Context) error {
 			}
 		}
 	}
+	if trade == nil {
+		return errors.Errorf("取引に成功したユーザーが全滅しています")
+	}
 	eg := new(errgroup.Group)
 
 	eg.Go(func() error {
