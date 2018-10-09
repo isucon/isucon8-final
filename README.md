@@ -17,6 +17,10 @@
 
 ```
 docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.go.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.perl.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.ruby.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.python.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.php.yml up [-d]
 ```
 
 
