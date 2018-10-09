@@ -78,6 +78,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		return errors.New("finish by fail")
 	}
 
+	// cancelたちが終わるように少し待つ(すべての状態管理はつらすぎるので)
+	time.Sleep(50 * time.Millisecond)
+
 	m.Logger().Printf("# post test")
 	if err := m.PostTest(cctx); err != nil {
 		r.fail = true
