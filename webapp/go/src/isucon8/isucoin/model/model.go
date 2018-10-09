@@ -3,8 +3,6 @@ package model
 import (
 	"database/sql"
 	"fmt"
-	"log"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -32,30 +30,16 @@ type QueryExecutor interface {
 }
 
 func InitBenchmark(d QueryExecutor) error {
-	var dt time.Time
-	if err := d.QueryRow(`select max(created_at) from orders`).Scan(&dt); err != nil {
-		return errors.Wrap(err, "get last traded")
-	}
 	// 前回の10:00:00+0900までのデータを消す
-	stop := time.Now()
-	if stop.Hour() >= 10 {
-		stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Location())
-	} else {
-		stop = time.Date(stop.Year(), stop.Month(), stop.Day()-1, 10, 0, 0, 0, stop.Location())
-	}
-	log.Printf("dt: %s, stop: %s", dt, stop)
-	p := []string{"pmax"}
-	for dt.After(stop) {
-		p = append(p, dt.Format("p2006010215"))
-		dt = dt.Add(-time.Hour)
-	}
+	// 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
+	stop := time.Now().Add(-10 * time.Hour)
+	stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Location())
 
 	for _, q := range []string{
-		fmt.Sprintf("ALTER TABLE orders TRUNCATE PARTITION %s", strings.Join(p, ",")),
-		fmt.Sprintf("ALTER TABLE trade TRUNCATE PARTITION %s", strings.Join(p, ",")),
+		fmt.Sprintf("DELETE FROM orders WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
+		fmt.Sprintf("DELETE FROM trade WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
 		fmt.Sprintf("DELETE FROM user WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
 	} {
-		log.Printf("[INFO] %s", q)
 		if _, err := d.Exec(q); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)
 		}
