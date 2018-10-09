@@ -21,16 +21,14 @@ const (
 )
 
 type Handler struct {
-	db      *sql.DB
-	store   sessions.Store
-	datadir string
+	db    *sql.DB
+	store sessions.Store
 }
 
-func NewHandler(db *sql.DB, store sessions.Store, datadir string) *Handler {
+func NewHandler(db *sql.DB, store sessions.Store) *Handler {
 	return &Handler{
-		db:      db,
-		store:   store,
-		datadir: datadir,
+		db:    db,
+		store: store,
 	}
 }
 
