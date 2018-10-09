@@ -2,10 +2,12 @@ package bench
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/taskworker"
@@ -29,6 +31,7 @@ type Investor interface {
 	Isu() int64
 	IsSignin() bool
 	IsStarted() bool
+	IsGuest() bool
 	Orders() []*Order
 	UserID() int64
 
@@ -124,6 +127,10 @@ func (i *investorBase) IsSignin() bool {
 
 func (i *investorBase) IsStarted() bool {
 	return i.isStarted
+}
+
+func (i *investorBase) IsGuest() bool {
+	return false
 }
 
 func (i *investorBase) Orders() []*Order {
@@ -530,4 +537,73 @@ func (i *RandomInvestor) UpdateOrderTask() taskworker.Task {
 		}
 	}
 	return nil
+}
+
+type BruteForceInvestor struct {
+	*investorBase
+	tryLock sync.Mutex
+	next    time.Time
+	num     int32
+	working bool
+	defpass string
+}
+
+func NewBruteForceInvestor(c *Client) *BruteForceInvestor {
+	return &BruteForceInvestor{
+		investorBase: newInvestorBase(c, 0, 0),
+		defpass:      c.pass,
+	}
+}
+
+func (i *BruteForceInvestor) IsGuest() bool {
+	return i.IsStarted()
+}
+
+func (i *BruteForceInvestor) try() taskworker.Task {
+	i.taskLock.Lock()
+	defer i.taskLock.Unlock()
+	if i.working {
+		return nil
+	}
+	task := taskworker.NewSerialTask(3)
+	task.Add(i.Top())
+	task.Add(i.Info())
+	task.Add(taskworker.NewExecTask(func(ctx context.Context) error {
+		delay := BruteForceDelay
+		n := atomic.AddInt32(&i.num, 1)
+		i.c.pass = fmt.Sprintf("password%d%d", n, rand.Intn(100))
+		err := i.c.Signin(ctx)
+		if err == nil {
+			return errors.Errorf("不正ログインに成功しました")
+		}
+		if e, ok := err.(*ErrorWithStatus); ok {
+			switch e.StatusCode {
+			case 403:
+				if n < 5 {
+					return err
+				}
+				delay = time.Second * time.Duration(int64(n))
+			case 404:
+			default:
+				return err
+			}
+		}
+
+		go func() {
+			time.Sleep(delay)
+			i.working = false
+		}()
+		return nil
+	}, SigninScore))
+	i.working = true
+	return task
+}
+
+func (i *BruteForceInvestor) Start() taskworker.Task {
+	i.isStarted = true
+	return i.try()
+}
+
+func (i *BruteForceInvestor) Next() taskworker.Task {
+	return i.try()
 }

@@ -82,19 +82,6 @@ func (t *PreTester) Run(ctx context.Context) error {
 		}
 	}
 	{
-		// 既存ユーザー
-		// | id   | name      | bank_id      | o   | t   | pass
-		// | 1235 | 藍田 奈菜 | jz67jt77rpnb | 501 | 424 | 7g39gnwr26ze
-		// | 1236 | 池野 歩   | 2z82n5q      | 559 | 459 | 2s4s829vm2bg9
-		// | 1237 | 阿部 俊介 | k2vutw       | 557 | 449 | kgt7e2yv863d5
-		// | 1238 | 古閑 麻美 | yft3f5d5g    | 543 | 422 | 5m99r6vt8qssunb7
-		// | 1239 | 川崎 大輝 | pcsuktmvqn   | 549 | 443 | fkpcy2amcp9pkmx
-		// | 1240 | 吉田 一   | hpnwwt       | 547 | 447 | 5y62vet3dcepg
-		// | 1241 | 相田 大悟 | 2q5m84je     | 521 | 420 | qme4bak7x3ng
-		// | 1242 | 泉 結子   | cymy39gqttm  | 545 | 441 | 8fnw4226kd63tv
-		// | 1243 | 谷本 楓花 | 2e633gvuk8r  | 563 | 447 | 6f2fkzybgmhxynxp
-		// | 1244 | 桑原 楓花 | qdyj7z5vj5   | 523 | 431 | 54f67y4exumtw
-
 		defaultaccounts := []struct {
 			account, name, pass string
 			order, traded       int

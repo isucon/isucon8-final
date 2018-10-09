@@ -258,8 +258,8 @@ func (c *Manager) Start() ([]taskworker.Task, error) {
 
 	basePrice := 5105
 
-	tasks := make([]taskworker.Task, 0, AddWorkersByLevel)
-	for i := 0; i < AddWorkersByLevel; i++ {
+	tasks := make([]taskworker.Task, 0, DefaultWorkers+BruteForceWorkers)
+	for i := 0; i < DefaultWorkers; i++ {
 		cl, err := c.newClient()
 		if err != nil {
 			return nil, err
@@ -273,6 +273,16 @@ func (c *Manager) Start() ([]taskworker.Task, error) {
 		if investor.Credit() > 0 {
 			c.isubank.AddCredit(investor.BankID(), investor.Credit())
 		}
+		c.AddInvestor(investor)
+		tasks = append(tasks, investor.Start())
+	}
+	accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
+	for i := 0; i < BruteForceWorkers; i++ {
+		cl, err := NewClient(c.appep, accounts[i], "わからない", "12345", ClientTimeout, RetireTimeout)
+		if err != nil {
+			return nil, err
+		}
+		investor := NewBruteForceInvestor(cl)
 		c.AddInvestor(investor)
 		tasks = append(tasks, investor.Start())
 	}
@@ -326,7 +336,7 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 	var latestTradePrice int64 = 5000
 	var addByShare int
 	for _, investor := range c.investors {
-		if !investor.IsSignin() {
+		if !investor.IsSignin() && !investor.IsGuest() {
 			continue
 		}
 		if investor.IsRetired() {
