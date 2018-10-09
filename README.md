@@ -38,7 +38,7 @@ docker-compose -f blackbox/docker-compose.local.yml up [-d]
 
 ### mockserviceの利用
 
-blackbox APIを利用せずにblackbox APIを使う場合です。
+blackbox APIを利用せずにmockを利用する場合の起動方法
 
 1. mockservice をdocker-composeの起動時に含めます
 2. `/initialize` を手動で叩いてmockserviceを使うようにします
@@ -53,7 +53,7 @@ curl https://localhost.isucon8.flying-chair.net/initialize \
     -d log_appid=mocklog
 ```
 
-※ ただし、[docs/MANUAL.md](docs/MANUAL.md) にあるように `isucon-{001..100}` のbankidを利用できるためblackbox を起動している場合は原則必要ありません。(blackboxの存在を知らない競技中に使うためのものです)
+※ ただし、[docs/MANUAL.md](docs/MANUAL.md) にあるように `isucon-{001..100}` のbankidを利用できるためblackbox を起動している場合は原則必要ありません。(blackboxの存在を知らない競技中に手元でdocker-composeを利用するためのものです)
 
 
 ## bench
