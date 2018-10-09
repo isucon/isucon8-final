@@ -584,15 +584,30 @@ func (t *PostTester) Run() error {
 		investor := inv
 		eg.Go(func() error {
 			timeout := time.After(deadline.Sub(time.Now()))
-			if err := investor.FetchOrders(); err != nil {
-				return err
-			}
-			credit, err := t.isubank.GetCredit(investor.BankID())
-			if err != nil {
-				return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
-			}
-			if credit != investor.Credit() {
-				return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+			var credit int64
+			for credit != investor.Credit() {
+				select {
+				case <-timeout:
+					return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+				default:
+					var err error
+					credit, err = t.isubank.GetCredit(investor.BankID())
+					if err != nil {
+						return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
+					}
+					if credit == investor.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point1) [user:%d]", investor.UserID())
+						break
+					}
+					if err = investor.FetchOrders(); err != nil {
+						return err
+					}
+					if credit == investor.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point2) [user:%d]", investor.UserID())
+						break
+					}
+					time.Sleep(time.Millisecond * 500)
+				}
 			}
 			var buy, sell, buyt, sellt, buyd, selld int
 			for _, order := range investor.Orders() {
@@ -623,28 +638,36 @@ func (t *PostTester) Run() error {
 						return errors.Wrap(err, "isulog get user logs failed")
 					}
 					ok := func() bool {
-						if countLog(logs, isulog.TagSignup) == 0 {
+						if c := countLog(logs, isulog.TagSignup); c == 0 {
+							log.Printf("[INFO] not match log type: %s, nothing", isulog.TagSignup)
 							return false
 						}
-						if countLog(logs, isulog.TagSignin) == 0 {
+						if c := countLog(logs, isulog.TagSignin); c == 0 {
+							log.Printf("[INFO] not match log type: %s, nothing", isulog.TagSignin)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyOrder) < buy {
+						if c := countLog(logs, isulog.TagBuyOrder); c < buy {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyOrder, c, buy)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyTrade) < buyt {
+						if c := countLog(logs, isulog.TagBuyTrade); c < buyt {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyTrade, c, buyt)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyDelete) < buyd {
+						if c := countLog(logs, isulog.TagBuyDelete); c < buyd {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyDelete, c, buyd)
 							return false
 						}
-						if countLog(logs, isulog.TagSellOrder) < sell {
+						if c := countLog(logs, isulog.TagSellOrder); c < sell {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellOrder, c, sell)
 							return false
 						}
-						if countLog(logs, isulog.TagSellTrade) < sellt {
+						if c := countLog(logs, isulog.TagSellTrade); c < sellt {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellTrade, c, sellt)
 							return false
 						}
-						if countLog(logs, isulog.TagSellDelete) < selld {
+						if c := countLog(logs, isulog.TagSellDelete); c < selld {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellDelete, c, selld)
 							return false
 						}
 						return true
