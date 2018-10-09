@@ -16,7 +16,7 @@
 アプリケーションは `docker-compose` で動かします
 
 ```
-docker-compose -f webapp/docker-compose.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.go.yml up [-d]
 ```
 
 
@@ -36,10 +36,12 @@ docker-compose -f blackbox/docker-compose.local.yml up [-d]
 
 blackbox APIを利用せずにblackbox APIを使う場合です。
 
-1. docker-composeでアプリの`links` に`mockservice`を追加してください
+1. mockservice をdocker-composeの起動時に含めます
 2. `/initialize` を手動で叩いてmockserviceを使うようにします
 
 ```
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.mockservice.yml -f webapp/docker-compose.go.yml up
+
 curl https://localhost.isucon8.flying-chair.net/initialize \
     -d bank_endpoint=http://mockservice:14809 \
     -d bank_appid=mockbank \

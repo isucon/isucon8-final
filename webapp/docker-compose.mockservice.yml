@@ -10,3 +10,7 @@ services:
      - "14690:14690"
      - "14809:14809"
    command: sh ./docker-run.sh
+
+  isucoin:
+    links:
+      - mockservice
