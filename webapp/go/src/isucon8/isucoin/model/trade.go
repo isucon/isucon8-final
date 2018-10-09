@@ -37,24 +37,8 @@ func GetTradeByID(d QueryExecutor, id int64) (*Trade, error) {
 	return scanTrade(d.QueryRow("SELECT * FROM trade WHERE id = ?", id))
 }
 
-func GetTradesByLastID(d QueryExecutor, lastID int64) ([]*Trade, error) {
-	rows, err := d.Query("SELECT * FROM trade WHERE id > ? ORDER BY id ASC", lastID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetTradesByLastID Query failed. lastID:%d", lastID)
-	}
-	defer rows.Close()
-	trades := []*Trade{}
-	for rows.Next() {
-		trade, err := scanTrade(rows)
-		if err != nil {
-			return nil, errors.Wrapf(err, "Scan failed.")
-		}
-		trades = append(trades, trade)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrapf(err, "rows.Err failed.")
-	}
-	return trades, nil
+func GetLatestTrade(d QueryExecutor) (*Trade, error) {
+	return scanTrade(d.QueryRow("SELECT * FROM trade ORDER BY id DESC"))
 }
 
 func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]CandlestickData, error) {
@@ -95,7 +79,7 @@ func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]Candlestick
 }
 
 func HasTradeChanceByOrder(d QueryExecutor, orderID int64) (bool, error) {
-	order, err := getOrderByID(d, orderID)
+	order, err := GetOrderByID(d, orderID)
 	if err != nil {
 		return false, err
 	}
@@ -245,7 +229,7 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 			if err == ErrOrderAlreadyClosed {
 				continue
 			}
-			return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
+			return errors.Wrap(err, "getOpenOrderByID  buy_order")
 		}
 		if to.Amount > restAmount {
 			continue

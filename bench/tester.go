@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,10 +19,9 @@ type PreTester struct {
 	isubank *isubank.Isubank
 }
 
-func (t *PreTester) Run() error {
+func (t *PreTester) Run(ctx context.Context) error {
 	// TODO: 並列化できるところをする
 	now := time.Now()
-	var highestBuyPrice, lowestSellPrice int64
 
 	account1 := fmt.Sprintf("asuzuki%d@isucon.net", now.Unix())
 	account2 := fmt.Sprintf("tmorris%d@isucon.net", now.Unix())
@@ -37,13 +37,13 @@ func (t *PreTester) Run() error {
 	}
 
 	// Top
-	if err := c2.Top(); err != nil {
+	if err := c2.Top(ctx); err != nil {
 		return err
 	}
 
 	{
 		// 非ログイン /info
-		info, err := c2.Info(0)
+		info, err := c2.Info(ctx, 0)
 		if err != nil {
 			return err
 		}
@@ -51,25 +51,25 @@ func (t *PreTester) Run() error {
 		if info.TradedOrders != nil && len(info.TradedOrders) > 0 {
 			return errors.Errorf("GET /info ゲストユーザーのtraded_ordersが設定されています")
 		}
-		if info.LowestSellPrice <= info.HighestBuyPrice {
+		// 初期状態では0
+		if info.LowestSellPrice < info.HighestBuyPrice {
 			// 注文個数によってはあり得るのでそうならないシナリオにしたい
 			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
 		}
-		highestBuyPrice, lowestSellPrice = info.HighestBuyPrice, info.LowestSellPrice
-		// TODO: more test CandlestickData
-		if len(info.ChartBySec) < 5742 {
-			return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
-		}
-		if len(info.ChartByMin) < 98 {
-			return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
-		}
-		if len(info.ChartByHour) < 2 {
-			return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
-		}
+		// 10時以降のデータは消えるので件数は変動する(特にsecもminも消える)
+		// if len(info.ChartBySec) < 5742 {
+		// 	return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
+		// }
+		// if len(info.ChartByMin) < 98 {
+		// 	return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
+		// }
+		// if len(info.ChartByHour) < 2 {
+		// 	return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
+		// }
 	}
 	{
 		// アカウントがない
-		err := c1.Signin()
+		err := c1.Signin(ctx)
 		if err == nil {
 			return errors.New("POST /signin 存在しないアカウントでログインに成功しました")
 		}
@@ -83,35 +83,55 @@ func (t *PreTester) Run() error {
 	}
 	{
 		// 既存ユーザー
+		// | id   | name      | bank_id      | o   | t   | pass
+		// | 1235 | 藍田 奈菜 | jz67jt77rpnb | 501 | 424 | 7g39gnwr26ze
+		// | 1236 | 池野 歩   | 2z82n5q      | 559 | 459 | 2s4s829vm2bg9
+		// | 1237 | 阿部 俊介 | k2vutw       | 557 | 449 | kgt7e2yv863d5
+		// | 1238 | 古閑 麻美 | yft3f5d5g    | 543 | 422 | 5m99r6vt8qssunb7
+		// | 1239 | 川崎 大輝 | pcsuktmvqn   | 549 | 443 | fkpcy2amcp9pkmx
+		// | 1240 | 吉田 一   | hpnwwt       | 547 | 447 | 5y62vet3dcepg
+		// | 1241 | 相田 大悟 | 2q5m84je     | 521 | 420 | qme4bak7x3ng
+		// | 1242 | 泉 結子   | cymy39gqttm  | 545 | 441 | 8fnw4226kd63tv
+		// | 1243 | 谷本 楓花 | 2e633gvuk8r  | 563 | 447 | 6f2fkzybgmhxynxp
+		// | 1244 | 桑原 楓花 | qdyj7z5vj5   | 523 | 431 | 54f67y4exumtw
+
 		defaultaccounts := []struct {
 			account, name, pass string
 			order, traded       int
 		}{
-			{"59yyu6fu7g", "藍田 麻美", "xbcw43ezg79gp9", 137, 131},
-			{"cda92cfda9", "菅谷 翔", "r2ejjzbqsby2ju", 125, 120},
-			{"kjcbfebp5", "斎藤 真美", "mnxpq6v3p9xafny", 100, 99},
+			{"jz67jt77rpnb", "藍田 奈菜", "7g39gnwr26ze", 501, 424},
+			{"2z82n5q", "池野 歩", "2s4s829vm2bg9", 559, 459},
+			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
+			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
+			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
+			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
+			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
+			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
+			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
+			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
 		}
 		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
 		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
 		}
-		if err := gc.Signin(); err != nil {
-			return err
+		if err := gc.Signin(ctx); err != nil {
+			return errors.Wrapf(err, "Signin(bank:%s,name:%s)", gd.account, gd.name)
 		}
-		info, err := gc.Info(0)
+		info, err := gc.Info(ctx, 0)
 		if err != nil {
 			return err
 		}
+		// TODO: Fix
 		if len(info.TradedOrders) < gd.traded {
-			return errors.Errorf("GET /info traded_ordersの件数が少ないです")
+			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.traded)
 		}
-		orders, err := gc.GetOrders()
+		orders, err := gc.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
-		if o := len(orders); o < gd.traded || gd.order < o {
-			return errors.Errorf("GET /orders 件数があいません")
+		if o := len(orders); o < gd.traded {
+			return errors.Errorf("GET /orders 件数があいません user:%d, got: %d, expected: %d", gc.UserID(), o, gd.traded)
 		}
 		count := 0
 		for _, o := range orders {
@@ -126,7 +146,7 @@ func (t *PreTester) Run() error {
 
 	{
 		// BANK IDが存在しない
-		err := c1.Signup()
+		err := c1.Signup(ctx)
 		if err == nil {
 			return errors.New("POST /signup 銀行に存在しないアカウントサインアップに成功しました。アカウントチェックを指定ない可能性があります")
 		}
@@ -150,19 +170,19 @@ func (t *PreTester) Run() error {
 		for _, c0 := range []*Client{c1, c2} {
 			c := c0
 			eg.Go(func() error {
-				if err := c.Top(); err != nil {
+				if err := c.Top(ctx); err != nil {
 					return err
 				}
-				if _, err := c.Info(0); err != nil {
+				if _, err := c.Info(ctx, 0); err != nil {
 					return err
 				}
-				if err := c.Signup(); err != nil {
+				if err := c.Signup(ctx); err != nil {
 					return err
 				}
-				if err := c.Signin(); err != nil {
+				if err := c.Signin(ctx); err != nil {
 					return err
 				}
-				if _, err := c.GetOrders(); err != nil {
+				if _, err := c.GetOrders(ctx); err != nil {
 					return err
 				}
 				return nil
@@ -180,7 +200,7 @@ func (t *PreTester) Run() error {
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
 		}
-		err = c1x.Signup()
+		err = c1x.Signup(ctx)
 		if err == nil {
 			return errors.New("POST /signup 重複アカウントでのサインアップに成功しました")
 		}
@@ -196,7 +216,7 @@ func (t *PreTester) Run() error {
 
 	{
 		// お金がない状態でのorder
-		order, err := c1.AddOrder(TradeTypeBuy, 1, 2000)
+		order, err := c1.AddOrder(ctx, TradeTypeBuy, 1, 2000)
 		if err == nil {
 			return errors.Errorf("POST /orders 銀行に残高が足りない買い注文に成功しました [order_id:%d]", order.ID)
 		}
@@ -212,11 +232,11 @@ func (t *PreTester) Run() error {
 
 	// 売り注文は成功する
 	{
-		o, err := c1.AddOrder(TradeTypeSell, 1, highestBuyPrice+1000)
+		o, err := c1.AddOrder(ctx, TradeTypeSell, 1, 1000)
 		if err != nil {
 			return err
 		}
-		orders, err := c1.GetOrders()
+		orders, err := c1.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
@@ -236,10 +256,10 @@ func (t *PreTester) Run() error {
 			return errors.Errorf("GET /orders Typeが正しくありません[got:%s, want:%s]", g, w)
 		}
 
-		if err = c1.DeleteOrders(o.ID); err != nil {
+		if err = c1.DeleteOrders(ctx, o.ID); err != nil {
 			return err
 		}
-		orders, err = c1.GetOrders()
+		orders, err = c1.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
@@ -250,7 +270,6 @@ func (t *PreTester) Run() error {
 	}
 
 	{
-		_ = lowestSellPrice // TODO 価格帯をいい感じにする
 		// 注文をして成立させる
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
@@ -265,11 +284,11 @@ func (t *PreTester) Run() error {
 				{3, 5104}, // 足りない
 				{2, 5106}, // 99とマッチング
 			} {
-				order, err := c1.AddOrder(TradeTypeBuy, ap[0], ap[1])
+				order, err := c1.AddOrder(ctx, TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
 					return errors.Wrapf(err, "POST /orders 買い注文に失敗しました [amount:%d, price:%d]", ap[0], ap[1])
 				}
-				orders, err := c1.GetOrders()
+				orders, err := c1.GetOrders(ctx)
 				if err != nil {
 					return err
 				}
@@ -285,7 +304,7 @@ func (t *PreTester) Run() error {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c1)")
 					default:
-						info, err := c1.Info(0)
+						info, err := c1.Info(ctx, 0)
 						if err != nil {
 							return err
 						}
@@ -301,7 +320,7 @@ func (t *PreTester) Run() error {
 			}
 			log.Printf("[INFO] trade sucess OK(c1)")
 
-			orders, err := c1.GetOrders()
+			orders, err := c1.GetOrders(ctx)
 			if err != nil {
 				return err
 			}
@@ -387,11 +406,11 @@ func (t *PreTester) Run() error {
 				{1, 5104}, // - 2, 100
 				{1, 5104}, // -
 			} {
-				order, err := c2.AddOrder(TradeTypeSell, ap[0], ap[1])
+				order, err := c2.AddOrder(ctx, TradeTypeSell, ap[0], ap[1])
 				if err != nil {
 					return errors.Wrap(err, "POST /orders 売り注文に失敗しました")
 				}
-				orders, err := c2.GetOrders()
+				orders, err := c2.GetOrders(ctx)
 				if err != nil {
 					return err
 				}
@@ -406,7 +425,7 @@ func (t *PreTester) Run() error {
 					case <-timeout:
 						return errors.Errorf("成立すべき取引が成立しませんでした(c2)")
 					default:
-						info, err := c2.Info(0)
+						info, err := c2.Info(ctx, 0)
 						if err != nil {
 							return err
 						}
@@ -422,7 +441,7 @@ func (t *PreTester) Run() error {
 			}
 			log.Printf("[INFO] trade sucess OK(c2)")
 
-			orders, err := c2.GetOrders()
+			orders, err := c2.GetOrders(ctx)
 			if err != nil {
 				return err
 			}
@@ -510,8 +529,11 @@ type PostTester struct {
 	investors []Investor
 }
 
-func (t *PostTester) Run() error {
+func (t *PostTester) Run(ctx context.Context) error {
 	deadline := time.Now().Add(LogAllowedDelay)
+	if len(t.investors) == 0 {
+		return errors.Errorf("ユーザーが全滅しています")
+	}
 	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
 	var trade *Trade
 	for _, investor := range t.investors {
@@ -523,6 +545,9 @@ func (t *PostTester) Run() error {
 				}
 			}
 		}
+	}
+	if trade == nil {
+		return errors.Errorf("取引に成功したユーザーが全滅しています")
 	}
 	eg := new(errgroup.Group)
 
@@ -566,15 +591,30 @@ func (t *PostTester) Run() error {
 		investor := inv
 		eg.Go(func() error {
 			timeout := time.After(deadline.Sub(time.Now()))
-			if err := investor.FetchOrders(); err != nil {
-				return err
-			}
-			credit, err := t.isubank.GetCredit(investor.BankID())
-			if err != nil {
-				return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
-			}
-			if credit != investor.Credit() {
-				return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+			var credit int64
+			for credit != investor.Credit() {
+				select {
+				case <-timeout:
+					return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+				default:
+					var err error
+					credit, err = t.isubank.GetCredit(investor.BankID())
+					if err != nil {
+						return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
+					}
+					if credit == investor.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point1) [user:%d]", investor.UserID())
+						break
+					}
+					if err = investor.FetchOrders(ctx); err != nil {
+						return err
+					}
+					if credit == investor.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point2) [user:%d]", investor.UserID())
+						break
+					}
+					time.Sleep(time.Millisecond * 500)
+				}
 			}
 			var buy, sell, buyt, sellt, buyd, selld int
 			for _, order := range investor.Orders() {
@@ -605,28 +645,36 @@ func (t *PostTester) Run() error {
 						return errors.Wrap(err, "isulog get user logs failed")
 					}
 					ok := func() bool {
-						if countLog(logs, isulog.TagSignup) == 0 {
+						if c := countLog(logs, isulog.TagSignup); c == 0 {
+							log.Printf("[INFO] not match log type: %s, nothing", isulog.TagSignup)
 							return false
 						}
-						if countLog(logs, isulog.TagSignin) == 0 {
+						if c := countLog(logs, isulog.TagSignin); c == 0 {
+							log.Printf("[INFO] not match log type: %s, nothing", isulog.TagSignin)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyOrder) < buy {
+						if c := countLog(logs, isulog.TagBuyOrder); c < buy {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyOrder, c, buy)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyTrade) < buyt {
+						if c := countLog(logs, isulog.TagBuyTrade); c < buyt {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyTrade, c, buyt)
 							return false
 						}
-						if countLog(logs, isulog.TagBuyDelete) < buyd {
+						if c := countLog(logs, isulog.TagBuyDelete); c < buyd {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagBuyDelete, c, buyd)
 							return false
 						}
-						if countLog(logs, isulog.TagSellOrder) < sell {
+						if c := countLog(logs, isulog.TagSellOrder); c < sell {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellOrder, c, sell)
 							return false
 						}
-						if countLog(logs, isulog.TagSellTrade) < sellt {
+						if c := countLog(logs, isulog.TagSellTrade); c < sellt {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellTrade, c, sellt)
 							return false
 						}
-						if countLog(logs, isulog.TagSellDelete) < selld {
+						if c := countLog(logs, isulog.TagSellDelete); c < selld {
+							log.Printf("[INFO] not match log type: %s, %d < %d", isulog.TagSellDelete, c, selld)
 							return false
 						}
 						return true

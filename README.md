@@ -16,7 +16,11 @@
 アプリケーションは `docker-compose` で動かします
 
 ```
-docker-compose -f webapp/docker-compose.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.go.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.perl.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.ruby.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.python.yml up [-d]
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.php.yml up [-d]
 ```
 
 
@@ -34,12 +38,14 @@ docker-compose -f blackbox/docker-compose.local.yml up [-d]
 
 ### mockserviceの利用
 
-blackbox APIを利用せずにblackbox APIを使う場合です。
+blackbox APIを利用せずにmockを利用する場合の起動方法
 
-1. docker-composeでアプリの`links` に`mockservice`を追加してください
+1. mockservice をdocker-composeの起動時に含めます
 2. `/initialize` を手動で叩いてmockserviceを使うようにします
 
 ```
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.mockservice.yml -f webapp/docker-compose.go.yml up
+
 curl https://localhost.isucon8.flying-chair.net/initialize \
     -d bank_endpoint=http://mockservice:14809 \
     -d bank_appid=mockbank \
@@ -47,18 +53,29 @@ curl https://localhost.isucon8.flying-chair.net/initialize \
     -d log_appid=mocklog
 ```
 
-※ ただし、[docs/MANUAL.md](docs/MANUAL.md) にあるように `isucon-{001..100}` のbankidを利用できるためblackbox を起動している場合は原則必要ありません。(blackboxの存在を知らない競技中に使うためのものです)
+※ ただし、[docs/MANUAL.md](docs/MANUAL.md) にあるように `isucon-{001..100}` のbankidを利用できるためblackbox を起動している場合は原則必要ありません。(blackboxの存在を知らない競技中に手元でdocker-composeを利用するためのものです)
 
 
 ## bench
 
 ### 準備
 
+#### ベンチマーカー
+
 [Golang](https://golang.org/) 及び [dep](https://golang.github.io/dep/docs/installation.html) は予めinstallしておいてください
 
 ```
 cd bench
 dep ensure
+```
+
+#### データセットの初期化
+
+1日一回下記スクリプトを実行して、初期データをISUCON初日と同じデータにします
+(もうちょっといい感じにできそうですが...)
+
+```
+go run bench/cmd/tools/initdatabase/main.go -dsn "root:root@tcp(127.0.0.1:13306)/isucoin"
 ```
 
 ### 実行

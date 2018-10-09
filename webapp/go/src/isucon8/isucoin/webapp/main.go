@@ -42,7 +42,6 @@ func main() {
 		dbpass = getEnv("DB_PASSWORD", "")
 		dbname = getEnv("DB_NAME", "isucoin")
 		public = getEnv("PUBLIC_DIR", "public")
-		data   = getEnv("DATA_DIR", "data")
 	)
 
 	dbusrpass := dbuser
@@ -57,7 +56,7 @@ func main() {
 	}
 	store := sessions.NewCookieStore([]byte(SessionSecret))
 
-	h := controller.NewHandler(db, store, data)
+	h := controller.NewHandler(db, store)
 
 	router := httprouter.New()
 	router.POST("/initialize", h.Initialize)

@@ -36,7 +36,7 @@ type Investor interface {
 	LatestTradePrice() int64
 	IsRetired() bool
 	SharedTrades() []*Trade
-	FetchOrders() error
+	FetchOrders(context.Context) error
 }
 
 type investorBase struct {
@@ -139,13 +139,13 @@ func (i *investorBase) UserID() int64 {
 }
 
 func (i *investorBase) Top() taskworker.Task {
-	return taskworker.NewExecTask(func(_ context.Context) error {
-		return i.c.Top()
+	return taskworker.NewExecTask(func(ctx context.Context) error {
+		return i.c.Top(ctx)
 	}, GetTopScore)
 }
 
 func (i *investorBase) Signup() taskworker.Task {
-	return taskworker.NewScoreTask(func(_ context.Context) (int64, error) {
+	return taskworker.NewScoreTask(func(ctx context.Context) (int64, error) {
 		time.Sleep(time.Millisecond * time.Duration(rand.Int63n(100)))
 		i.actionLock.Lock()
 		defer i.actionLock.Unlock()
@@ -155,7 +155,7 @@ func (i *investorBase) Signup() taskworker.Task {
 		if i.c == nil {
 			return 0, nil
 		}
-		if err := i.c.Signup(); err != nil {
+		if err := i.c.Signup(ctx); err != nil {
 			if strings.Index(err.Error(), "bank_id already exists") > -1 {
 				return SignupScore, nil
 			}
@@ -166,12 +166,12 @@ func (i *investorBase) Signup() taskworker.Task {
 }
 
 func (i *investorBase) Signin() taskworker.Task {
-	return taskworker.NewExecTask(func(_ context.Context) error {
+	return taskworker.NewExecTask(func(ctx context.Context) error {
 		time.Sleep(time.Millisecond * time.Duration(rand.Int63n(100)))
 		if i.c == nil {
 			return nil
 		}
-		if err := i.c.Signin(); err != nil {
+		if err := i.c.Signin(ctx); err != nil {
 			return err
 		}
 		i.isSignin = true
@@ -195,7 +195,7 @@ func (i *investorBase) Info() taskworker.Task {
 			//log.Printf("[INFO] skip info() next: %s now: %s", i.pollingTime, now)
 			return 0, nil
 		}
-		info, err := i.c.Info(i.lastCursor)
+		info, err := i.c.Info(ctx, i.lastCursor)
 		if err != nil {
 			return 0, err
 		}
@@ -225,13 +225,13 @@ func (i *investorBase) Info() taskworker.Task {
 	})
 }
 
-func (i *investorBase) FetchOrders() error {
+func (i *investorBase) FetchOrders(ctx context.Context) error {
 	i.actionLock.Lock()
 	defer i.actionLock.Unlock()
 	if i.c == nil {
 		return nil
 	}
-	orders, err := i.c.GetOrders()
+	orders, err := i.c.GetOrders(ctx)
 	if err != nil {
 		return err
 	}
@@ -310,8 +310,8 @@ func (i *investorBase) FetchOrders() error {
 }
 
 func (i *investorBase) UpdateOrders() taskworker.Task {
-	return taskworker.NewExecTask(func(_ context.Context) error {
-		return i.FetchOrders()
+	return taskworker.NewExecTask(func(ctx context.Context) error {
+		return i.FetchOrders(ctx)
 	}, GetOrdersScore)
 }
 
@@ -322,10 +322,10 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task 
 		if i.c == nil {
 			return nil
 		}
-		order, err := i.c.AddOrder(ot, amount, price)
+		order, err := i.c.AddOrder(ctx, ot, amount, price)
 		if err != nil {
 			// 残高不足はOKとする
-			if strings.Index(err.Error(), "銀行残高が足りません") > -1 {
+			if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 400 && strings.Index(err.Error(), "残高") > -1 {
 				return nil
 			}
 			return err
@@ -347,7 +347,7 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 			return 0, nil
 		}
 		var score int64 = DeleteOrdersScore
-		if err := i.c.DeleteOrders(order.ID); err != nil {
+		if err := i.c.DeleteOrders(ctx, order.ID); err != nil {
 			if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 404 {
 				// 404エラーはしょうがないのでerrにはしないが加点しない
 				score = 0

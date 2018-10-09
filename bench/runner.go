@@ -2,6 +2,7 @@ package bench
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/portal"
@@ -59,17 +60,17 @@ func (r *Runner) Run(ctx context.Context) error {
 	go m.RunIDFetcher(cctx)
 
 	m.Logger().Println("# initialize")
-	if err := m.Initialize(); err != nil {
+	if err := m.Initialize(cctx); err != nil {
 		return errors.Wrap(err, "Initialize に失敗しました")
 	}
 
 	m.Logger().Println("# pre test")
-	if err := m.PreTest(); err != nil {
+	if err := m.PreTest(cctx); err != nil {
 		return errors.Wrap(err, "負荷走行前のテストに失敗しました")
 	}
 
 	m.Logger().Printf("# benchmark")
-	if err := r.runBenchmark(ctx); err != nil {
+	if err := r.runBenchmark(cctx); err != nil {
 		return errors.Wrap(err, "負荷走行 に失敗しました")
 	}
 
@@ -77,8 +78,11 @@ func (r *Runner) Run(ctx context.Context) error {
 		return errors.New("finish by fail")
 	}
 
+	// cancelたちが終わるように少し待つ(すべての状態管理はつらすぎるので)
+	time.Sleep(50 * time.Millisecond)
+
 	m.Logger().Printf("# post test")
-	if err := m.PostTest(); err != nil {
+	if err := m.PostTest(cctx); err != nil {
 		r.fail = true
 		return errors.Wrap(err, "負荷走行後のテストに失敗しました")
 	}
@@ -116,8 +120,11 @@ func (r *Runner) handleWorker(worker *taskworker.Worker) {
 			return
 		case task := <-ch:
 			err := task.Error()
-			switch err {
-			case context.DeadlineExceeded, nil:
+			switch errors.Cause(err) {
+			case nil:
+				r.mgr.AddScore(task.Score())
+			case context.DeadlineExceeded, context.Canceled:
+				log.Printf("[INFO] canceled by %s [score:%d]", err, task.Score())
 				r.mgr.AddScore(task.Score())
 			case ErrAlreadyRetired:
 			default:

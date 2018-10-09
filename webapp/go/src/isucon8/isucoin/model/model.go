@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -29,17 +30,17 @@ type QueryExecutor interface {
 }
 
 func InitBenchmark(d QueryExecutor) error {
-	var dt time.Time
-	if err := d.QueryRow(`select max(created_at) from trade`).Scan(&dt); err != nil {
-		return errors.Wrap(err, "get last traded")
-	}
-	diffmin := int64(time.Now().Sub(dt).Minutes())
+	// 前回の10:00:00+0900までのデータを消す
+	// 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
+	stop := time.Now().Add(-10 * time.Hour)
+	stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Location())
+
 	for _, q := range []string{
-		"update trade set created_at = (created_at + interval ? minute)",
-		"update orders set created_at = (created_at + interval ? minute)",
-		"update orders set closed_at = (closed_at + interval ? minute) where closed_at is not null",
+		fmt.Sprintf("DELETE FROM orders WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
+		fmt.Sprintf("DELETE FROM trade WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
+		fmt.Sprintf("DELETE FROM user WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
 	} {
-		if _, err := d.Exec(q, diffmin); err != nil {
+		if _, err := d.Exec(q); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)
 		}
 	}

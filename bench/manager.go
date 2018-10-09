@@ -210,7 +210,7 @@ func (c *Manager) Logger() *log.Logger {
 	return c.logger
 }
 
-func (c *Manager) Initialize() error {
+func (c *Manager) Initialize(ctx context.Context) error {
 	c.nextLock.Lock()
 	defer c.nextLock.Unlock()
 	if err := c.isulog.Initialize(); err != nil {
@@ -221,22 +221,22 @@ func (c *Manager) Initialize() error {
 	if err != nil {
 		return err
 	}
-	if err := guest.Initialize(c.bankep, c.isubank.AppID(), c.logep, c.isulog.AppID()); err != nil {
+	if err := guest.Initialize(ctx, c.bankep, c.isubank.AppID(), c.logep, c.isulog.AppID()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Manager) PreTest() error {
+func (c *Manager) PreTest(ctx context.Context) error {
 	t := &PreTester{
 		appep:   c.appep,
 		isubank: c.isubank,
 		isulog:  c.isulog,
 	}
-	return t.Run()
+	return t.Run(ctx)
 }
 
-func (c *Manager) PostTest() error {
+func (c *Manager) PostTest(ctx context.Context) error {
 	testInvestors := make([]Investor, 0, len(c.investors))
 	for _, inv := range c.investors {
 		if inv.IsSignin() && !inv.IsRetired() {
@@ -249,7 +249,7 @@ func (c *Manager) PostTest() error {
 		isulog:    c.isulog,
 		investors: testInvestors,
 	}
-	return t.Run()
+	return t.Run(ctx)
 }
 
 func (c *Manager) Start() ([]taskworker.Task, error) {

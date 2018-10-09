@@ -1,0 +1,16 @@
+version: '2'
+services:
+  mockservice:
+   image: golang:1.10
+   working_dir: /go/src/mockservice
+   volumes:
+     - gopath:/go
+     - ./mockservice:/go/src/mockservice
+   ports:
+     - "14690:14690"
+     - "14809:14809"
+   command: sh ./docker-run.sh
+
+  isucoin:
+    links:
+      - mockservice
