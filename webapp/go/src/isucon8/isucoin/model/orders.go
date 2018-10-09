@@ -86,7 +86,7 @@ func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
 	return order, nil
 }
 
-func getOrderByID(d QueryExecutor, id int64) (*Order, error) {
+func GetOrderByID(d QueryExecutor, id int64) (*Order, error) {
 	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
 }
 
@@ -163,7 +163,7 @@ func AddOrder(tx *sql.Tx, ot string, userID, amount, price int64) (*Order, error
 		"amount":   amount,
 		"price":    price,
 	})
-	return getOrderByID(tx, id)
+	return GetOrderByID(tx, id)
 }
 
 func DeleteOrder(tx *sql.Tx, userID, orderID int64, reason string) error {

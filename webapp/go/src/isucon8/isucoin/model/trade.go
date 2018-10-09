@@ -79,7 +79,7 @@ func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]Candlestick
 }
 
 func HasTradeChanceByOrder(d QueryExecutor, orderID int64) (bool, error) {
-	order, err := getOrderByID(d, orderID)
+	order, err := GetOrderByID(d, orderID)
 	if err != nil {
 		return false, err
 	}
@@ -229,7 +229,7 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 			if err == ErrOrderAlreadyClosed {
 				continue
 			}
-			return errors.Wrap(err, "getOrderByIDWithLock  buy_order")
+			return errors.Wrap(err, "getOpenOrderByID  buy_order")
 		}
 		if to.Amount > restAmount {
 			continue
