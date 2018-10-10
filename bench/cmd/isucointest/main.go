@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	crand "crypto/rand"
 	"encoding/binary"
 	"flag"
@@ -30,18 +31,19 @@ func main() {
 }
 
 func run() error {
+	ctx := context.Background()
 	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}
 	defer mgr.Close()
 	log.Printf("run initialize")
-	if err = mgr.Initialize(); err != nil {
+	if err = mgr.Initialize(ctx); err != nil {
 		return errors.Wrap(err, "Initialize Failed")
 	}
 
 	log.Printf("run test")
-	if err := mgr.PreTest(); err != nil {
+	if err := mgr.PreTest(ctx); err != nil {
 		return errors.Wrap(err, "Test Failed")
 	}
 	return nil
