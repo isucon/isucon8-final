@@ -176,10 +176,6 @@ func (c *Manager) ActiveUsers() int {
 	return n
 }
 
-func (c *Manager) newClient() (*Client, error) {
-	return NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
-}
-
 func (c *Manager) Logger() *log.Logger {
 	return c.logger
 }
@@ -226,35 +222,6 @@ func (c *Manager) PostTest(ctx context.Context) error {
 	return t.Run(ctx)
 }
 
-func (c *Manager) NewScenario() (Scenario, error) {
-	var credit, isu, unit int64
-	n := atomic.AddInt32(&c.scounter, 1)
-	switch {
-	case n%9 == 3 && n < 35: // 3, 12, 21, 30
-		accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
-		cl, err := NewClient(c.appep, accounts[int(n/9)], "わからない", "12345", ClientTimeout, RetireTimeout)
-		if err != nil {
-			return nil, err
-		}
-		return NewBruteForceScenario(cl), nil
-	case n < 16:
-		credit, isu, unit = 30000, 5, 1
-	case n == 20:
-		// 成り行き買い
-		credit, isu, unit = 500000, 0, 5
-	case n == 21:
-		// 成り行き売り
-		credit, isu, unit = 0, 100, 5
-	default:
-		credit, isu, unit = 35000, 7, 3
-	}
-	cl, err := c.newClient()
-	if err != nil {
-		return nil, err
-	}
-	return NewNormalScenario(cl, credit, isu, unit), nil
-}
-
 func (c *Manager) ScenarioStart(ctx context.Context) error {
 	smchan := make(chan ScoreMsg, 2000)
 	cctx, cancel := context.WithCancel(ctx)
@@ -278,9 +245,38 @@ func (c *Manager) ScenarioStart(ctx context.Context) error {
 	return err
 }
 
+func (c *Manager) newScenario() (Scenario, error) {
+	var credit, isu, unit int64
+	n := atomic.AddInt32(&c.scounter, 1)
+	switch {
+	case n%9 == 3 && n < 35: // 3, 12, 21, 30
+		accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
+		cl, err := NewClient(c.appep, accounts[int(n/9)], "わからない", "12345", ClientTimeout, RetireTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return NewBruteForceScenario(cl), nil
+	case n < 16:
+		credit, isu, unit = 30000, 5, 1
+	case n == 20:
+		// 成り行き買い
+		credit, isu, unit = 500000, 0, 5
+	case n == 21:
+		// 成り行き売り
+		credit, isu, unit = 0, 100, 5
+	default:
+		credit, isu, unit = 35000, 7, 3
+	}
+	cl, err := NewClient(c.appep, c.FetchNewID(), c.rand.Name(), c.rand.Password(), ClientTimeout, RetireTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return NewNormalScenario(cl, credit, isu, unit), nil
+}
+
 func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num int) error {
 	for i := 0; i < num; i++ {
-		scenario, err := c.NewScenario()
+		scenario, err := c.newScenario()
 		if err != nil {
 			return err
 		}
