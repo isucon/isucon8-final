@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -284,6 +285,7 @@ func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num 
 			return err
 		}
 		go func() {
+			time.Sleep(time.Duration(rand.Int63n(100)) * time.Millisecond)
 			if scenario.Credit() > 0 {
 				c.isubank.AddCredit(scenario.BankID(), scenario.Credit())
 			}
