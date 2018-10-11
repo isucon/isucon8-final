@@ -404,7 +404,6 @@ module Isucoin
             end
           end
 
-          p :return
           return run_trade() # トレード成立したため次の取引を行う
         end
 
