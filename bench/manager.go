@@ -336,7 +336,7 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 	var latestTradePrice int64 = 5000
 	var addByShare int
 	for _, investor := range c.investors {
-		if !investor.IsSignin() && !investor.IsGuest() {
+		if !investor.IsStartCompleted() {
 			continue
 		}
 		if investor.IsRetired() {

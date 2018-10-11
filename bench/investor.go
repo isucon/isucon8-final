@@ -31,7 +31,7 @@ type Investor interface {
 	Isu() int64
 	IsSignin() bool
 	IsStarted() bool
-	IsGuest() bool
+	IsStartCompleted() bool
 	Orders() []*Order
 	UserID() int64
 
@@ -129,8 +129,8 @@ func (i *investorBase) IsStarted() bool {
 	return i.isStarted
 }
 
-func (i *investorBase) IsGuest() bool {
-	return false
+func (i *investorBase) IsStartCompleted() bool {
+	return i.IsSignin()
 }
 
 func (i *investorBase) Orders() []*Order {
@@ -393,7 +393,7 @@ func (i *investorBase) Start() taskworker.Task {
 func (i *investorBase) Next() taskworker.Task {
 	i.taskLock.Lock()
 	defer i.taskLock.Unlock()
-	if i.IsRetired() {
+	if i.IsRetired() || !i.IsStartCompleted() {
 		return nil
 	}
 	task := taskworker.NewSerialTask(2 + len(i.taskStack))
@@ -439,6 +439,9 @@ func (i *RandomInvestor) Next() taskworker.Task {
 		return nil
 	}
 	task := i.investorBase.Next()
+	if task == nil {
+		return nil
+	}
 	if t, ok := task.(*taskworker.SerialTask); ok {
 		t.Add(i.FixNextTask())
 		return t
@@ -555,7 +558,7 @@ func NewBruteForceInvestor(c *Client) *BruteForceInvestor {
 	}
 }
 
-func (i *BruteForceInvestor) IsGuest() bool {
+func (i *BruteForceInvestor) IsStartCompleted() bool {
 	return i.IsStarted()
 }
 
@@ -570,6 +573,12 @@ func (i *BruteForceInvestor) try() taskworker.Task {
 	task.Add(i.Info())
 	task.Add(taskworker.NewExecTask(func(ctx context.Context) error {
 		delay := BruteForceDelay
+		defer func() {
+			go func() {
+				time.Sleep(delay)
+				i.working = false
+			}()
+		}()
 		n := atomic.AddInt32(&i.num, 1)
 		i.c.pass = fmt.Sprintf("password%d%d", n, rand.Intn(100))
 		err := i.c.Signin(ctx)
@@ -589,10 +598,6 @@ func (i *BruteForceInvestor) try() taskworker.Task {
 			}
 		}
 
-		go func() {
-			time.Sleep(delay)
-			i.working = false
-		}()
 		return nil
 	}, SigninScore))
 	i.working = true
