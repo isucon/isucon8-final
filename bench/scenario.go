@@ -2,72 +2,49 @@ package bench
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 )
 
-type ScoreType int
-
-const (
-	ScoreTypeGetTop ScoreType = 1 + iota
-	ScoreTypeSignup
-	ScoreTypeSignin
-	ScoreTypeGetInfo
-	ScoreTypePostOrders
-	ScoreTypeGetOrders
-	ScoreTypeDeleteOrders
-	ScoreTypeTradeSuccess
-)
-
-type ScoreMsg struct {
-	st  ScoreType
-	err error
-	sns bool
-}
-
-func (sm ScoreMsg) Score() int64 {
-	if sm.err != nil {
-		return 0
-	}
-	switch sm.st {
-	case ScoreTypeGetTop:
-		return GetTopScore
-	case ScoreTypeSignup:
-		return SignupScore
-	case ScoreTypeSignin:
-		return SigninScore
-	case ScoreTypeGetInfo:
-		return GetInfoScore
-	case ScoreTypeGetOrders:
-		return GetOrdersScore
-	case ScoreTypePostOrders:
-		return PostOrdersScore
-	case ScoreTypeDeleteOrders:
-		return DeleteOrdersScore
-	case ScoreTypeTradeSuccess:
-		return TradeSuccessScore
-	default:
-		log.Printf("[WARN] not defined score [%d]", sm.st)
-		return 0
-	}
-}
-
 type Scenario interface {
-	Run(context.Context, chan ScoreMsg) error
-	Stop(context.Context) error
+	Start(context.Context, chan ScoreMsg) error
 	IsSignin() bool
 	IsRetired() bool
+	BankID() string
+	Credit() int64
 }
 
-type NormalScenario struct {
-	c         *Client
-	isSignin  bool
-	isRetired bool
+type baseScenario struct {
+	c *Client
+}
+
+func (s *baseScenario) IsSignin() bool {
+	return 0 < s.c.UserID()
+}
+
+func (s *baseScenario) IsRetired() bool {
+	return s.c.IsRetired()
+}
+
+func (s *baseScenario) UserID() int64 {
+	return s.c.UserID()
+}
+
+func (s *baseScenario) BankID() string {
+	return s.c.bankid
+}
+
+func (s *baseScenario) Credit() int64 {
+	return 0
+}
+
+type normalScenario struct {
+	*baseScenario
 
 	lowestSellPrice  int64
 	highestBuyPrice  int64
@@ -82,17 +59,37 @@ type NormalScenario struct {
 	reservedCredit int64
 	currentIsu     int64
 	currentCredit  int64
+
+	actionchan chan struct{}
 }
 
-func (s *NormalScenario) IsSignin() bool {
-	return s.isSignin
+func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
+	return &normalScenario{
+		baseScenario:  &baseScenario{c},
+		defaultCredit: credit,
+		defaultIsu:    isu,
+		currentCredit: credit,
+		currentIsu:    isu,
+		unitIsu:       unit,
+		orders:        make([]*Order, 0, 60),
+		actionchan:    make(chan struct{}, BenchMarkTime/PollingInterval),
+	}
 }
 
-func (s *NormalScenario) IsRetired() bool {
-	return s.isRetired
+func (s *normalScenario) Orders() []*Order {
+	return s.orders
 }
 
-func (s *NormalScenario) waitingOrders() int {
+func (s *normalScenario) Credit() int64 {
+	return s.currentCredit
+}
+
+func (s *normalScenario) FetchOrders(ctx context.Context) error {
+	_, err := s.fetchOrders(ctx)
+	return err
+}
+
+func (s *normalScenario) waitingOrders() int {
 	c := 0
 	for _, o := range s.orders {
 		if o.ClosedAt == nil {
@@ -102,7 +99,7 @@ func (s *NormalScenario) waitingOrders() int {
 	return c
 }
 
-func (s *NormalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error {
+func (s *normalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error {
 	err := s.c.Top(ctx)
 	smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
 	if err != nil {
@@ -126,37 +123,20 @@ func (s *NormalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error 
 	if err != nil {
 		return errors.Wrap(err, "ログインできませんでした")
 	}
-	s.isSignin = true
+
+	go s.runAction(ctx, smchan)
 
 	go s.runInfoLoop(ctx, smchan)
 
 	return nil
 }
 
-func (s *NormalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) {
-	var (
-		cursor        int64
-		lastOrderTime time.Time
-		actionLock    sync.Mutex
-		runningAction bool
-	)
-	tryLock := func() bool {
-		actionLock.Lock()
-		defer actionLock.Unlock()
-		if runningAction {
-			return false
-		}
-		runningAction = true
-		return true
-	}
-	unlock := func() {
-		actionLock.Lock()
-		runningAction = false
-		actionLock.Unlock()
-	}
+func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) {
+	var cursor int64
 	for {
 		select {
 		case <-ctx.Done():
+			handleContextErr(ctx.Err())
 			return
 		default:
 			if s.c.IsRetired() {
@@ -167,79 +147,57 @@ func (s *NormalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 			if next > 0 {
 				cursor = next
 			}
-			switch {
-			case traded:
-				// トレードが成立したっぽいときはorderを再取得し、トレードが成功していたら注文し直す
+			if traded {
 				go func() {
-					if !tryLock() {
-						return
-					}
-					defer unlock()
-					for {
-						tradedOrders, err := s.FetchOrders(ctx)
-						smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
-						if err != nil {
-							return
-						}
-						if len(tradedOrders) == 0 {
-							return
-						}
+					tradedOrders, err := s.fetchOrders(ctx)
+					smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
+					if err == nil {
 						for range tradedOrders {
-							smchan <- ScoreMsg{st: ScoreTypeTradeSuccess}
+							smchan <- ScoreMsg{st: ScoreTypeTradeSuccess, sns: s.enableShare}
 						}
-						time.Sleep(100 * time.Millisecond)
-						st, err := s.tryTrade(ctx)
-						if st == 0 {
-							return
-						}
-						smchan <- ScoreMsg{st: st, err: err}
-						lastOrderTime = time.Now()
-						if err != nil {
-							return
-						}
-					}
-				}()
-			case s.lowestSellPrice < s.highestBuyPrice:
-				// 取引成立状態の場合は注文しない
-			case lastOrderTime.Add(OrderUpdateInterval + time.Duration(s.waitingOrders()*500)*time.Millisecond).Before(time.Now()):
-				// 前回注文してから時間が経過していない場合は注文しない
-			default:
-				// tradedOrders受信時とは順番が逆になる
-				go func() {
-					if !tryLock() {
-						return
-					}
-					defer unlock()
-					for {
-						st, err := s.tryTrade(ctx)
-						if st == 0 {
-							return
-						}
-						smchan <- ScoreMsg{st: st, err: err}
-						lastOrderTime = time.Now()
-						if err != nil {
-							return
-						}
-						tradedOrders, err := s.FetchOrders(ctx)
-						smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
-						if err != nil {
-							return
-						}
-						if len(tradedOrders) == 0 {
-							return
-						}
-						for range tradedOrders {
-							smchan <- ScoreMsg{st: ScoreTypeTradeSuccess}
-						}
-						time.Sleep(100 * time.Millisecond)
 					}
 				}()
 			}
+			s.actionchan <- struct{}{}
 		}
 	}
 }
 
-func (s *NormalScenario) fetchInfo(ctx context.Context, cursor int64) (int64, bool, error) {
+func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
+	var gapCount int64
+	for {
+		select {
+		case <-ctx.Done():
+			handleContextErr(ctx.Err())
+			return
+		case <-s.actionchan:
+			st, err := s.tryTrade(ctx)
+			if st == 0 {
+				continue
+			}
+			smchan <- ScoreMsg{st: st, err: err}
+			tradedOrders, err := s.fetchOrders(ctx)
+			smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
+			if err == nil {
+				for range tradedOrders {
+					smchan <- ScoreMsg{st: ScoreTypeTradeSuccess, sns: s.enableShare}
+				}
+			}
+			// 取引可能状態が続くとtradeが渋滞しているはずなのでインターバルを伸ばす
+			nextInterval := OrderUpdateInterval
+			if s.lowestSellPrice < s.highestBuyPrice {
+				gapCount++
+				// TODO: 要調整
+				nextInterval += time.Duration(gapCount*500) * time.Millisecond
+			} else {
+				gapCount = 0
+			}
+			time.Sleep(nextInterval)
+		}
+	}
+}
+
+func (s *normalScenario) fetchInfo(ctx context.Context, cursor int64) (int64, bool, error) {
 	var traded bool
 	info, err := s.c.Info(ctx, cursor)
 	if err != nil {
@@ -269,7 +227,7 @@ func (s *NormalScenario) fetchInfo(ctx context.Context, cursor int64) (int64, bo
 	return info.Cursor, traded, nil
 }
 
-func (s *NormalScenario) FetchOrders(ctx context.Context) ([]*Order, error) {
+func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 	orders, err := s.c.GetOrders(ctx)
 	if err != nil {
 		return nil, err
@@ -348,7 +306,7 @@ func (s *NormalScenario) FetchOrders(ctx context.Context) ([]*Order, error) {
 	return tradedOrders, nil
 }
 
-func (s *NormalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
+func (s *normalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
 	logicalCredit := s.currentCredit - s.reservedCredit
 	logicalIsu := s.currentIsu - s.reservedIsu
 	waiting := s.waitingOrders()
@@ -448,4 +406,70 @@ func (s *NormalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
 	s.orders = append(s.orders, order)
 
 	return ScoreTypePostOrders, nil
+}
+
+type bruteForceScenario struct {
+	*baseScenario
+	defpass string
+}
+
+func NewBruteForceScenario(c *Client) Scenario {
+	return &bruteForceScenario{
+		baseScenario: &baseScenario{c},
+		defpass:      c.pass,
+	}
+}
+
+func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) error {
+	var cursor int64
+	go func() {
+		n := 0
+		for {
+			select {
+			case <-ctx.Done():
+				handleContextErr(ctx.Err())
+				return
+			default:
+				err := s.c.Top(ctx)
+				smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
+
+				info, err := s.c.Info(ctx, cursor)
+				smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
+				cursor = info.Cursor
+
+				delay := BruteForceDelay
+				s.c.pass = fmt.Sprintf("password%03d", rand.Intn(1000))
+				n++
+				err = s.c.Signin(ctx)
+				if err == nil {
+					err = errors.Errorf("不正ログインに成功しました")
+					n = 0
+				} else if e, ok := err.(*ErrorWithStatus); ok {
+					switch e.StatusCode {
+					case 403:
+						if n > 5 {
+							err = err
+							delay = time.Second * time.Duration(int64(n))
+						}
+					case 404:
+						err = nil
+					default:
+						n = 0
+					}
+				}
+				smchan <- ScoreMsg{st: ScoreTypeSignin, err: err}
+				time.Sleep(delay)
+			}
+		}
+	}()
+
+	return nil
+}
+
+func handleContextErr(err error) {
+	switch err {
+	case context.DeadlineExceeded, context.Canceled, nil:
+	default:
+		log.Printf("[WARN] context error %s", err)
+	}
 }
