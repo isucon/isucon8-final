@@ -504,7 +504,10 @@ func (c *Manager) recvScoreMsg(ctx context.Context, smchan chan ScoreMsg) error 
 			return nil
 		case s := <-smchan:
 			if s.err != nil {
-				c.ActiveInvestors()
+				if s.err == ErrAlreadyRetired {
+					continue
+				}
+				c.Logger().Printf("error: %s", s.err)
 				if e := c.AppendError(s.err); e != nil {
 					return e
 				}
