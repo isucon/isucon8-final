@@ -289,13 +289,18 @@ func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num 
 			if scenario.Credit() > 0 {
 				c.isubank.AddCredit(scenario.BankID(), scenario.Credit())
 			}
-			c.scenarioLock.Lock()
 			// add
 			if err := scenario.Start(ctx, smchan); err != nil {
-				log.Printf("[INFO] scenario.Start failed. %s", err)
+				switch errors.Cause(err) {
+				case context.DeadlineExceeded, context.Canceled:
+				default:
+					log.Printf("[INFO] scenario.Start failed. %s", err)
+				}
+			} else {
+				c.scenarioLock.Lock()
+				c.scenarios = append(c.scenarios, scenario)
+				c.scenarioLock.Unlock()
 			}
-			c.scenarios = append(c.scenarios, scenario)
-			c.scenarioLock.Unlock()
 		}()
 	}
 	return nil
