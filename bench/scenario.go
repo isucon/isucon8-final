@@ -144,6 +144,11 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 			}
 			next, traded, err := s.fetchInfo(ctx, cursor)
 			smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
+			if err != nil {
+				if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+					return
+				}
+			}
 			if next > 0 {
 				cursor = next
 			}
@@ -157,6 +162,10 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 					if err == nil {
 						for range tradedOrders {
 							smchan <- ScoreMsg{st: ScoreTypeTradeSuccess, sns: s.enableShare}
+						}
+					} else {
+						if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+							return
 						}
 					}
 				}()
@@ -183,6 +192,9 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 			}
 			smchan <- ScoreMsg{st: st, err: err}
 			if err != nil {
+				if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+					return
+				}
 				continue
 			}
 			tradedOrders, err := s.fetchOrders(ctx)
@@ -190,6 +202,10 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 			if err == nil {
 				for range tradedOrders {
 					smchan <- ScoreMsg{st: ScoreTypeTradeSuccess, sns: s.enableShare}
+				}
+			} else {
+				if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+					return
 				}
 			}
 			// 取引可能状態が続くとtradeが渋滞しているはずなのでインターバルを伸ばす
@@ -439,15 +455,24 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 				handleContextErr(ctx.Err())
 				return
 			default:
+				if s.c.IsRetired() {
+					return
+				}
 				err := s.c.Top(ctx)
 				smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
 				if err != nil {
+					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+						return
+					}
 					continue
 				}
 
 				info, err := s.c.Info(ctx, cursor)
 				smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
 				if err != nil {
+					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+						return
+					}
 					continue
 				}
 				cursor = info.Cursor
@@ -473,6 +498,11 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 					}
 				}
 				smchan <- ScoreMsg{st: ScoreTypeSignin, err: err}
+				if err != nil {
+					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
+						return
+					}
+				}
 				time.Sleep(delay)
 			}
 		}
