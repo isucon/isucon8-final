@@ -35,7 +35,6 @@ type Investor interface {
 	Orders() []*Order
 	UserID() int64
 
-	LatestTradedOrder() *Order
 	LatestTradePrice() int64
 	IsRetired() bool
 	SharedTrades() []*Trade
@@ -43,30 +42,29 @@ type Investor interface {
 }
 
 type investorBase struct {
-	c                 *Client
-	defcredit         int64
-	credit            int64
-	reservedCredit    int64
-	defisu            int64
-	isu               int64
-	reservedIsu       int64
-	orders            []*Order
-	lowestSellPrice   int64
-	highestBuyPrice   int64
-	latestTradePrice  int64
-	isSignin          bool
-	isStarted         bool
-	lastCursor        int64
-	pollingTime       time.Time
-	pollingLock       sync.Mutex
-	lastOrder         time.Time
-	actionLock        sync.Mutex
-	taskLock          sync.Mutex
-	taskStack         []taskworker.Task
-	timeoutCount      int
-	latestTradedOrder *Order
-	sharedTrades      []*Trade
-	enableShare       bool
+	c                *Client
+	defcredit        int64
+	credit           int64
+	reservedCredit   int64
+	defisu           int64
+	isu              int64
+	reservedIsu      int64
+	orders           []*Order
+	lowestSellPrice  int64
+	highestBuyPrice  int64
+	latestTradePrice int64
+	isSignin         bool
+	isStarted        bool
+	lastCursor       int64
+	pollingTime      time.Time
+	pollingLock      sync.Mutex
+	lastOrder        time.Time
+	actionLock       sync.Mutex
+	taskLock         sync.Mutex
+	taskStack        []taskworker.Task
+	timeoutCount     int
+	sharedTrades     []*Trade
+	enableShare      bool
 }
 
 func newInvestorBase(c *Client, credit, isu int64) *investorBase {
@@ -137,17 +135,17 @@ func (i *investorBase) Orders() []*Order {
 	return i.orders
 }
 
-func (i *investorBase) LatestTradedOrder() *Order {
-	return i.latestTradedOrder
-}
-
 func (i *investorBase) UserID() int64 {
 	return i.c.UserID()
 }
 
 func (i *investorBase) Top() taskworker.Task {
 	return taskworker.NewExecTask(func(ctx context.Context) error {
-		return i.c.Top(ctx)
+		if err := i.c.Top(ctx); err != nil {
+			return err
+		}
+		scoreboard.Add("Top", GetTopScore)
+		return nil
 	}, GetTopScore)
 }
 
@@ -168,6 +166,7 @@ func (i *investorBase) Signup() taskworker.Task {
 			}
 			return 0, err
 		}
+		scoreboard.Add("Signup", SignupScore)
 		return SignupScore, nil
 	})
 }
@@ -182,6 +181,7 @@ func (i *investorBase) Signin() taskworker.Task {
 			return err
 		}
 		i.isSignin = true
+		scoreboard.Add("Signin", SigninScore)
 		return nil
 
 	}, SigninScore)
@@ -221,13 +221,11 @@ func (i *investorBase) Info() taskworker.Task {
 				if order.Trade == nil {
 					return 0, errors.Errorf("GET /info traded_order.trade is null")
 				}
-				if i.latestTradedOrder == nil || i.latestTradedOrder.Trade.CreatedAt.Before(order.Trade.CreatedAt) {
-					i.latestTradedOrder = &order
-				}
 			}
 			i.pushNextTask(i.UpdateOrders())
 		}
 
+		scoreboard.Add("Info", GetInfoScore)
 		return GetInfoScore, nil
 	})
 }
@@ -318,7 +316,11 @@ func (i *investorBase) FetchOrders(ctx context.Context) error {
 
 func (i *investorBase) UpdateOrders() taskworker.Task {
 	return taskworker.NewExecTask(func(ctx context.Context) error {
-		return i.FetchOrders(ctx)
+		if err := i.FetchOrders(ctx); err != nil {
+			return err
+		}
+		scoreboard.Add("GetOrders", GetOrdersScore)
+		return nil
 	}, GetOrdersScore)
 }
 
@@ -339,6 +341,7 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task 
 		}
 		i.orders = append(i.orders, order)
 		i.lastOrder = time.Now()
+		scoreboard.Add("PostOrders", PostOrdersScore)
 		return nil
 	}, PostOrdersScore)
 }
@@ -375,6 +378,7 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 		if !found {
 			log.Printf("[WARN] not found removed order. %d", order.ID)
 		}
+		scoreboard.Add("DeleteOrders", score)
 		return score, nil
 	})
 }

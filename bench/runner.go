@@ -34,6 +34,7 @@ func (r *Runner) Result() portal.BenchResult {
 	level := r.mgr.GetLevel()
 	errors := r.mgr.GetErrorsString()
 	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveInvestors(), r.mgr.AllInvestors())
+	scoreboard.Dump()
 
 	logs, _ := r.mgr.GetLogs()
 	return portal.BenchResult{
