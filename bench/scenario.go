@@ -149,6 +149,9 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 			}
 			if traded {
 				go func() {
+					if s.c.IsRetired() {
+						return
+					}
 					tradedOrders, err := s.fetchOrders(ctx)
 					smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
 					if err == nil {
@@ -171,11 +174,17 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 			handleContextErr(ctx.Err())
 			return
 		case <-s.actionchan:
+			if s.c.IsRetired() {
+				return
+			}
 			st, err := s.tryTrade(ctx)
 			if st == 0 {
 				continue
 			}
 			smchan <- ScoreMsg{st: st, err: err}
+			if err != nil {
+				continue
+			}
 			tradedOrders, err := s.fetchOrders(ctx)
 			smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
 			if err == nil {
