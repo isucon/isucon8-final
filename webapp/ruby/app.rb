@@ -29,18 +29,18 @@ module Isucoin
       register Sinatra::Reloader
     end
 
-    set :public_folder, File.join(__dir__, '..', 'public')
+    set :public_folder, ENV.fetch('ISU_PUBLIC_DIR', File.join(__dir__, '..', 'public'))
     set :sessions, key: 'isucoin_session', expire_after: 3600
     set :session_secret, 'tonymoris'
 
     helpers do
       def db
         Thread.current[:db] ||= Mysql2::Client.new(
-          host: ENV.fetch('DB_HOST', '127.0.0.1'),
-          port: ENV.fetch('DB_PORT', '3306'),
-          username: ENV.fetch('DB_USER', 'root'),
-          password: ENV['DB_PASS'],
-          database: ENV.fetch('DB_NAME', 'isucoin'),
+          host: ENV.fetch('ISU_DB_HOST', '127.0.0.1'),
+          port: ENV.fetch('ISU_DB_PORT', '3306'),
+          username: ENV.fetch('ISU_DB_USER', 'root'),
+          password: ENV['ISU_DB_PASSWORD'],
+          database: ENV.fetch('ISU_DB_NAME', 'isucoin'),
           cast_booleans: true,
           reconnect: true,
         )
@@ -130,7 +130,7 @@ module Isucoin
       def get_order_by_id(id)
         db.xquery('SELECT * FROM orders WHERE id = ?', id).first
       end
-      
+
       def get_order_by_id_with_lock(id)
         db.xquery('SELECT * FROM orders WHERE id = ? FOR UPDATE', id).first
       end
