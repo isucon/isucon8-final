@@ -366,7 +366,6 @@ module Isucoin
       end
 
       def run_trade()
-        p :run_trade
         lowest_sell_order = get_lowest_sell_order()
         # 売り注文が無いため成立しない
         return unless lowest_sell_order
@@ -387,24 +386,20 @@ module Isucoin
 
         candidates.each do |order_id|
           begin
-            p :begin
+            commit = false
             db.query('BEGIN')
 
-            begin
-              try_trade(order_id)
-            rescue NoOrderForTrade, OrderAlreadyClosed
-              # 注文個数の多い方で成立しなかったので少ない方で試す
-              next
-            rescue Isubank::CreditInsufficientError
-              raise
-            end
+            try_trade(order_id)
+          rescue NoOrderForTrade, OrderAlreadyClosed
+            # 注文個数の多い方で成立しなかったので少ない方で試す
+            next
+          rescue Isubank::CreditInsufficientError
+            commit = true
+            raise
           ensure
-            p :ensure
-            if $!
-              p [:rollback, $!]
+            if $! && !commit
               db.query('ROLLBACK')
             else
-              p :commit
               db.query('COMMIT')
             end
           end
@@ -583,7 +578,12 @@ module Isucoin
       end
 
       if has_trade_chance_by_order(order.fetch('id'))
-        run_trade()
+        begin
+          run_trade()
+        rescue => e
+          # トレードに失敗してもエラーにはしない
+          $stderr.puts "run_trade error: #{e.full_message}"
+        end
       end
 
       {id: order['id']}.to_json
