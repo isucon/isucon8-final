@@ -275,7 +275,7 @@ module Isucoin
         bank = isubank()
         total_price = order.fetch('amount') * price
         if order.fetch('type') == 'buy'
-            total_price *= -1
+          total_price *= -1
         end
 
         return bank.reserve(order[:user].fetch('bank_id'), total_price)
@@ -512,8 +512,8 @@ module Isucoin
       res = {}
 
       last_trade_id = params[:cursor] && !params[:cursor].empty? ? params[:cursor].to_i : nil
-      last_trade = last_trade_id > 0 ? get_trade_by_id(last_trade_id) : nil
-      lt = last_trade ? trade.fetch('created_at') : Time.at(0)
+      last_trade = last_trade_id && last_trade_id > 0 ? get_trade_by_id(last_trade_id) : nil
+      lt = last_trade ? last_trade.fetch('created_at') : Time.at(0)
 
       latest_trade = get_latest_trade()
       res[:cursor] = latest_trade&.fetch('id')
