@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	gctx "github.com/gorilla/context"
 	"github.com/gorilla/sessions"
 	"github.com/julienschmidt/httprouter"
 )
@@ -71,5 +72,5 @@ func main() {
 
 	addr := ":" + port
 	log.Printf("[INFO] start server %s", addr)
-	log.Fatal(http.ListenAndServe(addr, h.CommonMiddleware(router)))
+	log.Fatal(http.ListenAndServe(addr, gctx.ClearHandler(h.CommonMiddleware(router))))
 }
