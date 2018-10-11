@@ -237,17 +237,17 @@ func (c *Manager) PreTest(ctx context.Context) error {
 }
 
 func (c *Manager) PostTest(ctx context.Context) error {
-	testInvestors := make([]Investor, 0, len(c.investors))
+	testInvestors := make([]testUser, 0, len(c.investors))
 	for _, inv := range c.investors {
 		if inv.IsSignin() && !inv.IsRetired() {
 			testInvestors = append(testInvestors, inv)
 		}
 	}
 	t := &PostTester{
-		appep:     c.appep,
-		isubank:   c.isubank,
-		isulog:    c.isulog,
-		investors: testInvestors,
+		appep:   c.appep,
+		isubank: c.isubank,
+		isulog:  c.isulog,
+		users:   testInvestors,
 	}
 	return t.Run(ctx)
 }
