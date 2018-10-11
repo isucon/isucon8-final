@@ -2,11 +2,9 @@ package bench
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/portal"
-	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
 
@@ -33,7 +31,7 @@ func (r *Runner) Result() portal.BenchResult {
 	}
 	level := r.mgr.GetLevel()
 	errors := r.mgr.GetErrorsString()
-	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveInvestors(), r.mgr.AllInvestors())
+	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveUsers(), r.mgr.AllUsers())
 	scoreboard.Dump()
 
 	logs, _ := r.mgr.GetLogs()
@@ -71,14 +69,12 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	m.Logger().Printf("# benchmark")
-	// if err := r.runBenchmark(cctx); err != nil {
-	// 	return errors.Wrap(err, "負荷走行 に失敗しました")
-	// }
 
 	if err := r.runScenarioBenchmark(cctx); err != nil {
 		r.fail = true
 		return errors.Wrap(err, "負荷走行 に失敗しました")
 	}
+	scoreboard.Dump()
 
 	if r.fail {
 		return errors.New("finish by fail")
@@ -105,73 +101,4 @@ func (r *Runner) runScenarioBenchmark(ctx context.Context) error {
 		err = nil
 	}
 	return err
-}
-
-func (r *Runner) runBenchmark(ctx context.Context) error {
-	tasks, err := r.mgr.Start()
-	if err != nil {
-		r.mgr.Logger().Printf("初期化に失敗しました。err:%s", err)
-		return err
-	}
-
-	worker := taskworker.NewWorker()
-	go r.handleWorker(worker)
-
-	go r.runTicker(worker)
-
-	wc, cancel := context.WithTimeout(ctx, BenchMarkTime)
-	defer cancel()
-	err = worker.Run(wc, tasks)
-	if err == context.DeadlineExceeded {
-		err = nil
-	}
-	close(r.done)
-	return err
-}
-
-func (r *Runner) handleWorker(worker *taskworker.Worker) {
-	ch := worker.TaskEnd()
-	for {
-		select {
-		case <-r.done:
-			return
-		case task := <-ch:
-			err := task.Error()
-			switch errors.Cause(err) {
-			case nil:
-				r.mgr.AddScore(task.Score())
-			case context.DeadlineExceeded, context.Canceled:
-				log.Printf("[INFO] canceled by %s [score:%d]", err, task.Score())
-				r.mgr.AddScore(task.Score())
-			case ErrAlreadyRetired:
-			default:
-				r.mgr.Logger().Printf("error: %s", err)
-				if e := r.mgr.AppendError(err); e != nil {
-					r.fail = true
-					r.mgr.Logger().Printf("ベンチマークを終了します: %s", e)
-					worker.Finish()
-				}
-			}
-		}
-	}
-}
-
-func (r *Runner) runTicker(worker *taskworker.Worker) {
-	for {
-		select {
-		case <-r.done:
-			return
-		case <-time.After(TickerInterval):
-			// nextが終わってから次のloopとしたいのでtickerではない
-			tasks, err := r.mgr.Next()
-			if err != nil {
-				r.fail = true
-				r.mgr.Logger().Printf("エラーのためベンチマークを終了します: %s", err)
-				worker.Finish()
-			}
-			if tasks != nil {
-				worker.AddTasks(tasks)
-			}
-		}
-	}
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
 	"github.com/ken39arg/isucon2018-final/bench/isulog"
-	"github.com/ken39arg/isucon2018-final/bench/taskworker"
 	"github.com/pkg/errors"
 )
 
@@ -25,18 +24,14 @@ type Manager struct {
 	isubank   *isubank.Isubank
 	isulog    *isulog.Isulog
 	idlist    chan string
-	investors []Investor
 	scenarios []Scenario
 	score     int64
 	errors    []error
 	logs      *bytes.Buffer
 
-	nextLock     sync.Mutex
-	investorLock sync.Mutex
 	errorLock    sync.Mutex
 	scenarioLock sync.Mutex
 	level        uint
-	totalivst    int
 	overError    bool
 
 	scounter int32
@@ -65,16 +60,13 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		isubank:   bank,
 		isulog:    isulog,
 		idlist:    make(chan string, 10),
-		investors: make([]Investor, 0, 5000),
 		errors:    make([]error, 0, AllowErrorMax+10),
 		logs:      logs,
+		scenarios: make([]Scenario, 0, 2000),
 	}, nil
 }
 
 func (c *Manager) Close() {
-	for _, i := range c.investors {
-		i.Close()
-	}
 }
 
 // benchに影響を与えないようにidは予め用意しておく
@@ -95,27 +87,6 @@ func (c *Manager) RunIDFetcher(ctx context.Context) {
 
 func (c *Manager) FetchNewID() string {
 	return <-c.idlist
-}
-
-func (c *Manager) AddInvestor(i Investor) {
-	c.investorLock.Lock()
-	defer c.investorLock.Unlock()
-	c.investors = append(c.investors, i)
-	c.totalivst++
-}
-
-func (c *Manager) PurgeInvestor() {
-	c.investorLock.Lock()
-	defer c.investorLock.Unlock()
-	cleared := make([]Investor, 0, cap(c.investors))
-	for _, i := range c.investors {
-		if i.IsRetired() {
-			i.Close()
-		} else {
-			cleared = append(cleared, i)
-		}
-	}
-	c.investors = cleared
 }
 
 func (c *Manager) AddScore(score int64) {
@@ -190,21 +161,18 @@ func (c *Manager) GetLevel() uint {
 	return c.level
 }
 
-func (c *Manager) AllInvestors() int {
-	return c.totalivst
+func (c *Manager) AllUsers() int {
+	return len(c.scenarios)
 }
 
-func (c *Manager) ActiveInvestors() int {
-	return len(c.investors)
-}
-
-func (c *Manager) FindInvestor(bankID string) Investor {
-	for _, i := range c.investors {
-		if i.BankID() == bankID {
-			return i
+func (c *Manager) ActiveUsers() int {
+	n := 0
+	for _, sc := range c.scenarios {
+		if !sc.IsRetired() {
+			n++
 		}
 	}
-	return nil
+	return n
 }
 
 func (c *Manager) newClient() (*Client, error) {
@@ -216,8 +184,6 @@ func (c *Manager) Logger() *log.Logger {
 }
 
 func (c *Manager) Initialize(ctx context.Context) error {
-	c.nextLock.Lock()
-	defer c.nextLock.Unlock()
 	if err := c.isulog.Initialize(); err != nil {
 		return errors.Wrap(err, "isuloggerの初期化に失敗しました。運営に連絡してください")
 	}
@@ -242,18 +208,11 @@ func (c *Manager) PreTest(ctx context.Context) error {
 }
 
 func (c *Manager) PostTest(ctx context.Context) error {
-	testInvestors := make([]testUser, 0, len(c.investors)+len(c.scenarios))
-	for _, inv := range c.investors {
-		if inv.IsSignin() && !inv.IsRetired() {
-			if tu, ok := inv.(testUser); ok {
-				testInvestors = append(testInvestors, tu)
-			}
-		}
-	}
+	testUsers := make([]testUser, 0, len(c.scenarios))
 	for _, sc := range c.scenarios {
 		if !sc.IsRetired() && sc.IsSignin() {
 			if tu, ok := sc.(testUser); ok {
-				testInvestors = append(testInvestors, tu)
+				testUsers = append(testUsers, tu)
 			}
 		}
 	}
@@ -261,136 +220,9 @@ func (c *Manager) PostTest(ctx context.Context) error {
 		appep:   c.appep,
 		isubank: c.isubank,
 		isulog:  c.isulog,
-		users:   testInvestors,
+		users:   testUsers,
 	}
 	return t.Run(ctx)
-}
-
-func (c *Manager) Start() ([]taskworker.Task, error) {
-	c.nextLock.Lock()
-	defer c.nextLock.Unlock()
-
-	basePrice := 5105
-
-	tasks := make([]taskworker.Task, 0, DefaultWorkers+BruteForceWorkers)
-	for i := 0; i < DefaultWorkers; i++ {
-		cl, err := c.newClient()
-		if err != nil {
-			return nil, err
-		}
-		var investor Investor
-		if i%2 == 1 {
-			investor = NewRandomInvestor(cl, 100000, 0, 1, int64(basePrice+i/2))
-		} else {
-			investor = NewRandomInvestor(cl, 0, 5, 1, int64(basePrice+i/2))
-		}
-		if investor.Credit() > 0 {
-			c.isubank.AddCredit(investor.BankID(), investor.Credit())
-		}
-		c.AddInvestor(investor)
-		tasks = append(tasks, investor.Start())
-	}
-	accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
-	for i := 0; i < BruteForceWorkers; i++ {
-		cl, err := NewClient(c.appep, accounts[i], "わからない", "12345", ClientTimeout, RetireTimeout)
-		if err != nil {
-			return nil, err
-		}
-		investor := NewBruteForceInvestor(cl)
-		c.AddInvestor(investor)
-		tasks = append(tasks, investor.Start())
-	}
-	return tasks, nil
-}
-
-func (c *Manager) Next() ([]taskworker.Task, error) {
-	c.nextLock.Lock()
-	defer c.nextLock.Unlock()
-
-	c.PurgeInvestor()
-
-	if c.ActiveInvestors() == 0 {
-		return nil, errors.New("アクティブユーザーがいなくなりました")
-	}
-
-	tasks := []taskworker.Task{}
-	addInvestors := func(num int, unitamount, price int64) error {
-		for i := 0; i < num; i++ {
-			cl, err := c.newClient()
-			if err != nil {
-				return err
-			}
-			var investor Investor
-			if i%2 == 1 {
-				investor = NewRandomInvestor(cl, price*1000, 0, unitamount, price-2)
-			} else {
-				investor = NewRandomInvestor(cl, 0, unitamount*100, unitamount, price+5)
-			}
-			tasks = append(tasks, taskworker.NewExecTask(func(_ context.Context) error {
-				if investor.Credit() > 0 {
-					c.isubank.AddCredit(investor.BankID(), investor.Credit())
-				}
-				c.AddInvestor(investor)
-				return nil
-			}, 0))
-		}
-		return nil
-	}
-	start := 2 // 一度に投入する数
-	for _, investor := range c.investors {
-		if !investor.IsStarted() {
-			tasks = append(tasks, investor.Start())
-			start--
-		}
-		if start <= 0 {
-			break
-		}
-	}
-
-	var latestTradePrice int64 = 5000
-	var addByShare int
-	for _, investor := range c.investors {
-		if !investor.IsStartCompleted() {
-			continue
-		}
-		if investor.IsRetired() {
-			continue
-		}
-		if task := investor.Next(); task != nil {
-			tasks = append(tasks, task)
-		}
-		for _, trade := range investor.SharedTrades() {
-			if err := addInvestors(AddUsersOnShare, trade.Amount, trade.Price); err != nil {
-				return nil, err
-			}
-			addByShare++
-		}
-		latestTradePrice = investor.LatestTradePrice()
-	}
-	if addByShare > 0 {
-		c.Logger().Printf("SNSでシェアされたためアクティブユーザーが増加しました[%d]", addByShare)
-	}
-
-	score := c.GetScore()
-	// 自然増加
-	for {
-		// levelup
-		nextScore := (1 << c.level) * 100
-		if score < int64(nextScore) {
-			break
-		}
-		if AllowErrorMin < c.ErrorCount() {
-			// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
-			break
-		}
-		c.level++
-		c.Logger().Printf("アクティブユーザーが自然増加します")
-
-		if err := addInvestors(AddUsersOnNatural, int64(c.level+1), latestTradePrice); err != nil {
-			return nil, err
-		}
-	}
-	return tasks, nil
 }
 
 func (c *Manager) NewScenario() (Scenario, error) {
