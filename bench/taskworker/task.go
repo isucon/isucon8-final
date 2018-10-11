@@ -77,7 +77,13 @@ func NewSerialTask(cap int) *SerialTask {
 }
 
 func (t *SerialTask) Add(task Task) {
-	t.tasks = append(t.tasks, task)
+	if task != nil {
+		t.tasks = append(t.tasks, task)
+	}
+}
+
+func (t *SerialTask) Length() int {
+	return len(t.tasks)
 }
 
 func (t *SerialTask) Run(ctx context.Context) error {
