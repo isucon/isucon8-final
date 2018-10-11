@@ -144,7 +144,7 @@ func (i *investorBase) Top() taskworker.Task {
 		if err := i.c.Top(ctx); err != nil {
 			return err
 		}
-		scoreboard.Add("Top", GetTopScore)
+		scoreboard.Add(ScoreTypeGetTop, GetTopScore)
 		return nil
 	}, GetTopScore)
 }
@@ -166,7 +166,7 @@ func (i *investorBase) Signup() taskworker.Task {
 			}
 			return 0, err
 		}
-		scoreboard.Add("Signup", SignupScore)
+		scoreboard.Add(ScoreTypeSignup, SignupScore)
 		return SignupScore, nil
 	})
 }
@@ -181,7 +181,7 @@ func (i *investorBase) Signin() taskworker.Task {
 			return err
 		}
 		i.isSignin = true
-		scoreboard.Add("Signin", SigninScore)
+		scoreboard.Add(ScoreTypeSignin, SigninScore)
 		return nil
 
 	}, SigninScore)
@@ -225,7 +225,7 @@ func (i *investorBase) Info() taskworker.Task {
 			i.pushNextTask(i.UpdateOrders())
 		}
 
-		scoreboard.Add("Info", GetInfoScore)
+		scoreboard.Add(ScoreTypeGetInfo, GetInfoScore)
 		return GetInfoScore, nil
 	})
 }
@@ -319,7 +319,7 @@ func (i *investorBase) UpdateOrders() taskworker.Task {
 		if err := i.FetchOrders(ctx); err != nil {
 			return err
 		}
-		scoreboard.Add("GetOrders", GetOrdersScore)
+		scoreboard.Add(ScoreTypeGetOrders, GetOrdersScore)
 		return nil
 	}, GetOrdersScore)
 }
@@ -341,7 +341,7 @@ func (i *investorBase) AddOrder(ot string, amount, price int64) taskworker.Task 
 		}
 		i.orders = append(i.orders, order)
 		i.lastOrder = time.Now()
-		scoreboard.Add("PostOrders", PostOrdersScore)
+		scoreboard.Add(ScoreTypePostOrders, PostOrdersScore)
 		return nil
 	}, PostOrdersScore)
 }
@@ -378,7 +378,7 @@ func (i *investorBase) RemoveOrder(order *Order) taskworker.Task {
 		if !found {
 			log.Printf("[WARN] not found removed order. %d", order.ID)
 		}
-		scoreboard.Add("DeleteOrders", score)
+		scoreboard.Add(ScoreTypeDeleteOrders, score)
 		return score, nil
 	})
 }
