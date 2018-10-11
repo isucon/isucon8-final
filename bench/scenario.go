@@ -432,9 +432,15 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 			default:
 				err := s.c.Top(ctx)
 				smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
+				if err != nil {
+					continue
+				}
 
 				info, err := s.c.Info(ctx, cursor)
 				smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
+				if err != nil {
+					continue
+				}
 				cursor = info.Cursor
 
 				delay := BruteForceDelay

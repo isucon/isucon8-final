@@ -8,6 +8,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/isubank"
 	"github.com/ken39arg/isucon2018-final/bench/isulog"
@@ -25,6 +26,7 @@ type Manager struct {
 	isulog    *isulog.Isulog
 	idlist    chan string
 	investors []Investor
+	scenarios []Scenario
 	score     int64
 	errors    []error
 	logs      *bytes.Buffer
@@ -32,9 +34,12 @@ type Manager struct {
 	nextLock     sync.Mutex
 	investorLock sync.Mutex
 	errorLock    sync.Mutex
+	scenarioLock sync.Mutex
 	level        uint
 	totalivst    int
 	overError    bool
+
+	scounter int32
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
@@ -237,10 +242,19 @@ func (c *Manager) PreTest(ctx context.Context) error {
 }
 
 func (c *Manager) PostTest(ctx context.Context) error {
-	testInvestors := make([]testUser, 0, len(c.investors))
+	testInvestors := make([]testUser, 0, len(c.investors)+len(c.scenarios))
 	for _, inv := range c.investors {
 		if inv.IsSignin() && !inv.IsRetired() {
-			testInvestors = append(testInvestors, inv)
+			if tu, ok := inv.(testUser); ok {
+				testInvestors = append(testInvestors, tu)
+			}
+		}
+	}
+	for _, sc := range c.scenarios {
+		if !sc.IsRetired() && sc.IsSignin() {
+			if tu, ok := sc.(testUser); ok {
+				testInvestors = append(testInvestors, tu)
+			}
 		}
 	}
 	t := &PostTester{
@@ -377,4 +391,134 @@ func (c *Manager) Next() ([]taskworker.Task, error) {
 		}
 	}
 	return tasks, nil
+}
+
+func (c *Manager) NewScenario() (Scenario, error) {
+	var credit, isu, unit int64
+	n := atomic.AddInt32(&c.scounter, 1)
+	switch {
+	case n%9 == 3 && n < 35: // 3, 12, 21, 30
+		accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
+		cl, err := NewClient(c.appep, accounts[int(n/9)], "わからない", "12345", ClientTimeout, RetireTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return NewBruteForceScenario(cl), nil
+	case n < 16:
+		credit, isu, unit = 30000, 5, 1
+	case n == 20:
+		// 成り行き買い
+		credit, isu, unit = 500000, 0, 5
+	case n == 21:
+		// 成り行き売り
+		credit, isu, unit = 0, 100, 5
+	default:
+		credit, isu, unit = 35000, 7, 3
+	}
+	cl, err := c.newClient()
+	if err != nil {
+		return nil, err
+	}
+	return NewNormalScenario(cl, credit, isu, unit), nil
+}
+
+func (c *Manager) ScenarioStart(ctx context.Context) error {
+	smchan := make(chan ScoreMsg, 2000)
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var err error
+
+	go func() {
+		defer cancel()
+		if err = c.recvScoreMsg(cctx, smchan); err != nil {
+			c.Logger().Printf("ベンチマークを終了します: %s", err)
+		}
+	}()
+
+	go c.tickScenario(cctx, smchan)
+
+	if err := c.startScenarios(cctx, smchan, DefaultWorkers); err != nil {
+		return nil
+	}
+	<-cctx.Done()
+	handleContextErr(cctx.Err())
+	return err
+}
+
+func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num int) error {
+	for i := 0; i < num; i++ {
+		scenario, err := c.NewScenario()
+		if err != nil {
+			return err
+		}
+		go func() {
+			if scenario.Credit() > 0 {
+				c.isubank.AddCredit(scenario.BankID(), scenario.Credit())
+			}
+			c.scenarioLock.Lock()
+			// add
+			if err := scenario.Start(ctx, smchan); err != nil {
+				log.Printf("[INFO] scenario.Start failed. %s", err)
+			}
+			c.scenarios = append(c.scenarios, scenario)
+			c.scenarioLock.Unlock()
+		}()
+	}
+	return nil
+}
+
+func (c *Manager) tickScenario(ctx context.Context, smchan chan ScoreMsg) {
+	for {
+		select {
+		case <-ctx.Done():
+			handleContextErr(ctx.Err())
+			return
+		case <-time.After(TickerInterval):
+			score := c.GetScore()
+			// 自然増加
+			for {
+				// levelup
+				nextScore := (1 << c.level) * 100
+				if score < int64(nextScore) {
+					break
+				}
+				if AllowErrorMin < c.ErrorCount() {
+					// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
+					break
+				}
+				c.level++
+				c.Logger().Printf("アクティブユーザーが自然増加します")
+				if e := c.startScenarios(ctx, smchan, AddUsersOnNatural); e != nil {
+					log.Printf("[INFO] scenario.Start failed. %s", e)
+				}
+			}
+		}
+	}
+}
+
+func (c *Manager) recvScoreMsg(ctx context.Context, smchan chan ScoreMsg) error {
+	for {
+		select {
+		case <-ctx.Done():
+			handleContextErr(ctx.Err())
+			return nil
+		case s := <-smchan:
+			if s.err != nil {
+				c.ActiveInvestors()
+				if e := c.AppendError(s.err); e != nil {
+					return e
+				}
+			} else {
+				c.AddScore(s.st.Score())
+				scoreboard.Add(s.st, 1)
+				if s.sns {
+					if e := c.startScenarios(ctx, smchan, AddUsersOnShare); e != nil {
+						log.Printf("[INFO] scenario.Start failed. %s", e)
+					} else {
+						c.Logger().Printf("SNSでシェアされたためアクティブユーザーが増加しました")
+					}
+				}
+			}
+		}
+	}
 }

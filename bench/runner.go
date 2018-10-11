@@ -71,7 +71,12 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	m.Logger().Printf("# benchmark")
-	if err := r.runBenchmark(cctx); err != nil {
+	// if err := r.runBenchmark(cctx); err != nil {
+	// 	return errors.Wrap(err, "負荷走行 に失敗しました")
+	// }
+
+	if err := r.runScenarioBenchmark(cctx); err != nil {
+		r.fail = true
 		return errors.Wrap(err, "負荷走行 に失敗しました")
 	}
 
@@ -89,6 +94,17 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *Runner) runScenarioBenchmark(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, BenchMarkTime)
+	defer cancel()
+
+	err := r.mgr.ScenarioStart(cctx)
+	if err == context.DeadlineExceeded {
+		err = nil
+	}
+	return err
 }
 
 func (r *Runner) runBenchmark(ctx context.Context) error {
