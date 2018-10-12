@@ -20,15 +20,13 @@ class IsuLogger:
             "/send",
             {
                 "tag": tag,
-                "time": time.strftime(
-                    "%Y-%m-%sT%H:%M:%S%z"
-                ),  # TODO(inada): %zがだめなら +09:00 を直接書く
+                "time": time.strftime("%Y-%m-%dT%H:%M:%S+09:00"),
                 "data": data,
             },
         )
 
     def _request(self, path, data):
-        url = urllib.parse.join(self.endpoint, path)
+        url = urllib.parse.urljoin(self.endpoint, path)
         body = json.dumps(data)
         headers = {
             "Content-Type": "application/json",

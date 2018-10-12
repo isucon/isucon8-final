@@ -59,7 +59,8 @@ class IsuBank:
         self._request("/commit", {"reserve_ids": reserveIDs})
 
     def _request(self, path: str, data: dict) -> dict:
-        url = urllib.parse.join(self.endpoint, path)
+        url = urllib.parse.urljoin(self.endpoint, path)
+        print(data)
         body = json.dumps(data)
         headers = {
             "Content-Type": "application/json",
