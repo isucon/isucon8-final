@@ -32,7 +32,6 @@ func (r *Runner) Result() portal.BenchResult {
 	level := r.mgr.GetLevel()
 	errors := r.mgr.GetErrorsString()
 	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveUsers(), r.mgr.AllUsers())
-	scoreboard.Dump()
 
 	logs, _ := r.mgr.GetLogs()
 	return portal.BenchResult{
@@ -74,7 +73,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.fail = true
 		return errors.Wrap(err, "負荷走行 に失敗しました")
 	}
-	scoreboard.Dump()
+	m.scoreboard.Dump()
 
 	if r.fail {
 		return errors.New("finish by fail")

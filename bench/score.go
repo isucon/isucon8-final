@@ -66,18 +66,12 @@ func (st ScoreType) Score() int64 {
 	}
 }
 
-var (
-	scoreboard = &ScoreBoard{
-		count: make(map[ScoreType]int64, 20),
-	}
-)
-
 type ScoreBoard struct {
 	count map[ScoreType]int64
 	mux   sync.Mutex
 }
 
-func (sb *ScoreBoard) Add(p ScoreType, s int64) {
+func (sb *ScoreBoard) Add(p ScoreType) {
 	sb.mux.Lock()
 	defer sb.mux.Unlock()
 	if _, ok := sb.count[p]; !ok {
@@ -89,8 +83,11 @@ func (sb *ScoreBoard) Add(p ScoreType, s int64) {
 func (sb *ScoreBoard) Dump() {
 	sb.mux.Lock()
 	defer sb.mux.Unlock()
-	for st, count := range sb.count {
-		log.Printf("%s\t: score=%d, count=%d", st, count*st.Score(), count)
+	for i := 0; i < 15; i++ {
+		st := ScoreType(i)
+		if count, ok := sb.count[st]; ok {
+			log.Printf("[INFO] %-16s: score=%d, count=%d", st, count*st.Score(), count)
+		}
 	}
 }
 

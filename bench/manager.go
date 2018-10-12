@@ -35,7 +35,8 @@ type Manager struct {
 	level        uint
 	overError    bool
 
-	scounter int32
+	scounter   int32
+	scoreboard *ScoreBoard
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
@@ -51,19 +52,23 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 	if err != nil {
 		return nil, err
 	}
+	scoreboard := &ScoreBoard{
+		count: make(map[ScoreType]int64, 20),
+	}
 	logs := &bytes.Buffer{}
 	return &Manager{
-		logger:    NewLogger(io.MultiWriter(out, logs)),
-		appep:     appep,
-		bankep:    bankep,
-		logep:     logep,
-		rand:      rand,
-		isubank:   bank,
-		isulog:    isulog,
-		idlist:    make(chan string, 10),
-		errors:    make([]error, 0, AllowErrorMax+10),
-		logs:      logs,
-		scenarios: make([]Scenario, 0, 2000),
+		logger:     NewLogger(io.MultiWriter(out, logs)),
+		appep:      appep,
+		bankep:     bankep,
+		logep:      logep,
+		rand:       rand,
+		isubank:    bank,
+		isulog:     isulog,
+		idlist:     make(chan string, 10),
+		errors:     make([]error, 0, AllowErrorMax+10),
+		logs:       logs,
+		scenarios:  make([]Scenario, 0, 2000),
+		scoreboard: scoreboard,
 	}, nil
 }
 
@@ -349,7 +354,7 @@ func (c *Manager) recvScoreMsg(ctx context.Context, smchan chan ScoreMsg) error 
 				}
 			} else {
 				c.AddScore(s.st.Score())
-				scoreboard.Add(s.st, 1)
+				c.scoreboard.Add(s.st)
 				if s.sns {
 					if e := c.startScenarios(ctx, smchan, AddUsersOnShare); e != nil {
 						log.Printf("[INFO] scenario.Start failed. %s", e)
