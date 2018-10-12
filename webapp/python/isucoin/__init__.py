@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os, sys
+
 sys.path.append(os.path.dirname(__file__) + "/vendor")
 
 import contextlib
+import datetime
 import time
 import flask
 import MySQLdb
@@ -87,7 +89,7 @@ def transaction():
 
 @app.route("/")
 def index():
-    return app.send_static_file('index.html')
+    return app.send_static_file("index.html")
 
 
 @app.route("/initialize", methods=("POST",))
@@ -154,7 +156,7 @@ def info():
     db = get_dbconn()
     cursor = flask.request.args.get("cursor")
     last_trade_id = 0
-    lt = 0
+    lt = None
 
     if cursor:
         try:
@@ -171,16 +173,28 @@ def info():
 
     user = flask.g.current_user
     if user:
-        orders = model.get_orders_by_userid_and_lasttradeid(
-            db, user.id, last_trade_id
-        )
+        orders = model.get_orders_by_userid_and_lasttradeid(db, user.id, last_trade_id)
         for o in orders:
             model.fetch_order_relation(o)
 
         res["traded_orders"] = [o.to_json() for o in orders]
 
-    now = time.time()  # localtime?
-    # todo: chart
+    now = datetime.datetime.now()
+
+    from_t = now - datetime.timedelta(seconds=300)
+    if lt and lt > from_t:
+        from_t = lt.replace(microsecond=0)
+    res["chart_by_sec"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:%i:%s")
+
+    from_t = now - datetime.timedelta(minutes=300)
+    if lt and lt > from_t:
+        from_t = lt.replace(seconds=0, microsecond=0)
+    res["chart_by_min"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:%i:00")
+
+    from_t = now - datetime.timedelta(hours=48)
+    if lt and lt > from_t:
+        from_t = lt.replace(minutes=0, seconds=0, microsecond=0)
+    res["chart_by_hour"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:00:00")
 
     lowest_sell_order = model.get_lowest_sell_order(db)
     if lowest_sell_order:

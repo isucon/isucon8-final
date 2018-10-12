@@ -32,7 +32,9 @@ class Order:
     user: typing.Optional[users.User] = None
     trade: typing.Optional[trades.Trade] = None
 
-    def __init__(self, id, type, user_id, amount, price, closed_at, trade_id, created_at):
+    def __init__(
+        self, id, type, user_id, amount, price, closed_at, trade_id, created_at
+    ):
         if isinstance(type, bytes):
             type = type.decode()
         self.id = id
@@ -135,12 +137,11 @@ def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
         try:
             bank.Check(user.bank_id, total)
         except isubank.CreditInsufficient as e:
-            settings.send_log(db, "buy.error", {
-                "error": e.msg,
-                "user_id": user_id,
-                "amount": amount,
-                "price": price,
-            })
+            settings.send_log(
+                db,
+                "buy.error",
+                {"error": e.msg, "user_id": user_id, "amount": amount, "price": price},
+            )
             raise CreditInsufficient
     elif ot == "sell":
         pass
@@ -180,7 +181,8 @@ def delete_order(db, user_id: int, order_id: int, reason: str):
 def cancel_order(db, order: Order, reason: str):
     cur = db.cursor()
     cur.execute("UPDATE orders SET closed_at = NOW(6) WHERE id = %s", (order.id,))
-    settings.send_log(db,
+    settings.send_log(
+        db,
         order.type + ".delete",
         {"order_id": order.id, "user_id": order.user_id, "reason": reason},
     )
