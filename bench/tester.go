@@ -91,6 +91,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
 			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
 			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
+			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
 		}
 		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
 		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)

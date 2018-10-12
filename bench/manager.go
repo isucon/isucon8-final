@@ -254,19 +254,43 @@ func (c *Manager) newScenario() (Scenario, error) {
 	var credit, isu, unit int64
 	n := atomic.AddInt32(&c.scounter, 1)
 	switch {
-	case n%9 == 3 && n < 35: // 3, 12, 21, 30
+	case n%9 == 3 && n < 31: // 3, 12, 21, 30
 		accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
 		cl, err := NewClient(c.appep, accounts[int(n/9)], "わからない", "12345", ClientTimeout, RetireTimeout)
 		if err != nil {
 			return nil, err
 		}
 		return NewBruteForceScenario(cl), nil
+	case n == 7 || n == 25:
+		accounts := []struct {
+			account, name, pass string
+			order, traded       int
+		}{
+			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
+			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
+			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
+			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
+		}
+		d := accounts[rand.Intn(2)]
+		if n == 25 {
+			d = accounts[2+rand.Intn(2)]
+		}
+		cl, err := NewClient(c.appep, d.account, d.name, d.pass, ClientTimeout, RetireTimeout)
+		if err != nil {
+			return nil, err
+		}
+		// この人達を成り行きにはしたくないけどしょうがない
+		credit, err = c.isubank.GetCredit(d.account)
+		if err != nil {
+			return nil, err
+		}
+		return NewExistsUserScenario(cl, credit, 10, 3), nil
 	case n < 16:
 		credit, isu, unit = 30000, 5, 1
 	case n == 20:
 		// 成り行き買い
 		credit, isu, unit = 500000, 0, 5
-	case n == 21:
+	case n == 21 || n == 11 || n == 31:
 		// 成り行き売り
 		credit, isu, unit = 0, 100, 5
 	default:
@@ -276,26 +300,27 @@ func (c *Manager) newScenario() (Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
+	if credit > 0 {
+		c.isubank.AddCredit(cl.bankid, credit)
+	}
 	return NewNormalScenario(cl, credit, isu, unit), nil
 }
 
 func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num int) error {
 	for i := 0; i < num; i++ {
-		scenario, err := c.newScenario()
-		if err != nil {
-			return err
-		}
 		go func() {
 			time.Sleep(time.Duration(rand.Int63n(100)) * time.Millisecond)
-			if scenario.Credit() > 0 {
-				c.isubank.AddCredit(scenario.BankID(), scenario.Credit())
+			scenario, err := c.newScenario()
+			if err != nil {
+				log.Printf("[WARN] newScenario failed. err: %s", err)
+				return
 			}
 			// add
 			if err := scenario.Start(ctx, smchan); err != nil {
 				switch errors.Cause(err) {
 				case context.DeadlineExceeded, context.Canceled:
 				default:
-					log.Printf("[INFO] scenario.Start failed. %s", err)
+					log.Printf("[INFO] scenario.Start user:%s, failed. %s", scenario.BankID(), err)
 				}
 			} else {
 				c.scenarioLock.Lock()
