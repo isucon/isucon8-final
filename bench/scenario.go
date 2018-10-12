@@ -61,9 +61,11 @@ type normalScenario struct {
 	currentCredit  int64
 
 	actionchan chan struct{}
+	existed    bool
+	ignoretest bool
 }
 
-func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
+func newNormalScenario(c *Client, credit, isu, unit int64) *normalScenario {
 	return &normalScenario{
 		baseScenario:  &baseScenario{c},
 		defaultCredit: credit,
@@ -76,12 +78,27 @@ func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
 	}
 }
 
+func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
+	return newNormalScenario(c, credit, isu, unit)
+}
+
+func NewExistsUserScenario(c *Client, credit, isu, unit int64) Scenario {
+	s := newNormalScenario(c, credit, isu, unit)
+	s.existed = true
+	s.ignoretest = true
+	return s
+}
+
 func (s *normalScenario) Orders() []*Order {
 	return s.orders
 }
 
 func (s *normalScenario) Credit() int64 {
 	return s.currentCredit
+}
+
+func (s *normalScenario) Ignore() bool {
+	return s.ignoretest
 }
 
 func (s *normalScenario) FetchOrders(ctx context.Context) error {
@@ -112,10 +129,12 @@ func (s *normalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error 
 		return errors.Wrap(err, "トップページを表示できません")
 	}
 
-	err = s.c.Signup(ctx)
-	smchan <- ScoreMsg{st: ScoreTypeSignup, err: err}
-	if err != nil {
-		return errors.Wrap(err, "アカウントを作成できませんでした")
+	if !s.existed {
+		err = s.c.Signup(ctx)
+		smchan <- ScoreMsg{st: ScoreTypeSignup, err: err}
+		if err != nil {
+			return errors.Wrap(err, "アカウントを作成できませんでした")
+		}
 	}
 
 	err = s.c.Signin(ctx)

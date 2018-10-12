@@ -91,11 +91,6 @@ func (t *PreTester) Run(ctx context.Context) error {
 			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
 			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
 			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
-			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
-			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
-			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
-			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
-			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
 		}
 		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
 		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)
@@ -515,6 +510,7 @@ type testUser interface {
 	BankID() string
 	Credit() int64
 	FetchOrders(context.Context) error
+	Ignore() bool
 }
 
 type PostTester struct {
@@ -526,12 +522,21 @@ type PostTester struct {
 
 func (t *PostTester) Run(ctx context.Context) error {
 	deadline := time.Now().Add(LogAllowedDelay)
-	if len(t.users) == 0 {
+	users := make([]testUser, 0, len(t.users))
+	for _, tu := range t.users {
+		if tu.UserID() > 0 && !tu.Ignore() {
+			users = append(users, tu)
+		}
+	}
+	if len(users) == 0 {
 		return errors.Errorf("ユーザーが全滅しています")
 	}
-	first, latest, random := t.users[0], t.users[len(t.users)-1], t.users[rand.Intn(len(t.users))]
+	first, latest, random := users[0], users[len(users)-1], users[rand.Intn(len(users))]
+	for len(users) >= 3 && (first.UserID() == random.UserID() || latest.UserID() == random.UserID()) {
+		random = users[rand.Intn(len(users)-2)+1]
+	}
 	var trade *Trade
-	for _, user := range t.users {
+	for _, user := range users {
 		for _, order := range user.Orders() {
 			if order.Trade != nil {
 				if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
