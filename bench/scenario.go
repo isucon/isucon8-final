@@ -142,6 +142,7 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 			if s.c.IsRetired() {
 				return
 			}
+			nextLoopUnlock := time.After(PollingInterval)
 			next, traded, err := s.fetchInfo(ctx, cursor)
 			smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
 			if err != nil {
@@ -171,6 +172,7 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 				}()
 			}
 			s.actionchan <- struct{}{}
+			<-nextLoopUnlock
 		}
 	}
 }
