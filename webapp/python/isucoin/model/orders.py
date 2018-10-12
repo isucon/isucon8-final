@@ -159,7 +159,7 @@ def delete_order(db, user_id: int, order_id: int, reason: str):
 def cancel_order(db, order: Order, reason: str):
     cur = db.cursor()
     cur.execute("UPDATE orders SET closed_at = NOW(6) WHERE id = %s", (order.id,))
-    settings.send_log(
+    settings.send_log(db,
         order.type + ".delete",
         {"order_id": order.id, "user_id": order.user_id, "reason": reason},
     )

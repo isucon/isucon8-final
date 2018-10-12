@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from isubank import IsuBank
@@ -60,8 +61,6 @@ def get_user_by_id_with_lock(db, id: int) -> User:
     r = cur.fetchone()
     if r is not None:
         r = User(*r)
-        if isinstance(r.bank_id, bytes):
-            r.bank_id = r.bank_id.decode()
     return r
 
 

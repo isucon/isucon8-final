@@ -19,7 +19,7 @@ dbpass = os.environ.get("ISU_DB_PASSWORD", "")
 dbname = os.environ.get("ISU_DB_NAME", "isucoin")
 public = os.environ.get("ISU_PUBLIC_DIR", "public")
 
-app = flask.Flask(__name__, static_url_path="/", static_folder=public)
+app = flask.Flask(__name__, static_url_path="", static_folder=public)
 app.secret_key = "tonymoris"
 
 
@@ -53,6 +53,7 @@ def error_json(code: int, msg):
 
 @app.errorhandler(Exception)
 def errohandler(err):
+    app.logger.exception("FAIL")
     return error_json(500, err)
 
 
@@ -63,7 +64,7 @@ def before_request():
         flask.g.current_user = None
         return
 
-    user = model.user.get_user_by_id(user_id)
+    user = model.users.get_user_by_id(get_dbconn(), user_id)
     if user is None:
         flask.session.clear()
         return error_json(404, "セッションが切断されました")
@@ -79,11 +80,17 @@ def transaction():
         yield conn
     except:
         conn.rollback()
+        raise
     else:
         conn.commit()
 
 
-@app.route("/initialize")
+@app.route("/")
+def index():
+    return app.send_static_file('index.html')
+
+
+@app.route("/initialize", methods=("POST",))
 def initialize():
     with transaction() as db:
         model.init_benchmark(db)
@@ -94,7 +101,7 @@ def initialize():
     return flask.jsonify({})
 
 
-@app.route("/signup")
+@app.route("/signup", methods=("POST",))
 def signup():
     req = flask.request
     name = req.form["name"]
@@ -106,16 +113,16 @@ def signup():
 
     try:
         with transaction() as db:
-            model.user.signup(db, name, bank_id, password)
-    except model.user.BankUserNotFound as e:
+            model.users.signup(db, name, bank_id, password)
+    except model.users.BankUserNotFound as e:
         return error_json(404, e.msg)
-    except model.user.BankUserConflict as e:
+    except model.users.BankUserConflict as e:
         return error_json(409, e.msg)
 
     return flask.jsonify({})
 
 
-@app.route("/signin")
+@app.route("/signin", methods=("POST",))
 def signin():
     req = flask.request
     bank_id = req.form["bank_id"]
@@ -126,16 +133,16 @@ def signin():
 
     db = get_dbconn()
     try:
-        user_id, name = model.user.login(db, bank_id, password)
-    except model.user.UserNotFound as e:
+        user = model.users.login(db, bank_id, password)
+    except model.users.UserNotFound as e:
         # TODO: 失敗が多いときに403を返すBanの仕様に対応
         return error_json(404, e.msg)
 
-    flask.session["user_id"] = user_id
-    return flask.jsonify(id=user_id, name=name)
+    flask.session["user_id"] = user.id
+    return flask.jsonify(id=user.id, name=user.name)
 
 
-@app.route("/signout")
+@app.route("/signout", methods=("POST",))
 def signout():
     flask.session.clear()
     return flask.jsonify({})
@@ -145,7 +152,7 @@ def signout():
 def info():
     res = {}
     db = get_dbconn()
-    cursor = flask.request.args["cursor"]
+    cursor = flask.request.args.get("cursor")
     last_trade_id = 0
     lt = 0
 
@@ -155,11 +162,11 @@ def info():
         except ValueErorr as e:
             app.logger.exception(f"failed to parse cursor ({cursor!r})")
         if last_trade_id > 0:
-            trade = model.trade.get_trade_by_id(db, last_trade_id)
+            trade = model.trades.get_trade_by_id(db, last_trade_id)
             if trade:
                 lt = trade.created_at
 
-    latest_trade = model.trade.get_latest_trade(db)
+    latest_trade = model.trades.get_latest_trade(db)
     res["cursor"] = latest_trade.id
 
     user = flask.g.current_user
@@ -216,10 +223,10 @@ def add_order():
         return error_json(400, e.msg)
 
     db = get_dbconn()
-    trade_chance = model.trade.has_trade_chance(db, order.id)
+    trade_chance = model.trades.has_trade_chance(db, order.id)
     if trade_chance:
         try:
-            model.trade.run_trade(db)
+            model.trades.run_trade(db)
         except Exception:  # トレードに失敗してもエラーにはしない
             app.logger.exception("run_trade failed")
 

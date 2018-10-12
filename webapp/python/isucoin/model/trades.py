@@ -40,19 +40,19 @@ def _get_trade(db, query, *args):
 
 
 def get_trade_by_id(db, id: int) -> typing.Optional[Trade]:
-    return _get_trade("SELECT * FROM trade WHERE id = %s", id)
+    return _get_trade(db, "SELECT * FROM trade WHERE id = %s", id)
 
 
 def get_latest_trade(db) -> typing.Optional[Trade]:
-    return _get_trade("SELECT * FROM trade ORDER BY id DESC")
+    return _get_trade(db, "SELECT * FROM trade ORDER BY id DESC")
 
 
 def get_candlestic_data(db, mt: datetime, tf: str) -> typing.List[CandlestickData]:
-    query = f"""
+    query = """
         SELECT m.t, a.price, b.price, m.h, m.l
         FROM (
             SELECT
-                STR_TO_DATE(DATE_FORMAT(created_at, {tf}), %s) AS t,
+                STR_TO_DATE(DATE_FORMAT(created_at, %s), %s) AS t,
                 MIN(id) AS min_id,
                 MAX(id) AS max_id,
                 MAX(price) AS h,
@@ -66,7 +66,7 @@ def get_candlestic_data(db, mt: datetime, tf: str) -> typing.List[CandlestickDat
         ORDER BY m.t
     """
     cur = db.cursor()
-    cur.execute(query, ("%Y-%m-%d %H:%i:%s", mt))
+    cur.execute(query, (tf, "%Y-%m-%d %H:%i:%s", mt))
     return [CandlestickData(*r) for r in cur]
 
 
