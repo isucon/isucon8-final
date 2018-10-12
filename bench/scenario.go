@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -51,6 +52,7 @@ type normalScenario struct {
 	latestTradePrice int64
 	enableShare      bool
 	orders           []*Order
+	ordersLock       sync.Mutex
 
 	unitIsu        int64
 	defaultIsu     int64
@@ -280,6 +282,8 @@ func (s *normalScenario) fetchInfo(ctx context.Context, cursor int64) (int64, bo
 }
 
 func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
+	s.ordersLock.Lock()
+	defer s.ordersLock.Unlock()
 	orders, err := s.c.GetOrders(ctx)
 	if err != nil {
 		return nil, err
@@ -359,6 +363,8 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 }
 
 func (s *normalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
+	s.ordersLock.Lock()
+	defer s.ordersLock.Unlock()
 	logicalCredit := s.currentCredit - s.reservedCredit
 	logicalIsu := s.currentIsu - s.reservedIsu
 	waiting := s.waitingOrders()
