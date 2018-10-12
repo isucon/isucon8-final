@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from isubank import IsuBank
+import datetime
+import isubank
 
 from . import users, trades, settings
 
@@ -27,9 +28,21 @@ class Order:
     price: int
     closed_at: typing.Optional[str]
     trade_id: int
-    created_at: str
+    created_at: datetime.datetime
     user: typing.Optional[users.User] = None
     trade: typing.Optional[trades.Trade] = None
+
+    def __init__(self, id, type, user_id, amount, price, closed_at, trade_id, created_at):
+        if isinstance(type, bytes):
+            type = type.decode()
+        self.id = id
+        self.type = type
+        self.user_id = user_id
+        self.amount = amount
+        self.price = price
+        self.closed_at = closed_at
+        self.trade_id = trade_id
+        self.created_at = created_at
 
     def to_json(self):
         data = asdict(self)
@@ -99,15 +112,15 @@ def get_highest_buy_order(db) -> Order:
     c = db.cursor()
     c.execute(
         "SELECT * FROM orders WHERE type = %s AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1",
-        ("sell",),
+        ("buy",),
     )
     return Order(*c.fetchone())
 
 
 def fetch_order_relation(db, order: Order):
-    order.user = users.get_user_by_id(db, order.user_id)
+    order.user = users.get_user_by_id(db, order.user_id).to_json()
     if order.trade_id:
-        order.trade = trades.get_trade_by_id(db, order.trade_id)
+        order.trade = trades.get_trade_by_id(db, order.trade_id).to_json()
 
 
 def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
@@ -119,8 +132,16 @@ def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
 
     if ot == "buy":
         total = price * amount
-        bank.Check(user.bank_id, total)
-        # TODO
+        try:
+            bank.Check(user.bank_id, total)
+        except isubank.CreditInsufficient as e:
+            settings.send_log(db, "buy.error", {
+                "error": e.msg,
+                "user_id": user_id,
+                "amount": amount,
+                "price": price,
+            })
+            raise CreditInsufficient
     elif ot == "sell":
         pass
     else:

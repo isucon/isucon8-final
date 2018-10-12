@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import time
 
-
-from . import orders, settings, trades, users
+from .orders import *
+from .settings import *
+from .trades import *
+from .users import *
 
 
 def init_benchmark(db):

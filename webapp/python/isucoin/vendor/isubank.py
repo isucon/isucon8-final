@@ -11,15 +11,15 @@ import requests
 
 
 class IsubankError(Exception):
-    pass
+    msg = "Isubnak Error"
 
 
 class NoUserError(IsubankError):
-    pass
+    msg = "no bank user"
 
 
 class CreditInsufficient(IsubankError):
-    pass
+    msg = "credit is insufficient"
 
 
 class IsuBank:

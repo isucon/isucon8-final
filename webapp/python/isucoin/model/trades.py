@@ -6,7 +6,7 @@ from isubank import CreditInsufficient
 import bcrypt
 import MySQLdb
 
-from . import settings
+from . import settings, orders
 
 
 class NoOrderForTrade(Exception):
@@ -71,12 +71,12 @@ def get_candlestic_data(db, mt: datetime, tf: str) -> typing.List[CandlestickDat
 
 
 def has_trade_chance_by_order(db, order_id: int) -> bool:
-    order = get_order_by_id(db, order_id)
+    order = orders.get_order_by_id(db, order_id)
 
-    lowest = get_lowest_sell_order(db)
+    lowest = orders.get_lowest_sell_order(db)
     if not lowest:
         return False
-    highest = get_highest_buy_order(db)
+    highest = orders.get_highest_buy_order(db)
     if not highest:
         return False
 

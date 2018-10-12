@@ -64,7 +64,7 @@ def before_request():
         flask.g.current_user = None
         return
 
-    user = model.users.get_user_by_id(get_dbconn(), user_id)
+    user = model.get_user_by_id(get_dbconn(), user_id)
     if user is None:
         flask.session.clear()
         return error_json(404, "セッションが切断されました")
@@ -113,10 +113,10 @@ def signup():
 
     try:
         with transaction() as db:
-            model.users.signup(db, name, bank_id, password)
-    except model.users.BankUserNotFound as e:
+            model.signup(db, name, bank_id, password)
+    except model.BankUserNotFound as e:
         return error_json(404, e.msg)
-    except model.users.BankUserConflict as e:
+    except model.BankUserConflict as e:
         return error_json(409, e.msg)
 
     return flask.jsonify({})
@@ -133,8 +133,8 @@ def signin():
 
     db = get_dbconn()
     try:
-        user = model.users.login(db, bank_id, password)
-    except model.users.UserNotFound as e:
+        user = model.login(db, bank_id, password)
+    except model.UserNotFound as e:
         # TODO: 失敗が多いときに403を返すBanの仕様に対応
         return error_json(404, e.msg)
 
@@ -162,28 +162,33 @@ def info():
         except ValueErorr as e:
             app.logger.exception(f"failed to parse cursor ({cursor!r})")
         if last_trade_id > 0:
-            trade = model.trades.get_trade_by_id(db, last_trade_id)
+            trade = model.get_trade_by_id(db, last_trade_id)
             if trade:
                 lt = trade.created_at
 
-    latest_trade = model.trades.get_latest_trade(db)
+    latest_trade = model.get_latest_trade(db)
     res["cursor"] = latest_trade.id
 
     user = flask.g.current_user
     if user:
-        orders = model.orders.get_orders_by_userid_and_lasttradeid(
+        orders = model.get_orders_by_userid_and_lasttradeid(
             db, user.id, last_trade_id
         )
         for o in orders:
-            model.orders.fech_order_relation(o)
+            model.fetch_order_relation(o)
 
-        res["traded_orders"] = orders  # jsonify?
+        res["traded_orders"] = [o.to_json() for o in orders]
 
     now = time.time()  # localtime?
-
     # todo: chart
-    res["lowest_sell_price"] = 100  # todo
-    res["highest_buy_price"] = 1000  # todo
+
+    lowest_sell_order = model.get_lowest_sell_order(db)
+    if lowest_sell_order:
+        res["lowest_sell_price"] = lowest_sell_order.price
+
+    highest_buy_order = model.get_highest_buy_order(db)
+    if highest_buy_order:
+        res["highest_buy_price"] = highest_buy_order.price
 
     # TODO: trueにするとシェアボタンが有効になるが、アクセスが増えてヤバイので一旦falseにしておく
     res["enable_share"] = False
@@ -198,11 +203,11 @@ def orders():
         return error_json(401, "Not authenticated")
 
     db = get_dbconn()
-    orders = model.orders.get_orders_by_userid(db, user.id)
+    orders = model.get_orders_by_userid(db, user.id)
     for o in orders:
-        model.orders.fech_order_relation(o)
+        model.fetch_order_relation(db, o)
 
-    return flask.jsonify(orders)
+    return flask.jsonify([o.to_json() for o in orders])
 
 
 @app.route("/orders", methods=("POST",))
@@ -214,19 +219,18 @@ def add_order():
     amount = int(flask.request.form["amount"])
     price = int(flask.request.form["price"])
     type = flask.request.form["type"]
-    print(f"add_order: amount={amount}, price={price}, type={type}")
 
     try:
         with transaction() as db:
-            order = model.orders.add_order(db, type, user.id, amount, price)
-    except (model.order.InvalidParameter, model.order.CreditInsufficient) as e:
+            order = model.add_order(db, type, user.id, amount, price)
+    except (model.InvalidParameter, model.CreditInsufficient) as e:
         return error_json(400, e.msg)
 
     db = get_dbconn()
-    trade_chance = model.trades.has_trade_chance(db, order.id)
+    trade_chance = model.has_trade_chance_by_order(db, order.id)
     if trade_chance:
         try:
-            model.trades.run_trade(db)
+            model.run_trade(db)
         except Exception:  # トレードに失敗してもエラーにはしない
             app.logger.exception("run_trade failed")
 
@@ -241,8 +245,8 @@ def delete_order(order_id):
 
     try:
         with transaction() as db:
-            model.orders.delete_order(db, user.id, order_id, "canceled")
-    except (model.orders.OrderNotFound, model.order.OrderAlreadyClosed) as e:
+            model.delete_order(db, user.id, order_id, "canceled")
+    except (model.OrderNotFound, model.OrderAlreadyClosed) as e:
         error_json(404, e.msg)
 
     return flask.jsonify(id=order_id)
