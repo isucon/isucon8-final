@@ -143,6 +143,12 @@ func (s *normalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error 
 		return errors.Wrap(err, "ログインできませんでした")
 	}
 
+	_, err = s.fetchOrders(ctx)
+	smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
+	if err != nil {
+		return errors.Wrap(err, "注文履歴の取得に失敗しました")
+	}
+
 	go s.runAction(ctx, smchan)
 
 	go s.runInfoLoop(ctx, smchan)

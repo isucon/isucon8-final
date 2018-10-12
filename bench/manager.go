@@ -260,6 +260,7 @@ func (c *Manager) newScenario() (Scenario, error) {
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("[DEBUG] add BruteForce")
 		return NewBruteForceScenario(cl), nil
 	case n == 7 || n == 25:
 		accounts := []struct {
@@ -284,6 +285,7 @@ func (c *Manager) newScenario() (Scenario, error) {
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("[DEBUG] add heavy user")
 		return NewExistsUserScenario(cl, credit, 10, 3), nil
 	case n < 16:
 		credit, isu, unit = 30000, 5, 1
