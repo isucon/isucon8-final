@@ -42,7 +42,7 @@ export default Vue.extend({
     async updateInfo() {
       try {
         await this.getInfo(this.info ? this.info.cursor : null)
-        if (this.info && this.info.traded_orders) {
+        if (this.info && this.info.traded_orders.length > 0) {
           this.getOrders()
         }
 
