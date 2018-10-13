@@ -32,8 +32,18 @@ interface ConvertedData {
   t: number
 }
 
+interface Data {
+  ctx: CanvasRenderingContext2D | null
+}
+
 export default Vue.extend({
   name: 'Chart',
+
+  data(): Data {
+    return {
+      ctx: null,
+    }
+  },
 
   computed: {
     ...mapState(['chartType', 'info']),
@@ -62,18 +72,19 @@ export default Vue.extend({
     reduceChartData(chart: ChartData[]) {
       return chart.filter((data, index) => index < 60 * 3)
     },
+    setupContext2d() {
+      const canvas = this.$refs.canvas as HTMLCanvasElement
+      this.ctx = canvas.getContext('2d')
+      if (!this.ctx) { return }
+
+      this.ctx.canvas.width = 900
+      this.ctx.canvas.height = 400
+    },
     showChart() {
       if (!this.info) { return }
 
-      const canvas = this.$refs.canvas as HTMLCanvasElement
-      const ctx = canvas.getContext('2d')
-      if (!ctx) { return }
-
-      ctx.canvas.width = 900
-      ctx.canvas.height = 400
-
       const candlestickChart = new Chart(
-        ctx,
+        this.ctx,
         {
           type: 'candlestick',
           data: {
@@ -88,6 +99,7 @@ export default Vue.extend({
   },
 
   mounted() {
+    this.setupContext2d()
     this.showChart()
   },
 
@@ -134,6 +146,7 @@ export default Vue.extend({
 
 #chart
   width: 100%
-  height: 200px
+  height: 400px
+  pointer-events: none
 
 </style>
