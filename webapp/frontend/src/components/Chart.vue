@@ -56,8 +56,11 @@ export default Vue.extend({
       if (!this.info) { return }
       return this.chartType === 'hour' ? this.info.chart_by_hour
         : this.chartType === 'min' ? this.info.chart_by_min
-        : this.chartType === 'sec' ? this.info.chart_by_sec
+        : this.chartType === 'sec' ? this.reduceChartData(this.info.chart_by_sec)
         : null
+    },
+    reduceChartData(chart: ChartData[]) {
+      return chart.filter((data, index) => index < 60 * 3)
     },
     showChart() {
       if (!this.info) { return }
@@ -66,8 +69,8 @@ export default Vue.extend({
       const ctx = canvas.getContext('2d')
       if (!ctx) { return }
 
-      ctx.canvas.width = 700
-      ctx.canvas.height = 200
+      ctx.canvas.width = 900
+      ctx.canvas.height = 400
 
       const candlestickChart = new Chart(
         ctx,
@@ -101,7 +104,7 @@ export default Vue.extend({
 
 <style lang="sass" scoped>
 .container
-  width: 700px
+  width: 900px
 
 .buttons
   display: flex
