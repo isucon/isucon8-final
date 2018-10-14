@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from dataclasses import dataclass, asdict
-from isubank import IsuBank
+from dataclasses import dataclass
 import bcrypt
 import MySQLdb
 

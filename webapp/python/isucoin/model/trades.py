@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from dataclasses import dataclass, asdict
-from isubank import CreditInsufficient
-import bcrypt
-import MySQLdb
+import isubank
 
 from . import settings, orders
 
@@ -20,6 +18,9 @@ class Trade:
     price: int
     created_at: datetime
 
+    def to_json(self):
+        return asdict(self)
+
 
 @dataclass
 class CandlestickData:
@@ -28,6 +29,9 @@ class CandlestickData:
     close: int
     high: int
     low: int
+
+    def to_json(self):
+        return asdict(self)
 
 
 def _get_trade(db, query, *args):
@@ -96,8 +100,11 @@ def _reserve_order(db, order, price: int) -> int:
 
     try:
         return bank.Reserve(order.user.bank_id, p)
-    except CreditInsufficient as e:
-        cancelOrder(db, order, "reserve_failed")
+    except isubank.CreditInsufficient as e:
+        print(
+            f"reserve failed: user_id={order.user.id} price={price} amount={order.amount} total={p}"
+        )
+        orders.cancel_order(db, order, "reserve_failed")
         settings.send_log(
             db,
             order.type + ".error",
@@ -114,6 +121,7 @@ def _reserve_order(db, order, price: int) -> int:
 def _commit_reserved_order(
     db, order: Order, targets: List[Order], reserve_ids: List[int]
 ):
+    print(f"_commit_reserved_order\norder={order}\ntargets={targets}\n")
     cur = db.cursor()
     cur.execute(
         "INSERT INTO trade (amount, price, created_at) VALUES (%s, %s, NOW(6))",
@@ -136,7 +144,7 @@ def _commit_reserved_order(
             o.type + ".trade",
             {
                 "order_id": o.id,
-                "price": order.Price,
+                "price": order.price,
                 "amount": o.amount,
                 "user_id": o.user_id,
                 "trade_id": trade_id,
@@ -165,17 +173,18 @@ def try_trade(db, order_id: int):
         cur.execute(query, args)
 
         target_orders = [orders.Order(*r) for r in cur]
+        targets = []
 
         for to in target_orders:
             try:
-                orders.get_open_order_by_id(db, to.ID)
+                to = orders.get_open_order_by_id(db, to.id)
             except orders.OrderAlreadyClosed:
                 continue
             if to.amount > rest_amount:
                 continue
             try:
                 rid = _reserve_order(db, to, unit_price)
-            except CreditInsufficient:
+            except isubank.CreditInsufficient:
                 continue
 
             reserves.append(rid)
@@ -187,9 +196,52 @@ def try_trade(db, order_id: int):
         if rest_amount > 0:
             raise NoOrderForTrade
 
-        _commit_reserved_order(db, order, tragets, reserves)
+        _commit_reserved_order(db, order, targets, reserves)
         reserves.clear()
     finally:
         if reserves:
             bank = settings.get_isubank(db)
             bank.Cancel(reserves)
+
+
+def run_trade(db):
+    lowest_sell_order = orders.get_lowest_sell_order(db)
+    if lowest_sell_order is None:
+        # 売り注文が無いため成立しない
+        return
+
+    highest_buy_order = orders.get_highest_buy_order(db)
+    if highest_buy_order is None:
+        # 買い注文が無いため成立しない
+        return
+
+    if lowest_sell_order.price > highest_buy_order.price:
+        # 最安の売値が最高の買値よりも高いため成立しない
+        return
+
+    if lowest_sell_order.amount > highest_buy_order.amount:
+        candidates = [lowest_sell_order.id, highest_buy_order.id]
+    else:
+        candidates = [highest_buy_order.id, lowest_sell_order.id]
+
+    for order_id in candidates:
+        db.begin()
+        try:
+            try_trade(db, order_id)
+        except (NoOrderForTrade, orders.OrderAlreadyClosed):
+            # 注文個数の多い方で成立しなかったので少ない方で試す
+            db.commit()
+            continue
+        except isubank.CreditInsufficient:
+            db.commit()
+            raise
+        except Exception:
+            db.rollback()
+            raise
+        else:
+            # トレード成立したため次の取引を行う
+            db.commit()
+            return run_trade(db)
+
+    # 個数が不足していて不成立
+    return

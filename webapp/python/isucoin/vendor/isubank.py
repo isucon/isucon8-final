@@ -4,7 +4,6 @@ ISUBANK API client
 from __future__ import annotations
 
 import json
-import time
 import urllib.parse
 
 import requests
@@ -56,11 +55,11 @@ class IsuBank:
         self._request("/commit", {"reserve_ids": reserveIDs})
 
     def Cancel(self, reserveIDs: typing.List[int]):
-        self._request("/commit", {"reserve_ids": reserveIDs})
+        self._request("/cancel", {"reserve_ids": reserveIDs})
 
     def _request(self, path: str, data: dict) -> dict:
         url = urllib.parse.urljoin(self.endpoint, path)
-        print(data)
+        print("bank", path, data)
         body = json.dumps(data)
         headers = {
             "Content-Type": "application/json",

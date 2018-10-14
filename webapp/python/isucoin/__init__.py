@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(__file__) + "/vendor")
 
 import contextlib
 import datetime
+import json
 import time
 import flask
 import MySQLdb
@@ -46,8 +47,37 @@ def get_dbconn():
     return _dbconn
 
 
+def _json_default(v):
+    if isinstance(v, datetime.datetime):
+        return v.strftime("%Y-%m-%dT%H:%M:%S+09:00")
+
+    to_json = getattr(v, "to_json")
+    if to_json:
+        return to_json()
+
+    raise TypeError(f"Unknown type for json_dumps. {v!r} (type: {type(v)})")
+
+
+def json_dumps(data, **kwargs):
+    return json.dumps(data, default=_json_default, **kwargs)
+
+
+def jsonify(*args, **kwargs):
+    if args and kwargs:
+        raise TypeError("jsonify() behavior undefined when passed both args and kwargs")
+    if len(args) == 1:
+        data = args[0]
+    else:
+        data = args or kwargs
+
+    return app.response_class(
+        json_dumps(data, indent=None, separators=(",", ":")).encode(),
+        mimetype="application/json; charset=utf-8",
+    )
+
+
 def error_json(code: int, msg):
-    resp = flask.jsonify({"code": code, "err": str(msg)})
+    resp = jsonify(code=code, err=str(msg))
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.status_code = code
     return resp
@@ -100,7 +130,7 @@ def initialize():
         for k in ("bank_endpoint", "bank_appid", "log_endpoint", "log_appid"):
             v = flask.request.form.get(k)
             model.set_setting(db, k, v)
-    return flask.jsonify({})
+    return jsonify({})
 
 
 @app.route("/signup", methods=("POST",))
@@ -121,7 +151,7 @@ def signup():
     except model.BankUserConflict as e:
         return error_json(409, e.msg)
 
-    return flask.jsonify({})
+    return jsonify({})
 
 
 @app.route("/signin", methods=("POST",))
@@ -141,13 +171,13 @@ def signin():
         return error_json(404, e.msg)
 
     flask.session["user_id"] = user.id
-    return flask.jsonify(id=user.id, name=user.name)
+    return jsonify(id=user.id, name=user.name)
 
 
 @app.route("/signout", methods=("POST",))
 def signout():
     flask.session.clear()
-    return flask.jsonify({})
+    return jsonify({})
 
 
 @app.route("/info")
@@ -161,7 +191,7 @@ def info():
     if cursor:
         try:
             last_trade_id = int(cursor)
-        except ValueErorr as e:
+        except ValueError as e:
             app.logger.exception(f"failed to parse cursor ({cursor!r})")
         if last_trade_id > 0:
             trade = model.get_trade_by_id(db, last_trade_id)
@@ -175,9 +205,9 @@ def info():
     if user:
         orders = model.get_orders_by_userid_and_lasttradeid(db, user.id, last_trade_id)
         for o in orders:
-            model.fetch_order_relation(o)
+            model.fetch_order_relation(db, o)
 
-        res["traded_orders"] = [o.to_json() for o in orders]
+        res["traded_orders"] = orders
 
     now = datetime.datetime.now()
 
@@ -188,12 +218,12 @@ def info():
 
     from_t = now - datetime.timedelta(minutes=300)
     if lt and lt > from_t:
-        from_t = lt.replace(seconds=0, microsecond=0)
+        from_t = lt.replace(second=0, microsecond=0)
     res["chart_by_min"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:%i:00")
 
     from_t = now - datetime.timedelta(hours=48)
     if lt and lt > from_t:
-        from_t = lt.replace(minutes=0, seconds=0, microsecond=0)
+        from_t = lt.replace(minute=0, second=0, microsecond=0)
     res["chart_by_hour"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:00:00")
 
     lowest_sell_order = model.get_lowest_sell_order(db)
@@ -207,7 +237,8 @@ def info():
     # TODO: trueにするとシェアボタンが有効になるが、アクセスが増えてヤバイので一旦falseにしておく
     res["enable_share"] = False
 
-    return flask.jsonify(res)
+    resp = jsonify(res)
+    return resp
 
 
 @app.route("/orders")
@@ -221,7 +252,7 @@ def orders():
     for o in orders:
         model.fetch_order_relation(db, o)
 
-    return flask.jsonify([o.to_json() for o in orders])
+    return jsonify(orders)
 
 
 @app.route("/orders", methods=("POST",))
@@ -237,7 +268,7 @@ def add_order():
     try:
         with transaction() as db:
             order = model.add_order(db, type, user.id, amount, price)
-    except (model.InvalidParameter, model.CreditInsufficient) as e:
+    except model.CreditInsufficient as e:
         return error_json(400, e.msg)
 
     db = get_dbconn()
@@ -248,7 +279,11 @@ def add_order():
         except Exception:  # トレードに失敗してもエラーにはしない
             app.logger.exception("run_trade failed")
 
-    return flask.jsonify(id=order.id)
+    print(
+        f"order: user={user.id} id={order.id} type={type} amount={amount} price={price} chance={trade_chance}"
+    )
+    # print(json_dumps(model.get_order_by_id(db, order.id)))
+    return jsonify(id=order.id)
 
 
 @app.route("/order/<int:order_id>", methods=("DELETE",))
@@ -263,4 +298,5 @@ def delete_order(order_id):
     except (model.OrderNotFound, model.OrderAlreadyClosed) as e:
         error_json(404, e.msg)
 
-    return flask.jsonify(id=order_id)
+    print(f"delete: user={user.id} id={order_id}")
+    return jsonify(id=order_id)

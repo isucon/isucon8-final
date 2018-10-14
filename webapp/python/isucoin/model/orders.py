@@ -77,52 +77,52 @@ def get_orders_by_userid_and_lasttradeid(
     return [Order(*r) for r in c]
 
 
-def get_order_by_id(db, id: int) -> Order:
+def _get_one_order(db, query, *args):
     c = db.cursor()
-    c.execute("SELECT * FROM orders WHERE id = %s", (id,))
-    r = c.fetchone()
-    if r is None:
+    c.execute(query, args)
+    row = c.fetchone()
+    if row is None:
         return None
-    return Order(*r)
+    return Order(*row)
+
+
+def get_order_by_id(db, id: int) -> Order:
+    return _get_one_order(db, "SELECT * FROM orders WHERE id = %s", id)
 
 
 def get_order_by_id_with_lock(db, id: int) -> Order:
-    c = db.cursor()
-    c.execute("SELECT * FROM orders WHERE id = %s FOR UPDATE", (id,))
-    r = c.fetchone()
-    if r is None:
-        return None
-    return Order(*r)
+    order = _get_one_order(db, "SELECT * FROM orders WHERE id = %s FOR UPDATE", id)
+    order.user = users.get_user_by_id_with_lock(db, order.user_id)
+    return order
 
 
 def get_open_order_by_id(db, id: int) -> Order:
     order = get_order_by_id_with_lock(db, id)
     if order.closed_at is not None:
         raise OrderAlreadyClosed
+    return order
 
 
 def get_lowest_sell_order(db) -> Order:
-    c = db.cursor()
-    c.execute(
+    return _get_one_order(
+        db,
         "SELECT * FROM orders WHERE type = %s AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1",
-        ("sell",),
+        "sell",
     )
-    return Order(*c.fetchone())
 
 
 def get_highest_buy_order(db) -> Order:
-    c = db.cursor()
-    c.execute(
+    return _get_one_order(
+        db,
         "SELECT * FROM orders WHERE type = %s AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1",
-        ("buy",),
+        "buy",
     )
-    return Order(*c.fetchone())
 
 
 def fetch_order_relation(db, order: Order):
     order.user = users.get_user_by_id(db, order.user_id).to_json()
     if order.trade_id:
-        order.trade = trades.get_trade_by_id(db, order.trade_id).to_json()
+        order.trade = asdict(trades.get_trade_by_id(db, order.trade_id))
 
 
 def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
@@ -143,6 +143,9 @@ def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
                 {"error": e.msg, "user_id": user_id, "amount": amount, "price": price},
             )
             raise CreditInsufficient
+        print(
+            f"add_order: check ok: user_id={user_id} amount={amount} price={price} total={total}"
+        )
     elif ot == "sell":
         pass
     else:
