@@ -483,6 +483,7 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 	var cursor int64
 	go func() {
 		n := 0
+		b := 0
 		for {
 			select {
 			case <-ctx.Done():
@@ -492,26 +493,35 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 				if s.c.IsRetired() {
 					return
 				}
+				actionInterval := time.After(BruteForceDelay)
 				err := s.c.Top(ctx)
 				smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
 				if err != nil {
 					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
 						return
 					}
+					<-actionInterval
 					continue
 				}
-
 				info, err := s.c.Info(ctx, cursor)
 				smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
 				if err != nil {
 					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
 						return
 					}
+					<-actionInterval
 					continue
 				}
 				cursor = info.Cursor
 
-				delay := BruteForceDelay
+				if b > 0 {
+					b--
+					log.Printf("[DEBUG] skip signin by 403")
+					smchan <- ScoreMsg{st: ScoreTypeSignin}
+					<-actionInterval
+					continue
+				}
+
 				s.c.pass = fmt.Sprintf("password%03d", rand.Intn(1000))
 				n++
 				err = s.c.Signin(ctx)
@@ -522,8 +532,8 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 					switch e.StatusCode {
 					case 403:
 						if n > 5 {
-							err = err
-							delay = time.Second * time.Duration(int64(n))
+							err = nil
+							b = n
 						}
 					case 404:
 						err = nil
@@ -537,7 +547,7 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 						return
 					}
 				}
-				time.Sleep(delay)
+				<-actionInterval
 			}
 		}
 	}()
