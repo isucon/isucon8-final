@@ -215,6 +215,7 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 			if s.c.IsRetired() {
 				return
 			}
+			nextActionLock := time.After(OrderUpdateInterval)
 			st, err := s.tryTrade(ctx)
 			if st == 0 {
 				continue
@@ -237,16 +238,16 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 					return
 				}
 			}
+			<-nextActionLock
 			// 取引可能状態が続くとtradeが渋滞しているはずなのでインターバルを伸ばす
-			nextInterval := OrderUpdateInterval
 			if s.lowestSellPrice < s.highestBuyPrice {
 				gapCount++
-				// TODO: 要調整
-				nextInterval += time.Duration(gapCount*500) * time.Millisecond
+				if gapCount >= 5 {
+					time.Sleep(time.Duration((gapCount-5)*100) * time.Millisecond)
+				}
 			} else {
 				gapCount = 0
 			}
-			time.Sleep(nextInterval)
 		}
 	}
 }
