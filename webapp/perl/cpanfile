@@ -1,0 +1,16 @@
+requires 'DBIx::Sunny';
+requires 'DBD::mysql';
+requires 'JSON::XS', '3.00';
+requires 'JSON::Types';
+requires 'Kossy';
+requires 'Plack::Builder';
+requires 'Plack::Session';
+requires 'Time::Moment';
+
+on configure => sub {
+    requires 'ExtUtils::MakeMaker';
+};
+
+on test => sub {
+    requires 'Test::More';
+};
