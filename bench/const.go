@@ -25,12 +25,12 @@ const (
 	BruteForceWorkers = 2  // ログインを試行してくるユーザー
 
 	// Scores
-	SignupScore       = 1
-	SigninScore       = 1
+	SignupScore       = 3
+	SigninScore       = 3
 	GetTradesScore    = 1
 	PostOrdersScore   = 5
 	GetOrdersScore    = 1
-	DeleteOrdersScore = 3
+	DeleteOrdersScore = 5
 	TradeSuccessScore = 10
 	GetInfoScore      = 1
 	GetTopScore       = 1
