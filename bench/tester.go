@@ -91,10 +91,6 @@ func (t *PreTester) Run(ctx context.Context) error {
 			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
 			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
 			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
-			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
-			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
-			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
-			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
 			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
 		}
 		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
@@ -509,26 +505,44 @@ func (t *PreTester) Run(ctx context.Context) error {
 	return nil
 }
 
+type testUser interface {
+	Orders() []*Order
+	UserID() int64
+	BankID() string
+	Credit() int64
+	FetchOrders(context.Context) error
+	Ignore() bool
+}
+
 type PostTester struct {
-	appep     string
-	isulog    *isulog.Isulog
-	isubank   *isubank.Isubank
-	investors []Investor
+	appep   string
+	isulog  *isulog.Isulog
+	isubank *isubank.Isubank
+	users   []testUser
 }
 
 func (t *PostTester) Run(ctx context.Context) error {
 	deadline := time.Now().Add(LogAllowedDelay)
-	if len(t.investors) == 0 {
+	users := make([]testUser, 0, len(t.users))
+	for _, tu := range t.users {
+		if tu.UserID() > 0 && !tu.Ignore() {
+			users = append(users, tu)
+		}
+	}
+	if len(users) == 0 {
 		return errors.Errorf("ユーザーが全滅しています")
 	}
-	first, latest, random := t.investors[0], t.investors[len(t.investors)-1], t.investors[rand.Intn(len(t.investors))]
+	first, latest, random := users[0], users[len(users)-1], users[rand.Intn(len(users))]
+	for len(users) >= 3 && (first.UserID() == random.UserID() || latest.UserID() == random.UserID()) {
+		random = users[rand.Intn(len(users)-2)+1]
+	}
 	var trade *Trade
-	for _, investor := range t.investors {
-		for _, order := range investor.Orders() {
+	for _, user := range users {
+		for _, order := range user.Orders() {
 			if order.Trade != nil {
 				if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
 					trade = order.Trade
-					latest = investor
+					latest = user
 				}
 			}
 		}
@@ -573,38 +587,38 @@ func (t *PostTester) Run(ctx context.Context) error {
 			time.Sleep(PollingInterval)
 		}
 	})
-	for _, inv := range []Investor{first, latest, random} {
+	for _, tu := range []testUser{first, latest, random} {
 
-		investor := inv
+		user := tu
 		eg.Go(func() error {
 			timeout := time.After(deadline.Sub(time.Now()))
 			var credit int64
-			for credit != investor.Credit() {
+			for credit != user.Credit() {
 				select {
 				case <-timeout:
-					return errors.Errorf("銀行残高があいません[user:%d]", investor.UserID())
+					return errors.Errorf("銀行残高があいません[user:%d]", user.UserID())
 				default:
 					var err error
-					credit, err = t.isubank.GetCredit(investor.BankID())
+					credit, err = t.isubank.GetCredit(user.BankID())
 					if err != nil {
 						return errors.Wrap(err, "ISUBANK APIとの通信に失敗しました")
 					}
-					if credit == investor.Credit() {
-						log.Printf("[INFO] 残高チェックOK (point1) [user:%d]", investor.UserID())
+					if credit == user.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point1) [user:%d]", user.UserID())
 						break
 					}
-					if err = investor.FetchOrders(ctx); err != nil {
+					if err = user.FetchOrders(ctx); err != nil {
 						return err
 					}
-					if credit == investor.Credit() {
-						log.Printf("[INFO] 残高チェックOK (point2) [user:%d]", investor.UserID())
+					if credit == user.Credit() {
+						log.Printf("[INFO] 残高チェックOK (point2) [user:%d]", user.UserID())
 						break
 					}
 					time.Sleep(time.Millisecond * 500)
 				}
 			}
 			var buy, sell, buyt, sellt, buyd, selld int
-			for _, order := range investor.Orders() {
+			for _, order := range user.Orders() {
 				switch order.Type {
 				case TradeTypeBuy:
 					buy++
@@ -625,9 +639,9 @@ func (t *PostTester) Run(ctx context.Context) error {
 			for {
 				select {
 				case <-timeout:
-					return errors.Errorf("ログが欠損しています [user:%d]", investor.UserID())
+					return errors.Errorf("ログが欠損しています [user:%d]", user.UserID())
 				default:
-					logs, err := t.isulog.GetUserLogs(investor.UserID())
+					logs, err := t.isulog.GetUserLogs(user.UserID())
 					if err != nil {
 						return errors.Wrap(err, "isulog get user logs failed")
 					}
@@ -667,7 +681,7 @@ func (t *PostTester) Run(ctx context.Context) error {
 						return true
 					}()
 					if ok {
-						log.Printf("[INFO] ユーザーログチェックOK [user:%d]", investor.UserID())
+						log.Printf("[INFO] ユーザーログチェックOK [user:%d]", user.UserID())
 						return nil
 					}
 				}

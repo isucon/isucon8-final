@@ -15,11 +15,11 @@ const (
 	TestTradeTimeout = 5 * time.Second  // testでのtradeは成立までの時間
 	LogAllowedDelay  = 10 * time.Second // logの遅延が許される時間
 
-	PollingInterval     = 500 * time.Millisecond // clientのポーリング感覚
-	OrderUpdateInterval = 2 * time.Second        // 注文間隔
-	BruteForceDelay     = 500 * time.Millisecond // 総当たりログイン試行間隔
+	PollingInterval     = 1000 * time.Millisecond // clientのポーリング感覚
+	OrderUpdateInterval = 1500 * time.Millisecond // 注文間隔
+	BruteForceDelay     = 500 * time.Millisecond  // 総当たりログイン試行間隔
 
-	AddUsersOnShare   = 5  // SNSシェアによって増えるユーザー数
+	AddUsersOnShare   = 3  // SNSシェアによって増えるユーザー数
 	AddUsersOnNatural = 2  // 自然増で増えるユーザー数
 	DefaultWorkers    = 10 // 初期
 	BruteForceWorkers = 2  // ログインを試行してくるユーザー
