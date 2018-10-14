@@ -44,6 +44,10 @@ func (s *baseScenario) Credit() int64 {
 	return 0
 }
 
+func (s *baseScenario) Client() *Client {
+	return s.c
+}
+
 type normalScenario struct {
 	*baseScenario
 
@@ -316,9 +320,6 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 	tradedOrders := make([]*Order, 0, len(s.orders))
 	var reservedCredit, reservedIsu, tradedIsu, tradedCredit int64
 	for _, o := range s.orders {
-		if o.Removed() {
-			continue
-		}
 		var order *Order
 		for _, ro := range orders {
 			if ro.ID == o.ID {
@@ -327,12 +328,14 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 			}
 		}
 		if order == nil {
-			// 自動的に消されたもの
-			if o.Type == TradeTypeSell {
-				return tradedOrders, errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
+			if !o.Removed() {
+				// 自動的に消されたもの
+				if o.Type == TradeTypeSell {
+					return tradedOrders, errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
+				}
+				ct := time.Now()
+				o.ClosedAt = &ct
 			}
-			ct := time.Now()
-			o.ClosedAt = &ct
 			continue
 		}
 		if order.Trade != nil && o.TradeID == 0 {
