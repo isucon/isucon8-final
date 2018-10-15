@@ -1,0 +1,14 @@
+source 'https://rubygems.org'
+
+gem 'puma'
+gem 'sinatra'
+gem 'mysql2'
+gem 'mysql2-cs-bind'
+gem 'bcrypt'
+
+gem 'isulogger', path: File.join(__dir__, 'isulogger')
+gem 'isubank', path: File.join(__dir__, 'isubank')
+
+group :development do
+  gem 'sinatra-contrib'
+end

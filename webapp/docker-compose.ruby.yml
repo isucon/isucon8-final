@@ -1,0 +1,15 @@
+version: '2'
+services:
+  isucoin:
+    build: ruby
+    environment:
+      BUNDLE_PATH: "/bundle"
+      RACK_ENV: production
+    command:
+      - "sh"
+      - "-c"
+      - "bundle install && bundle exec puma -p 5000 -t 1:1"
+    working_dir: /app
+    volumes:
+      - ./ruby:/app
+      - ./public:/public
