@@ -519,7 +519,7 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 
 				if b > 0 {
 					b--
-					log.Printf("[DEBUG] skip signin by 403")
+					//log.Printf("[DEBUG] skip signin by 403")
 					smchan <- ScoreMsg{st: ScoreTypeSignin}
 					<-actionInterval
 					continue
