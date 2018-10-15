@@ -69,13 +69,17 @@
                             <tr>
                                 <th width="10%">Log</th>
                                 <td style="font-size: 0.85rem">
-                                    <: ($job.result_json.log || []).join("\n") | html_line_break :>
+                                  : for $job.result_json.log -> $log {
+                                  <: $log | html :><br>
+                                  : }
                                 </td>
                             </tr>
                             <tr>
                                 <th width="10%">Error</th>
                                 <td style="font-size: 0.85rem">
-                                    <: ($job.result_json.error || []).join("\n") | html_line_break :>
+                                  : for $job.result_json.error -> $log {
+                                  <: $log | html :><br>
+                                  : }
                                 </td>
                             </tr>
                         </tbody>
@@ -83,6 +87,6 @@
                 </div>
             </div>
         </div>
-    </section>    
+    </section>
 </div>
 : }
