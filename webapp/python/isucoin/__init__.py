@@ -279,10 +279,6 @@ def add_order():
         except Exception:  # トレードに失敗してもエラーにはしない
             app.logger.exception("run_trade failed")
 
-    print(
-        f"order: user={user.id} id={order.id} type={type} amount={amount} price={price} chance={trade_chance}"
-    )
-    # print(json_dumps(model.get_order_by_id(db, order.id)))
     return jsonify(id=order.id)
 
 
@@ -298,5 +294,4 @@ def delete_order(order_id):
     except (model.OrderNotFound, model.OrderAlreadyClosed) as e:
         error_json(404, e.msg)
 
-    print(f"delete: user={user.id} id={order_id}")
     return jsonify(id=order_id)

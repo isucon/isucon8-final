@@ -143,9 +143,6 @@ def add_order(db, ot: str, user_id: int, amount: int, price: int) -> Order:
                 {"error": e.msg, "user_id": user_id, "amount": amount, "price": price},
             )
             raise CreditInsufficient
-        print(
-            f"add_order: check ok: user_id={user_id} amount={amount} price={price} total={total}"
-        )
     elif ot == "sell":
         pass
     else:

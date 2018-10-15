@@ -101,9 +101,6 @@ def _reserve_order(db, order, price: int) -> int:
     try:
         return bank.Reserve(order.user.bank_id, p)
     except isubank.CreditInsufficient as e:
-        print(
-            f"reserve failed: user_id={order.user.id} price={price} amount={order.amount} total={p}"
-        )
         orders.cancel_order(db, order, "reserve_failed")
         settings.send_log(
             db,
@@ -121,7 +118,6 @@ def _reserve_order(db, order, price: int) -> int:
 def _commit_reserved_order(
     db, order: Order, targets: List[Order], reserve_ids: List[int]
 ):
-    print(f"_commit_reserved_order\norder={order}\ntargets={targets}\n")
     cur = db.cursor()
     cur.execute(
         "INSERT INTO trade (amount, price, created_at) VALUES (%s, %s, NOW(6))",
