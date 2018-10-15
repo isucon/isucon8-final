@@ -314,6 +314,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
 			bought := orders[3].Trade.Price * 2
+			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account1)
 			if err != nil {
 				return err
@@ -438,6 +439,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
 			bought := orders[4].Trade.Price + orders[5].Trade.Price
+			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account2)
 			if err != nil {
 				return err
