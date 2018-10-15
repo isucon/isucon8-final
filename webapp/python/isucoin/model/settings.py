@@ -37,6 +37,5 @@ def get_logger(db):
 
 
 def send_log(db, tag, v):
-    print(tag, v)
     logger = get_logger(db)
     logger.send(tag, v)

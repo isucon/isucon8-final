@@ -100,7 +100,6 @@ def login(db, bank_id: str, password: str) -> User:
     user = User(*row)
 
     if not bcrypt.checkpw(password.encode(), user.password):
-        print(f"password mismatch: pass={password}, hashed={user.password}")
         raise UserNotFound
 
     settings.send_log(db, "signin", {"user_id": user.id})

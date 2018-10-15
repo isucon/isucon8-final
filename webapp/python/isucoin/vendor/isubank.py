@@ -59,7 +59,6 @@ class IsuBank:
 
     def _request(self, path: str, data: dict) -> dict:
         url = urllib.parse.urljoin(self.endpoint, path)
-        print("bank", path, data)
         body = json.dumps(data)
         headers = {
             "Content-Type": "application/json",
