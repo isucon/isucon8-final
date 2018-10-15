@@ -44,6 +44,10 @@ func (s *baseScenario) Credit() int64 {
 	return 0
 }
 
+func (s *baseScenario) Client() *Client {
+	return s.c
+}
+
 type normalScenario struct {
 	*baseScenario
 
@@ -215,6 +219,7 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 			if s.c.IsRetired() {
 				return
 			}
+			nextActionLock := time.After(OrderUpdateInterval)
 			st, err := s.tryTrade(ctx)
 			if st == 0 {
 				continue
@@ -237,16 +242,16 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 					return
 				}
 			}
+			<-nextActionLock
 			// 取引可能状態が続くとtradeが渋滞しているはずなのでインターバルを伸ばす
-			nextInterval := OrderUpdateInterval
 			if s.lowestSellPrice < s.highestBuyPrice {
 				gapCount++
-				// TODO: 要調整
-				nextInterval += time.Duration(gapCount*500) * time.Millisecond
+				if gapCount >= 5 {
+					time.Sleep(time.Duration((gapCount-5)*100) * time.Millisecond)
+				}
 			} else {
 				gapCount = 0
 			}
-			time.Sleep(nextInterval)
 		}
 	}
 }
@@ -315,9 +320,6 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 	tradedOrders := make([]*Order, 0, len(s.orders))
 	var reservedCredit, reservedIsu, tradedIsu, tradedCredit int64
 	for _, o := range s.orders {
-		if o.Removed() {
-			continue
-		}
 		var order *Order
 		for _, ro := range orders {
 			if ro.ID == o.ID {
@@ -326,12 +328,14 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 			}
 		}
 		if order == nil {
-			// 自動的に消されたもの
-			if o.Type == TradeTypeSell {
-				return tradedOrders, errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
+			if !o.Removed() {
+				// 自動的に消されたもの
+				if o.Type == TradeTypeSell {
+					return tradedOrders, errors.Errorf("GET /orders 売り注文が足りないか削除されています %d", o.ID)
+				}
+				ct := time.Now()
+				o.ClosedAt = &ct
 			}
-			ct := time.Now()
-			o.ClosedAt = &ct
 			continue
 		}
 		if order.Trade != nil && o.TradeID == 0 {
@@ -482,6 +486,7 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 	var cursor int64
 	go func() {
 		n := 0
+		b := 0
 		for {
 			select {
 			case <-ctx.Done():
@@ -491,26 +496,35 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 				if s.c.IsRetired() {
 					return
 				}
+				actionInterval := time.After(BruteForceDelay)
 				err := s.c.Top(ctx)
 				smchan <- ScoreMsg{st: ScoreTypeGetTop, err: err}
 				if err != nil {
 					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
 						return
 					}
+					<-actionInterval
 					continue
 				}
-
 				info, err := s.c.Info(ctx, cursor)
 				smchan <- ScoreMsg{st: ScoreTypeGetInfo, err: err}
 				if err != nil {
 					if _, ok := err.(*ErrElapsedTimeOverRetire); ok {
 						return
 					}
+					<-actionInterval
 					continue
 				}
 				cursor = info.Cursor
 
-				delay := BruteForceDelay
+				if b > 0 {
+					b--
+					//log.Printf("[DEBUG] skip signin by 403")
+					smchan <- ScoreMsg{st: ScoreTypeSignin}
+					<-actionInterval
+					continue
+				}
+
 				s.c.pass = fmt.Sprintf("password%03d", rand.Intn(1000))
 				n++
 				err = s.c.Signin(ctx)
@@ -521,8 +535,8 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 					switch e.StatusCode {
 					case 403:
 						if n > 5 {
-							err = err
-							delay = time.Second * time.Duration(int64(n))
+							err = nil
+							b = n
 						}
 					case 404:
 						err = nil
@@ -536,7 +550,7 @@ func (s *bruteForceScenario) Start(ctx context.Context, smchan chan ScoreMsg) er
 						return
 					}
 				}
-				time.Sleep(delay)
+				<-actionInterval
 			}
 		}
 	}()

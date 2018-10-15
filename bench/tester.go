@@ -314,6 +314,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
 			bought := orders[3].Trade.Price * 2
+			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account1)
 			if err != nil {
 				return err
@@ -438,6 +439,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
 			bought := orders[4].Trade.Price + orders[5].Trade.Price
+			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account2)
 			if err != nil {
 				return err
@@ -512,6 +514,7 @@ type testUser interface {
 	Credit() int64
 	FetchOrders(context.Context) error
 	Ignore() bool
+	Client() *Client
 }
 
 type PostTester struct {
@@ -551,6 +554,37 @@ func (t *PostTester) Run(ctx context.Context) error {
 		return errors.Errorf("取引に成功したユーザーが全滅しています")
 	}
 	eg := new(errgroup.Group)
+	for _, tu := range []testUser{first, latest, random} {
+		user := tu
+		eg.Go(func() error {
+			if err := user.FetchOrders(ctx); err != nil {
+				return errors.Wrapf(err, "注文情報の取得に失敗しました [user:%d]", user.UserID)
+			}
+			for _, order := range user.Orders() {
+				if order.ClosedAt == nil {
+					// 未成約の注文はキャンセルしておく
+					o := order
+					eg.Go(func() error {
+						err := user.Client().DeleteOrders(ctx, o.ID)
+						if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 404 {
+							err = nil
+						}
+						if o.ClosedAt == nil {
+							now := time.Now()
+							o.ClosedAt = &now
+						}
+						return err
+					})
+				}
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	eg = new(errgroup.Group)
 
 	eg.Go(func() error {
 		timeout := time.After(deadline.Sub(time.Now()))
