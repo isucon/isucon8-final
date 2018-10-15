@@ -561,11 +561,15 @@ func (t *PostTester) Run(ctx context.Context) error {
 			for _, order := range user.Orders() {
 				if order.ClosedAt == nil {
 					// 未成約の注文はキャンセルしておく
-					orderID := order.ID
+					o := order
 					eg.Go(func() error {
-						err := user.Client().DeleteOrders(ctx, orderID)
+						err := user.Client().DeleteOrders(ctx, o.ID)
 						if er, ok := err.(*ErrorWithStatus); ok && er.StatusCode == 404 {
 							err = nil
+						}
+						if o.ClosedAt == nil {
+							now := time.Now()
+							o.ClosedAt = &now
 						}
 						return err
 					})
