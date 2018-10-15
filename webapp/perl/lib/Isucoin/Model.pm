@@ -646,15 +646,11 @@ sub run_trade {
     }
 
     for my $order_id (@candidates) {
-        my $is_next;
-        try {
+        eval {
             my $txn = $self->dbh->txn_scope;
 
-            try {
-                $self->try_trade($order_id);
-            }
-            catch {
-                my $err = $_;
+            eval { $self->try_trade($order_id) };
+            if (my $err = $@) {
                 if (
                     Isucoin::Exception::NoOrderForTrade->caught($err) ||
                     Isucoin::Exception::OrderAlreadyClosed->caught($err) ||
@@ -667,21 +663,18 @@ sub run_trade {
                 die $err;
             };
             $txn->commit;
-        }
-        catch {
-            my $err = $_;
+        };
+        if (my $err = $@) {
             if (
                 Isucoin::Exception::NoOrderForTrade->caught($err) ||
                 Isucoin::Exception::OrderAlreadyClosed->caught($err)
             ) {
                 # 注文個数の多い方で成立しなかったので少ないほうで試す
-                $is_next = 1;
+                next;
             }
-            else {
-                die $err;
-            }
-        };
-        next if $is_next;
+            $err->rethrow if $err->can("rethrow");
+            die $err;
+        }
         # トレード成立したため次の取引を行う
         return $self->run_trade;
     }
