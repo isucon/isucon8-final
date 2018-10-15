@@ -1,0 +1,13 @@
+version: '2'
+services:
+  isucoin:
+    build: python
+    environment:
+      - "TZ=Asia/Tokyo"
+    command:
+      - "sh"
+      - "-c"
+      - "pipenv sync && pipenv run gunicorn -w3 isucoin:app -b :5000 --access-logfile=-"
+    working_dir: /app
+    volumes:
+      - ./python:/app
