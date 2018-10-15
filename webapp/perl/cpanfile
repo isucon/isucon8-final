@@ -10,11 +10,13 @@ requires 'Furl';
 requires 'HTTP::Parser::XS';
 requires 'Exception::Tiny';
 requires 'Class::Accessor::Lite';
-requires 'Crypt::Eksblowfish::Bcrypt';
 requires 'Try::Tiny';
 requires 'Guard';
 requires 'Starlet';
 requires 'Digest::Bcrypt';
+requires 'Data::Entropy::Algorithms';
+requires 'IO::Socket::SSL';
+requires 'Log::Minimal';
 
 on configure => sub {
     requires 'ExtUtils::MakeMaker';

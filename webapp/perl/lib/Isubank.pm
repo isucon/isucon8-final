@@ -17,7 +17,7 @@ has endpoint => (
 );
 
 has app_id => (
-    isa      => "UInt",
+    isa      => "Str",
     is       => "ro",
     required => 1,
 );

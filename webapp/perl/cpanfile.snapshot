@@ -124,116 +124,10 @@ DISTRIBUTIONS
       perl 5.006
       strict 0
       warnings 0
-  CryptX-0.061
-    pathname: M/MI/MIK/CryptX-0.061.tar.gz
+  Crypt-Rijndael-1.13
+    pathname: L/LE/LEONT/Crypt-Rijndael-1.13.tar.gz
     provides:
-      Crypt::AuthEnc 0.061
-      Crypt::AuthEnc::CCM 0.061
-      Crypt::AuthEnc::ChaCha20Poly1305 0.061
-      Crypt::AuthEnc::EAX 0.061
-      Crypt::AuthEnc::GCM 0.061
-      Crypt::AuthEnc::OCB 0.061
-      Crypt::Checksum 0.061
-      Crypt::Checksum::Adler32 0.061
-      Crypt::Checksum::CRC32 0.061
-      Crypt::Cipher 0.061
-      Crypt::Cipher::AES 0.061
-      Crypt::Cipher::Anubis 0.061
-      Crypt::Cipher::Blowfish 0.061
-      Crypt::Cipher::CAST5 0.061
-      Crypt::Cipher::Camellia 0.061
-      Crypt::Cipher::DES 0.061
-      Crypt::Cipher::DES_EDE 0.061
-      Crypt::Cipher::IDEA 0.061
-      Crypt::Cipher::KASUMI 0.061
-      Crypt::Cipher::Khazad 0.061
-      Crypt::Cipher::MULTI2 0.061
-      Crypt::Cipher::Noekeon 0.061
-      Crypt::Cipher::RC2 0.061
-      Crypt::Cipher::RC5 0.061
-      Crypt::Cipher::RC6 0.061
-      Crypt::Cipher::SAFERP 0.061
-      Crypt::Cipher::SAFER_K128 0.061
-      Crypt::Cipher::SAFER_K64 0.061
-      Crypt::Cipher::SAFER_SK128 0.061
-      Crypt::Cipher::SAFER_SK64 0.061
-      Crypt::Cipher::SEED 0.061
-      Crypt::Cipher::Serpent 0.061
-      Crypt::Cipher::Skipjack 0.061
-      Crypt::Cipher::Twofish 0.061
-      Crypt::Cipher::XTEA 0.061
-      Crypt::Digest 0.061
-      Crypt::Digest::BLAKE2b_160 0.061
-      Crypt::Digest::BLAKE2b_256 0.061
-      Crypt::Digest::BLAKE2b_384 0.061
-      Crypt::Digest::BLAKE2b_512 0.061
-      Crypt::Digest::BLAKE2s_128 0.061
-      Crypt::Digest::BLAKE2s_160 0.061
-      Crypt::Digest::BLAKE2s_224 0.061
-      Crypt::Digest::BLAKE2s_256 0.061
-      Crypt::Digest::CHAES 0.061
-      Crypt::Digest::Keccak224 0.061
-      Crypt::Digest::Keccak256 0.061
-      Crypt::Digest::Keccak384 0.061
-      Crypt::Digest::Keccak512 0.061
-      Crypt::Digest::MD2 0.061
-      Crypt::Digest::MD4 0.061
-      Crypt::Digest::MD5 0.061
-      Crypt::Digest::RIPEMD128 0.061
-      Crypt::Digest::RIPEMD160 0.061
-      Crypt::Digest::RIPEMD256 0.061
-      Crypt::Digest::RIPEMD320 0.061
-      Crypt::Digest::SHA1 0.061
-      Crypt::Digest::SHA224 0.061
-      Crypt::Digest::SHA256 0.061
-      Crypt::Digest::SHA384 0.061
-      Crypt::Digest::SHA3_224 0.061
-      Crypt::Digest::SHA3_256 0.061
-      Crypt::Digest::SHA3_384 0.061
-      Crypt::Digest::SHA3_512 0.061
-      Crypt::Digest::SHA512 0.061
-      Crypt::Digest::SHA512_224 0.061
-      Crypt::Digest::SHA512_256 0.061
-      Crypt::Digest::SHAKE 0.061
-      Crypt::Digest::Tiger192 0.061
-      Crypt::Digest::Whirlpool 0.061
-      Crypt::KeyDerivation 0.061
-      Crypt::Mac 0.061
-      Crypt::Mac::BLAKE2b 0.061
-      Crypt::Mac::BLAKE2s 0.061
-      Crypt::Mac::F9 0.061
-      Crypt::Mac::HMAC 0.061
-      Crypt::Mac::OMAC 0.061
-      Crypt::Mac::PMAC 0.061
-      Crypt::Mac::Pelican 0.061
-      Crypt::Mac::Poly1305 0.061
-      Crypt::Mac::XCBC 0.061
-      Crypt::Misc 0.061
-      Crypt::Mode 0.061
-      Crypt::Mode::CBC 0.061
-      Crypt::Mode::CFB 0.061
-      Crypt::Mode::CTR 0.061
-      Crypt::Mode::ECB 0.061
-      Crypt::Mode::OFB 0.061
-      Crypt::PK 0.061
-      Crypt::PK::DH 0.061
-      Crypt::PK::DSA 0.061
-      Crypt::PK::ECC 0.061
-      Crypt::PK::RSA 0.061
-      Crypt::PRNG 0.061
-      Crypt::PRNG::ChaCha20 0.061
-      Crypt::PRNG::Fortuna 0.061
-      Crypt::PRNG::RC4 0.061
-      Crypt::PRNG::Sober128 0.061
-      Crypt::PRNG::Yarrow 0.061
-      Crypt::Stream::ChaCha 0.061
-      Crypt::Stream::RC4 0.061
-      Crypt::Stream::Rabbit 0.061
-      Crypt::Stream::Salsa20 0.061
-      Crypt::Stream::Sober128 0.061
-      Crypt::Stream::Sosemanuk 0.061
-      CryptX 0.061
-      Math::BigInt::LTM 0.061
+      Crypt::Rijndael 1.13
     requirements:
       ExtUtils::MakeMaker 0
       perl 5.006
@@ -384,6 +278,48 @@ DISTRIBUTIONS
       ExtUtils::MakeMaker 6.36
       Test::More 0.96
       Try::Tiny 0
+  Data-Entropy-0.007
+    pathname: Z/ZE/ZEFRAM/Data-Entropy-0.007.tar.gz
+    provides:
+      Data::Entropy 0.007
+      Data::Entropy::Algorithms 0.007
+      Data::Entropy::RawSource::CryptCounter 0.007
+      Data::Entropy::RawSource::Local 0.007
+      Data::Entropy::RawSource::RandomOrg 0.007
+      Data::Entropy::RawSource::RandomnumbersInfo 0.007
+      Data::Entropy::Source 0.007
+    requirements:
+      Carp 0
+      Crypt::Rijndael 0
+      Data::Float 0.008
+      Errno 1.00
+      Exporter 0
+      HTTP::Lite 2.2
+      IO::File 1.03
+      Module::Build 0
+      Params::Classify 0
+      Test::More 0
+      constant 0
+      integer 0
+      parent 0
+      perl 5.006
+      strict 0
+      warnings 0
+  Data-Float-0.013
+    pathname: Z/ZE/ZEFRAM/Data-Float-0.013.tar.gz
+    provides:
+      Data::Float 0.013
+    requirements:
+      Carp 0
+      Exporter 0
+      Module::Build 0
+      Test::More 0
+      constant 0
+      integer 0
+      parent 0
+      perl 5.006
+      strict 0
+      warnings 0
   Data-MessagePack-1.00
     pathname: S/SY/SYOHEX/Data-MessagePack-1.00.tar.gz
     provides:
@@ -1260,6 +1196,17 @@ DISTRIBUTIONS
       HTTP::Date 0
       Module::Build::Tiny 0.035
       perl 5.008001
+  HTTP-Lite-2.44
+    pathname: N/NE/NEILB/HTTP-Lite-2.44.tar.gz
+    provides:
+      HTTP::Lite 2.44
+    requirements:
+      ExtUtils::MakeMaker 0
+      Fcntl 0
+      Socket 1.3
+      perl 5.005
+      strict 0
+      warnings 0
   HTTP-Message-6.18
     pathname: O/OA/OALDERS/HTTP-Message-6.18.tar.gz
     provides:
@@ -1341,6 +1288,23 @@ DISTRIBUTIONS
       Encode 2.10
       Exporter 5.57
       ExtUtils::MakeMaker 6.30
+  IO-Socket-SSL-2.060
+    pathname: S/SU/SULLR/IO-Socket-SSL-2.060.tar.gz
+    provides:
+      IO::Socket::SSL 2.060
+      IO::Socket::SSL::Intercept 2.056
+      IO::Socket::SSL::OCSP_Cache 2.060
+      IO::Socket::SSL::OCSP_Resolver 2.060
+      IO::Socket::SSL::PublicSuffix undef
+      IO::Socket::SSL::SSL_Context 2.060
+      IO::Socket::SSL::SSL_HANDLE 2.060
+      IO::Socket::SSL::Session_Cache 2.060
+      IO::Socket::SSL::Utils 2.014
+    requirements:
+      ExtUtils::MakeMaker 0
+      Mozilla::CA 0
+      Net::SSLeay 1.46
+      Scalar::Util 0
   IPC-Signal-1.00
     pathname: R/RO/ROSCH/IPC-Signal-1.00.tar.gz
     provides:
@@ -1464,6 +1428,18 @@ DISTRIBUTIONS
       IPC::Cmd 0
       XSLoader 0.22
       base 0
+  Log-Minimal-0.19
+    pathname: K/KA/KAZEBURO/Log-Minimal-0.19.tar.gz
+    provides:
+      Log::Minimal 0.19
+    requirements:
+      CPAN::Meta 0
+      CPAN::Meta::Prereqs 0
+      Data::Dumper 0
+      ExtUtils::CBuilder 0
+      Module::Build 0.38
+      Scalar::Util 0
+      Term::ANSIColor 0
   MRO-Compat-0.13
     pathname: H/HA/HAARG/MRO-Compat-0.13.tar.gz
     provides:
@@ -1647,6 +1623,16 @@ DISTRIBUTIONS
       strict 0
       vars 0
       warnings 0
+  Net-SSLeay-1.85
+    pathname: M/MI/MIKEM/Net-SSLeay-1.85.tar.gz
+    provides:
+      Net::SSLeay 1.85
+      Net::SSLeay::Handle 0.61
+    requirements:
+      ExtUtils::MakeMaker 6.36
+      MIME::Base64 0
+      Test::More 0.60_01
+      perl 5.005
   Number-Format-1.75
     pathname: W/WR/WRW/Number-Format-1.75.tar.gz
     provides:

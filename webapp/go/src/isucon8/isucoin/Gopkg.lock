@@ -73,6 +73,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/go-sql-driver/mysql",
+    "github.com/gorilla/context",
     "github.com/gorilla/sessions",
     "github.com/julienschmidt/httprouter",
     "github.com/pkg/errors",

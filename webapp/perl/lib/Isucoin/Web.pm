@@ -10,8 +10,12 @@ use Plack::Session;
 use Time::Moment;
 use JSON::Types;
 use Path::Tiny;
+use Try::Tiny;
+use Log::Minimal;
 
 use Isucoin::Model;
+use Isucoin::Exception;
+use Isubank;
 
 get "/" => sub {
     my ( $self, $c )  = @_;
@@ -61,11 +65,24 @@ post "/signup" => sub {
     {
         my $txn = $dbh->txn_scope;
 
-        $model->user_signup(
-            name     => $name,
-            bank_id  => $bank_id,
-            password => $password,
-        );
+        try {
+            $model->user_signup(
+                name     => $name,
+                bank_id  => $bank_id,
+                password => $password,
+            );
+        } catch {
+            my $err = $_;
+            if (Isubank::Exception::NoUser->caught($err)) {
+                $txn->rollback;
+                return $c->halt(404, "bank user not found");
+            }
+            if (Isucoin::Exception::BankUserConflict->caught($err)) {
+                $txn->rollback;
+                return $c->halt(409, "bank user conflict");
+            }
+            return $c->halt(500, $err);
+        };
 
         $txn->commit;
     };
@@ -83,7 +100,17 @@ post "/signin" => sub {
     }
 
     my $model = Isucoin::Model->new(dbh => $self->dbh);
-    my $user = $model->user_login(bank_id => $bank_id, password => $password);
+    my $user;
+    try {
+        $user = $model->user_login(bank_id => $bank_id, password => $password);
+    } catch {
+        my $err = $_;
+        if (Isucoin::Exception::UserNotFound->caught($err)) {
+            return $c->halt(404, "user not found");
+        }
+        return $c->halt(500, $err);
+    };
+
 
     my $session = Plack::Session->new($c->env);
     $session->set(user_id => $user->{id});
@@ -135,7 +162,7 @@ get "/info" => sub {
 
     my $user = $self->user_by_request($c);
     if ($user) {
-        my $orders = $model->get_order_by_user_id_and_last_trade_id(
+        my $orders = $model->get_orders_by_user_id_and_last_trade_id(
             $user->{id}, $last_trade_id,
         );
         for my $order (@$orders) {
@@ -195,19 +222,35 @@ post "/orders" => [qw/login_required/] => sub {
     {
         my $txn = $dbh->txn_scope;
 
-        $order = $model->add_order(
-            type    => $type,
-            user_id => $user->{id},
-            amount  => $amount,
-            price   => $price,
-        );
+        try {
+            $order = $model->add_order(
+                type    => $type,
+                user_id => $user->{id},
+                amount  => $amount,
+                price   => $price,
+            );
+        } catch {
+            my $err = $_;
+            if (
+                Isucoin::Exception::ParameterInvalid->caught($err) ||
+                Isucoin::Exception::CreditInsufficiant->caught($err)
+            ) {
+                $txn->rollback;
+                return $c->halt(400);
+            }
+            die $err;
+        };
 
         $txn->commit;
     };
 
     my $trade_chance = $model->has_trade_chance_by_order($order->{id});
     if ($trade_chance) {
-        $model->run_trade;
+        try {
+            $model->run_trade;
+        } catch {
+            warnf "run_trade err: %s", $_;
+        };
     }
 
     return $c->render_json({ id => $order->{id} });
@@ -228,7 +271,7 @@ get "/orders" => [qw/login_required/] => sub {
     return $c->render_json($orders);
 };
 
-router "DELETE" => [qw/login_required/] => "/order/{id}" => sub {
+router ["DELETE"] => "/order/{id}" => [qw/login_required/] => sub {
     my ( $self, $c )  = @_;
 
     my $user = $c->stash->{user};
@@ -248,7 +291,7 @@ router "DELETE" => [qw/login_required/] => "/order/{id}" => sub {
         $txn->commit;
     };
 
-    return $c->render_json({ id => $order_id });
+    return $c->render_json({ id => number $order_id });
 };
 
 sub dbh {

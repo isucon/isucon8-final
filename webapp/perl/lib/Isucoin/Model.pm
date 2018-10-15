@@ -7,7 +7,7 @@ use utf8;
 use Mouse;
 use Time::Moment;
 use Digest;
-use Crypt::Digest::SHA256 qw/sha256_hex/;
+use Data::Entropy::Algorithms qw/rand_bits/;
 use Try::Tiny;
 use Guard; 
 
@@ -35,8 +35,16 @@ has dbh => (
 
 no Mouse;
 
+my $datetime_to_str = sub {
+    Isucoin::Exception::Unknown->throw unless $_[0];
+
+    Time::Moment->from_string(
+        "$_[0]Z", lenient => 1,
+    )->strftime("%FT%TZ");
+};
+
 sub _digest {
-    Digest->new("Bcrypt", cost => PASSWORD_DEFAULT_COST, salt => "abcdefgh♥stuff");
+    Digest->new("Bcrypt", cost => PASSWORD_DEFAULT_COST, salt => rand_bits 16 * 8);
 }
 
 sub init_benchmark {
@@ -45,7 +53,7 @@ sub init_benchmark {
     my $stop = Time::Moment->now_utc->minus_hours(10);
     $stop = $stop->with_precision(-3)->with_hour(10);
 
-    my $stop_at = $stop->strftime("%F %T%f");
+    my $stop_at = $stop->strftime("%F %T");
     $self->dbh->query(qq{DELETE FROM orders WHERE created_at >= '$stop_at'});
     $self->dbh->query(qq{DELETE FROM trade WHERE created_at >= '$stop_at'});
     $self->dbh->query(qq{DELETE FROM user WHERE created_at >= '$stop_at'});
@@ -111,14 +119,21 @@ sub user_signup {
 
     $bank->check(bank_id => $bank_id, price => 0);
 
-    my $salt = sha256_hex rand();
     my $digest = $self->_digest->add($password);
-    my $pass = $digest->b64digest . ":" . $digest->settings;
+    my $pass = $digest->settings . $digest->bcrypt_b64digest;
 
-    $self->dbh->query(qq{
-        INSERT INTO user (bank_id, name, password, created_at)
-            VALUES (?, ?, ?, NOW(6))
-    }, $bank_id, $name, $pass);
+    try {
+        $self->dbh->query(qq{
+            INSERT INTO user (bank_id, name, password, created_at)
+                VALUES (?, ?, ?, NOW(6))
+        }, $bank_id, $name, $pass);
+    } catch {
+        my $err = $_;
+        if ($err =~ /^DBD::mysql::st execute failed: Duplicate entry/) {
+            Isucoin::Exception::BankUserConflict->throw;
+        }
+        die $err;
+    };
 
     my $user_id = $self->dbh->last_insert_id;
     $self->send_log(signup => {
@@ -126,6 +141,19 @@ sub user_signup {
         user_id => $user_id,
         name    => $name,
     });
+}
+
+sub _to_user_hash {
+    my ($class, $user) = @_;
+
+    return unless $user;
+
+    return {
+        id         => $user->{id},
+        name       => $user->{name},
+        bank_id    => $user->{bank_id},
+        created_at => $datetime_to_str->($user->{created_at}),
+    };
 }
 
 sub user_login {
@@ -136,50 +164,76 @@ sub user_login {
     my $user = $self->dbh->select_row(qq{
         SELECT * FROM user WHERE bank_id = ?
     }, $bank_id);
+    if (!$user) {
+        Isucoin::Exception::UserNotFound->throw;
+    }
 
-    my ($known_digest, $settings) = split /:/, $user->{password};
-    my $digest = $self->_digest->settings($settings);
+    my $digest = $self->_digest->settings($user->{password});
     $digest->add($password);
+    my $pass_hash = $digest->settings . $digest->bcrypt_b64digest;
 
-    if ($known_digest ne $digest->b64digest) {
+    if ($user->{password} ne $pass_hash) {
         Isucoin::Exception::UserNotFound->throw;
     }
 
     $self->send_log(signin => {
         user_id => $user->{id},
     });
+
+    return $self->_to_user_hash($user);
 }
 
 sub get_user_by_id {
     my ($self, $id) = @_;
 
-    return $self->dbh->select_row(qq{
+    my $user = $self->dbh->select_row(qq{
         SELECT * FROM user WHERE id = ?
     }, $id);
+
+    return $self->_to_user_hash($user);
 }
 
 sub get_user_by_id_with_lock {
     my ($self, $id) = @_;
 
-    return $self->dbh->select_row(qq{
+    my $user = $self->dbh->select_row(qq{
         SELECT * FROM user WHERE id = ? FOR UPDATE
     }, $id);
+
+    return $self->_to_user_hash($user);
+}
+
+sub _to_order_hash {
+    my ($class, $order) = @_;
+
+    return unless $order;
+
+    return {
+        %$order,
+        closed_at  => $order->{closed_at} ? $datetime_to_str->($order->{closed_at}) : undef,
+        created_at => $datetime_to_str->($order->{created_at}),
+    };
 }
 
 sub get_orders_by_user_id {
     my ($self, $user_id) = @_;
 
-    return $self->dbh->select_all(qq{
+    my $rows = $self->dbh->select_all(qq{
         SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC
     }, $user_id);
+
+    return [map { $self->_to_order_hash($_) } @$rows];
 }
 
 sub get_orders_by_user_id_and_last_trade_id {
     my ($self, $user_id, $trade_id) = @_;
 
-    return $self->dbh->select_all(qq{
+    my $rows = $self->dbh->select_all(qq{
         SELECT * FROM orders WHERE user_id = ? AND trade_id IS NOT NULL AND trade_id > ? ORDER BY created_at ASC
     }, $user_id, $trade_id);
+
+
+    return [map { $self->_to_order_hash($_) } @$rows];
 }
 
 sub get_open_order_by_id {
@@ -197,34 +251,41 @@ sub get_open_order_by_id {
 sub get_order_by_id {
     my ($self, $id) = @_;
 
-    return $self->dbh->select_row(qq{
+    my $order = $self->dbh->select_row(qq{
         SELECT * FROM orders WHERE id = ?
     }, $id);
+
+    return $self->_to_order_hash($order);
 }
 
 sub get_order_by_id_with_lock {
     my ($self, $id) = @_;
 
-    return $self->dbh->select_row(qq{
+    my $order = $self->dbh->select_row(qq{
         SELECT * FROM orders WHERE id = ? FOR UPDATE
     }, $id);
+
+    return $self->_to_order_hash($order);
 }
 
 sub get_lowest_sell_order {
     my $self = shift;
 
-    return $self->dbh->select_row(qq{
+    my $order = $self->dbh->select_row(qq{
         SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1
     }, ORDER_TYPE_SELL);
+
+    return $self->_to_order_hash($order);
 }
 
 sub get_highest_buy_order {
     my $self = shift;
 
-    return $self->dbh->select_row(qq{
+    my $order = $self->dbh->select_row(qq{
         SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1
     }, ORDER_TYPE_BUY);
 
+    return $self->_to_order_hash($order);
 }
 
 sub fetch_order_relation {
@@ -242,7 +303,7 @@ sub fetch_order_relation {
 sub add_order {
     my ($self, %args) = @_;
 
-    my ($ot, $user_id, $amount, $price) = @args{qw/ot user_id amount price/};
+    my ($ot, $user_id, $amount, $price) = @args{qw/type user_id amount price/};
 
     if ($amount <= 0 || $price <= 0) {
         Isucoin::Exception::ParameterInvalid->throw;
@@ -328,20 +389,35 @@ sub cancel_order {
     });
 }
 
+sub _to_trade_hash {
+    my ($class, $trade) = @_;
+
+    return unless $trade;
+
+    return {
+        %$trade,
+        created_at => $datetime_to_str->($trade->{created_at}),
+    };
+}
+
 sub get_trade_by_id {
     my ($self, $id) = @_;
 
-    return $self->dbh->select_row(qq{
+    my $trade = $self->dbh->select_row(qq{
         SELECT * FROM trade WHERE id = ?
     }, $id);
+
+    return $self->_to_trade_hash($trade);
 }
 
 sub get_latest_trade {
     my $self = shift;
 
-    return $self->dbh->select_row(qq{
+    my $trade = $self->dbh->select_row(qq{
         SELECT * FROM trade ORDER BY id DESC
     });
+
+    return $self->_to_trade_hash($trade);
 }
 
 sub get_candletick_data {
@@ -350,7 +426,7 @@ sub get_candletick_data {
     my ($mt, $tf) = @args{qw/mt tf/};
 
     my $query = sprintf(qq{
-        SELECT m.t, a.price, b.price, m.h, m.l
+        SELECT m.t as time, a.price as open, b.price as close, m.h as high, m.l as low
         FROM (
             SELECT
                 STR_TO_DATE(DATE_FORMAT(created_at, '%s'), '%s') AS t,
@@ -368,7 +444,13 @@ sub get_candletick_data {
     }, $tf, "%Y-%m-%d %H:%i:%s");
     my $rows = $self->dbh->select_all($query, $mt);
 
-    return $rows;
+    my $results = [
+        map {
+            { %$_, time => $datetime_to_str->($_->{time}), }
+        } @$rows
+    ];
+
+    return $results;
 }
 
 sub has_trade_chance_by_order {
@@ -467,7 +549,7 @@ sub commit_reserved_order {
 sub try_trade {
     my ($self, $order_id) = @_;
 
-    my $order = $self->get_open_order_id($order_id);
+    my $order = $self->get_open_order_by_id($order_id);
 
     my $rest_amount = $order->{amount};
     my $unit_price = $order->{price};
@@ -564,7 +646,8 @@ sub run_trade {
     }
 
     for my $order_id (@candidates) {
-       try {
+        my $is_next;
+        try {
             my $txn = $self->dbh->txn_scope;
 
             try {
@@ -592,10 +675,13 @@ sub run_trade {
                 Isucoin::Exception::OrderAlreadyClosed->caught($err)
             ) {
                 # 注文個数の多い方で成立しなかったので少ないほうで試す
-                next;
+                $is_next = 1;
             }
-            die $err;
+            else {
+                die $err;
+            }
         };
+        next if $is_next;
         # トレード成立したため次の取引を行う
         return $self->run_trade;
     }
