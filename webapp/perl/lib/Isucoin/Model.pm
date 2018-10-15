@@ -6,7 +6,8 @@ use utf8;
 
 use Mouse;
 use Time::Moment;
-use Crypt::Eksblowfish::Bcrypt qw/bcrypt_hash/;
+use Digest;
+use Crypt::Digest::SHA256 qw/sha256_hex/;
 use Try::Tiny;
 use Guard; 
 
@@ -27,12 +28,16 @@ use constant {
 };
 
 has dbh => (
-    isa      => "DBIx::Sunny",
+    isa      => "DBIx::Sunny::db",
     is       => "ro",
     required => 1,
 );
 
 no Mouse;
+
+sub _digest {
+    Digest->new("Bcrypt", cost => PASSWORD_DEFAULT_COST, salt => "abcdefgh♥stuff");
+}
 
 sub init_benchmark {
     my $self = shift;
@@ -78,7 +83,7 @@ sub isubank {
     my $ep = $self->get_setting(SETTING_BANK_ENDPOINT);
     my $id = $self->get_setting(SETTING_BANK_APPID);
 
-    return Isubank->new(endpoint => $ep, id => $id);
+    return Isubank->new(endpoint => $ep, app_id => $id);
 }
 
 sub logger {
@@ -106,7 +111,9 @@ sub user_signup {
 
     $bank->check(bank_id => $bank_id, price => 0);
 
-    my $pass = bcrypt_hash({ cost => PASSWORD_DEFAULT_COST }, $password);
+    my $salt = sha256_hex rand();
+    my $digest = $self->_digest->add($password);
+    my $pass = $digest->b64digest . ":" . $digest->settings;
 
     $self->dbh->query(qq{
         INSERT INTO user (bank_id, name, password, created_at)
@@ -130,9 +137,11 @@ sub user_login {
         SELECT * FROM user WHERE bank_id = ?
     }, $bank_id);
 
+    my ($known_digest, $settings) = split /:/, $user->{password};
+    my $digest = $self->_digest->settings($settings);
+    $digest->add($password);
 
-    my $pass = bcrypt_hash({ cost => PASSWORD_DEFAULT_COST }, $password);
-    if ($pass ne $user->{password}) {
+    if ($known_digest ne $digest->b64digest) {
         Isucoin::Exception::UserNotFound->throw;
     }
 
@@ -452,7 +461,7 @@ sub commit_reserved_order {
         });
     }
     my $bank = $self->isubank;
-    $bank->commit($reserves);
+    $bank->commit(@$reserves);
 }
 
 sub try_trade {

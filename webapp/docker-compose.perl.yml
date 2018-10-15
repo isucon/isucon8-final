@@ -5,12 +5,12 @@ services:
     command:
       - "sh"
       - "-c"
-      - "cpm install && carton exec plackup -s Starlet --port=${ISU_APP_PORT} app.psgi"
+      - "cpm install && carton install && carton exec plackup -s Starlet --port=$${ISU_APP_PORT} app.psgi"
     working_dir: /perl
     volumes:
       - ./perl:/perl
-      - ./public:/public
-      - locallib:/perl/local
+      - ./public:/perl/public
+      - perllocallib:/perl/local
 
 volumes:
-  localperllib:
+  perllocallib:

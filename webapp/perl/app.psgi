@@ -16,7 +16,7 @@ builder {
         secret      => 'tonymoris';
     enable 'Static',
         path => qr!^/(?:(?:css|js|img)/|favicon\.ico$)!,
-        root => $root_dir . '../' . $ENV{ISU_PUBLIC_DIR};
+        root => $root_dir . $ENV{ISU_PUBLIC_DIR};
     $app;
 };
 

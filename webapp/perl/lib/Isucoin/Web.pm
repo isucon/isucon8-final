@@ -9,8 +9,21 @@ use Kossy;
 use Plack::Session;
 use Time::Moment;
 use JSON::Types;
+use Path::Tiny;
 
 use Isucoin::Model;
+
+get "/" => sub {
+    my ( $self, $c )  = @_;
+
+    my $content = path($self->root_dir . $ENV{ISU_PUBLIC_DIR} . "/index.html");
+
+    return [
+        200,
+        ["Content-Type" => "text/html"],
+        [$content->slurp],
+    ];
+};
 
 post "/initialize" => sub {
     my ( $self, $c )  = @_;
@@ -107,7 +120,7 @@ get "/info" => sub {
     my $model = Isucoin::Model->new(dbh => $self->dbh);
 
     my $last_trade_id;
-    my $lt = Time::Moment->now_epoch(0);
+    my $lt = Time::Moment->from_epoch(0);
     my %res;
     my $cursor = $c->req->parameters->{cursor};
     if ($last_trade_id = $cursor) {
@@ -242,7 +255,7 @@ sub dbh {
     my $self = shift;
     $self->{_dbh} ||= do {
         my $dsn = "dbi:mysql:database=$ENV{ISU_DB_NAME};host=$ENV{ISU_DB_HOST};port=$ENV{ISU_DB_PORT}";
-        DBIx::Sunny->connect($dsn, $ENV{ISU_DB_USER}, $ENV{ISU_DB_PASS}, {
+        DBIx::Sunny->connect($dsn, $ENV{ISU_DB_USER}, $ENV{ISU_DB_PASSWORD}, {
             mysql_enable_utf8mb4 => 1,
             mysql_auto_reconnect => 1,
             # TODO: replace mysqld's sql_mode setting and remove following codes
