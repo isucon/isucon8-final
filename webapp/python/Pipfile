@@ -8,6 +8,7 @@ flask = "*"
 mysqlclient = "*"
 requests = "*"
 bcrypt = "*"
+gunicorn = "*"
 
 [dev-packages]
 black = "*"
