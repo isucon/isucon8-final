@@ -17,6 +17,10 @@ use Isucoin::Model;
 use Isucoin::Exception;
 use Isubank;
 
+# ISUCON用初期データの基準時間です
+# この時間以降のデータはinitializeで削除されます
+my $base_time = Time::Moment->from_string("2018-10-16T10:00:00Z");
+
 get "/" => sub {
     my ( $self, $c )  = @_;
 
@@ -173,7 +177,7 @@ get "/info" => sub {
         $res{traded_orders} = $orders;
     }
 
-    my $by_sec_time = Time::Moment->now->minus_seconds(300);
+    my $by_sec_time = $base_time->minus_seconds(300);
     if ($lt->is_after($by_sec_time)) {
         $by_sec_time = $lt->with_precision(0);
     }
@@ -182,7 +186,7 @@ get "/info" => sub {
         tf => "%Y-%m-%d %H:%i:%s",
     );
 
-    my $by_min_time = Time::Moment->now->minus_minutes(300);
+    my $by_min_time = $base_time->minus_minutes(300);
     if ($lt->is_after($by_min_time)) {
         $by_min_time = $lt->with_precision(-1);
     }
@@ -191,7 +195,7 @@ get "/info" => sub {
         tf => "%Y-%m-%d %H:%i:00",
     );
 
-    my $by_hour_time = Time::Moment->now->minus_hours(48);
+    my $by_hour_time = $base_time->minus_hours(48);
     if ($lt->is_after($by_hour_time)) {
         $by_hour_time = $lt->with_precision(-2);
     }

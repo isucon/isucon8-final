@@ -51,15 +51,9 @@ sub _digest {
 sub init_benchmark {
     my $self = shift;
 
-    # 前回の10:00:00+0900までのデータを消す
-    # 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
-    my $stop = Time::Moment->now->minus_hours(10);
-    $stop = $stop->with_precision(-3)->with_hour(10);
-
-    my $stop_at = $stop->strftime("%F %T");
-    $self->dbh->query(qq{DELETE FROM orders WHERE created_at >= '$stop_at'});
-    $self->dbh->query(qq{DELETE FROM trade WHERE created_at >= '$stop_at'});
-    $self->dbh->query(qq{DELETE FROM user WHERE created_at >= '$stop_at'});
+    $self->dbh->query(qq{DELETE FROM orders WHERE created_at >= '2018-10-16 10:00:00'});
+    $self->dbh->query(qq{DELETE FROM trade WHERE created_at >= '2018-10-16 10:00:00'});
+    $self->dbh->query(qq{DELETE FROM user WHERE created_at >= '2018-10-16 10:00:00'});
 }
 
 sub set_setting {
