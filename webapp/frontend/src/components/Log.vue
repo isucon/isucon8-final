@@ -73,11 +73,11 @@ export default Vue.extend({
     font-weight: bold
 
   &[data-type='sell']:before
-    background-color: #d70035
+    background-color: #0068b7
     content: '売り'
 
   &[data-type='buy']:before
-    background-color: #0068b7
+    background-color: #d70035
     content: '買い'
 
   &[data-traded='true']
