@@ -3,7 +3,7 @@
     <p class="error-message" v-if='hasSigninError'>ログインに失敗しました</p>
     <div class="row">
       bank id
-      <input type="text" class="input" v-model='bank_id'>
+      <input type="text" class="input" v-model='bank_id' autofocus='true'>
     </div>
     <div class="row">
       password
