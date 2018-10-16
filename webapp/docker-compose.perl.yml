@@ -1,0 +1,18 @@
+version: '2'
+services:
+  isucoin:
+    environment:
+      - "TZ=Asia/Tokyo"
+    build: perl
+    command:
+      - "sh"
+      - "-c"
+      - "cpm install && carton install && carton exec plackup -s Starlet --port=$${ISU_APP_PORT} --reload app.psgi"
+    working_dir: /perl
+    volumes:
+      - ./perl:/perl
+      - ./public:/perl/public
+      - perllocallib:/perl/local
+
+volumes:
+  perllocallib:
