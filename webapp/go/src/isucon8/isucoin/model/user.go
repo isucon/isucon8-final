@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+//go:generate scanner
 type User struct {
 	ID        int64     `json:"id"`
 	BankID    string    `json:"-"`
@@ -16,20 +17,12 @@ type User struct {
 	CreatedAt time.Time `json:"-"`
 }
 
-func scanUser(r RowScanner) (*User, error) {
-	var v User
-	if err := r.Scan(&v.ID, &v.BankID, &v.Name, &v.Password, &v.CreatedAt); err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
 func GetUserByID(d QueryExecutor, id int64) (*User, error) {
-	return scanUser(d.QueryRow("SELECT * FROM user WHERE id = ?", id))
+	return scanUser(d.Query("SELECT * FROM user WHERE id = ?", id))
 }
 
 func getUserByIDWithLock(tx *sql.Tx, id int64) (*User, error) {
-	return scanUser(tx.QueryRow("SELECT * FROM user WHERE id = ? FOR UPDATE", id))
+	return scanUser(tx.Query("SELECT * FROM user WHERE id = ? FOR UPDATE", id))
 }
 
 func UserSignup(tx *sql.Tx, name, bankID, password string) error {
@@ -67,7 +60,7 @@ func UserSignup(tx *sql.Tx, name, bankID, password string) error {
 }
 
 func UserLogin(d QueryExecutor, bankID, password string) (*User, error) {
-	user, err := scanUser(d.QueryRow("SELECT * FROM user WHERE bank_id = ?", bankID))
+	user, err := scanUser(d.Query("SELECT * FROM user WHERE bank_id = ?", bankID))
 	switch {
 	case err == sql.ErrNoRows:
 		return nil, ErrUserNotFound
