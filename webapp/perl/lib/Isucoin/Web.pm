@@ -153,7 +153,7 @@ get "/info" => sub {
     if ($last_trade_id = $cursor) {
         my $trade = $model->get_trade_by_id($last_trade_id);
         if ($trade) {
-            $lt = Time::Moment->from_string("$trade->{created_at}Z", lenient => 1);
+            $lt = Time::Moment->from_string($trade->{created_at}, lenient => 1);
         }
     }
 
