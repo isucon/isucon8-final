@@ -1,0 +1,14 @@
+{
+    "require": {
+        "ext-pdo": "*",
+        "slim/slim": "^3.1",
+        "bryanjhv/slim-session": "~3.0",
+        "guzzlehttp/guzzle": "~6.3",
+        "adbario/slim-secure-session-middleware": "^1.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "Isucon8\\": "src/Isucon8/"
+        }
+    }
+}

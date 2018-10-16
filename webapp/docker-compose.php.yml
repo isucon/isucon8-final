@@ -1,0 +1,23 @@
+version: '2'
+services:
+  nginx:
+    volumes:
+      - ./php:/var/www
+      - ./nginx/nginx.php.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - isucoin
+
+  isucoin:
+    build: php
+    image: php
+    working_dir: /var/www
+    volumes:
+      - ./php:/var/www
+      - ./php/php-fpm.conf:/usr/local/etc/php-fpm.d/zz-www.conf
+
+  composer:
+    restart: 'no'
+    image: composer
+    command: install
+    volumes:
+      - ./php:/app
