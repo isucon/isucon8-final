@@ -3,7 +3,7 @@
     <p class="error-message" v-if='hasSignupError'>登録に失敗しました</p>
     <div class="row">
       name
-      <input type="text" class="input" v-model='name'>
+      <input type="text" class="input" v-model='name' autofocus='true'>
     </div>
     <div class="row">
       bank id

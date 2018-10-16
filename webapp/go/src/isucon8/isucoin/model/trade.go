@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+//go:generate scanner
 type Trade struct {
 	ID        int64     `json:"id"`
 	Amount    int64     `json:"amount"`
@@ -17,6 +18,7 @@ type Trade struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+//go:generate scanner
 type CandlestickData struct {
 	Time  time.Time `json:"time"`
 	Open  int64     `json:"open"`
@@ -25,23 +27,15 @@ type CandlestickData struct {
 	Low   int64     `json:"low"`
 }
 
-func scanTrade(r RowScanner) (*Trade, error) {
-	var v Trade
-	if err := r.Scan(&v.ID, &v.Amount, &v.Price, &v.CreatedAt); err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
 func GetTradeByID(d QueryExecutor, id int64) (*Trade, error) {
-	return scanTrade(d.QueryRow("SELECT * FROM trade WHERE id = ?", id))
+	return scanTrade(d.Query("SELECT * FROM trade WHERE id = ?", id))
 }
 
 func GetLatestTrade(d QueryExecutor) (*Trade, error) {
-	return scanTrade(d.QueryRow("SELECT * FROM trade ORDER BY id DESC"))
+	return scanTrade(d.Query("SELECT * FROM trade ORDER BY id DESC"))
 }
 
-func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]CandlestickData, error) {
+func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]*CandlestickData, error) {
 	query := fmt.Sprintf(`
 		SELECT m.t, a.price, b.price, m.h, m.l
 		FROM (
@@ -59,23 +53,7 @@ func GetCandlestickData(d QueryExecutor, mt time.Time, tf string) ([]Candlestick
 		JOIN trade b ON b.id = m.max_id
 		ORDER BY m.t
 	`, tf, "%Y-%m-%d %H:%i:%s")
-	rows, err := d.Query(query, mt)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Query failed. query:%s, starttime:%s", query, mt)
-	}
-	defer rows.Close()
-	datas := []CandlestickData{}
-	for rows.Next() {
-		var cd CandlestickData
-		if err = rows.Scan(&cd.Time, &cd.Open, &cd.Close, &cd.High, &cd.Low); err != nil {
-			return nil, errors.Wrapf(err, "Scan failed.")
-		}
-		datas = append(datas, cd)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrapf(err, "rows.Err failed.")
-	}
-	return datas, nil
+	return scanCandlestickDatas(d.Query(query, mt))
 }
 
 func HasTradeChanceByOrder(d QueryExecutor, orderID int64) (bool, error) {
@@ -212,9 +190,9 @@ func tryTrade(tx *sql.Tx, orderID int64) error {
 	var targetOrders []*Order
 	switch order.Type {
 	case OrderTypeBuy:
-		targetOrders, err = queryOrders(tx, `SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, created_at ASC, id ASC`, OrderTypeSell, order.Price)
+		targetOrders, err = scanOrders(tx.Query(`SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price ASC, created_at ASC, id ASC`, OrderTypeSell, order.Price))
 	case OrderTypeSell:
-		targetOrders, err = queryOrders(tx, `SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, created_at ASC, id ASC`, OrderTypeBuy, order.Price)
+		targetOrders, err = scanOrders(tx.Query(`SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, created_at ASC, id ASC`, OrderTypeBuy, order.Price))
 	}
 	if err != nil {
 		return errors.Wrap(err, "find target orders")

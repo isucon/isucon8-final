@@ -1,9 +1,9 @@
 <template>
   <div class="container">
     <div class="buttons">
-      <button class="button" @click="setChartType('hour')">Hour</button>
-      <button class="button" @click="setChartType('min')">Minute</button>
-      <button class="button" @click="setChartType('sec')">Second</button>
+      <button class="button" :data-selected='chartType === "hour"' @click="setChartType('hour')">Hour</button>
+      <button class="button" :data-selected='chartType === "min"' @click="setChartType('min')">Minute</button>
+      <button class="button" :data-selected='chartType === "sec"' @click="setChartType('sec')">Second</button>
     </div>
     <canvas id="chart" ref='canvas'/>
   </div>
@@ -137,6 +137,10 @@ export default Vue.extend({
   font-weight: 500
   transition: 0.3s cubic-bezier(0.25, 0.8, 0.5, 1)
   cursor: pointer
+
+  &[data-selected='true']
+    background-color: rgba(0,0,0,0.24)
+    pointer-events: none
 
   &:hover
     background-color: rgba(0,0,0,0.12)

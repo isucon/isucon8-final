@@ -4,19 +4,19 @@ import axios from 'axios'
 
 Vue.use(Vuex)
 
-interface User {
+export interface User {
   id: number
   name: string
 }
 
-interface Trade {
+export interface Trade {
   id: number
   amount: number
   price: number
   created_at: ''
 }
 
-interface Order {
+export interface Order {
   id: number
   type: string
   user_id: number

@@ -19,13 +19,8 @@ var (
 	ErrNoOrderForTrade    = errors.New("no order for trade")
 )
 
-type RowScanner interface {
-	Scan(...interface{}) error
-}
-
 type QueryExecutor interface {
 	Exec(string, ...interface{}) (sql.Result, error)
-	QueryRow(string, ...interface{}) *sql.Row
 	Query(string, ...interface{}) (*sql.Rows, error)
 }
 

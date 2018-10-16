@@ -15,14 +15,23 @@ const (
 	LogAppid     = "log_appid"
 )
 
+//go:generate scanner
+type Setting struct {
+	Name string
+	Val  string
+}
+
 func SetSetting(d QueryExecutor, k, v string) error {
 	_, err := d.Exec(`INSERT INTO setting (name, val) VALUES (?, ?) ON DUPLICATE KEY UPDATE val = VALUES(val)`, k, v)
 	return err
 }
 
-func GetSetting(d QueryExecutor, k string) (v string, err error) {
-	err = d.QueryRow(`SELECT val FROM setting WHERE name = ?`, k).Scan(&v)
-	return
+func GetSetting(d QueryExecutor, k string) (string, error) {
+	s, err := scanSetting(d.Query(`SELECT * FROM setting WHERE name = ?`, k))
+	if err != nil {
+		return "", err
+	}
+	return s.Val, nil
 }
 
 func Isubank(d QueryExecutor) (*isubank.Isubank, error) {
