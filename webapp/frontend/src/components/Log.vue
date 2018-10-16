@@ -2,7 +2,7 @@
   <div class="log">
     <h3 class="title">履歴</h3>
     <ul class="orders">
-      <li class="order" v-for='order in orders' :key='order.id' :data-type='order.type' :data-traded='false'>{{ `${getDate(order.created_at)}\n脚数: ${order.amount}, 単価: ${order.price}` }}<button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button></li>
+      <li class="order" v-for='order in orders' :key='order.id' :data-type='order.type' :data-traded='isTradedOrder(order) ? "true" : "false"'>{{ `${getDate(order.created_at)}\n脚数: ${order.amount}, 単価: ${order.price}` }}<button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button></li>
     </ul>
   </div>  
 </template>
@@ -15,8 +15,18 @@ import { Order } from '../store'
 
 declare const moment: any
 
+interface Data {
+  tradedOrders: Order[]
+}
+
 export default Vue.extend({
   name: 'Log',
+
+  data(): Data {
+    return {
+      tradedOrders: [],
+    }
+  },
 
   computed: {
     ...mapState(['info', 'orders']),
@@ -34,6 +44,17 @@ export default Vue.extend({
     },
     getDate(datestring: string) {
       return moment(datestring).format('YYYY/MM/DD')
+    },
+    isTradedOrder(order: Order) {
+      return this.tradedOrders.filter((tradedOrder: Order) => tradedOrder.id === order.id).length > 0
+    },
+  },
+
+  watch: {
+    info(info) {
+      if (info && info.traded_orders && info.traded_orders.length > 0) {
+        this.tradedOrders = info.traded_orders
+      }
     },
   },
 })
@@ -81,7 +102,7 @@ export default Vue.extend({
     content: '買い'
 
   &[data-traded='true']
-    animation: traded-order 1.2s linear 0s
+    animation: traded-order 3s linear 0s
 
 @keyframes traded-order
   0%
