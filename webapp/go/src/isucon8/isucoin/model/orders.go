@@ -5,7 +5,6 @@ import (
 	"isucon8/isubank"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 )
 
@@ -14,6 +13,7 @@ const (
 	OrderTypeSell = "sell"
 )
 
+//go:generate scanner
 type Order struct {
 	ID        int64      `json:"id"`
 	Type      string     `json:"type"`
@@ -27,48 +27,12 @@ type Order struct {
 	Trade     *Trade     `json:"trade,omitempty"`
 }
 
-func scanOrder(r RowScanner) (*Order, error) {
-	var v Order
-	var closedAt mysql.NullTime
-	var tradeID sql.NullInt64
-	if err := r.Scan(&v.ID, &v.Type, &v.UserID, &v.Amount, &v.Price, &closedAt, &tradeID, &v.CreatedAt); err != nil {
-		return nil, err
-	}
-	if closedAt.Valid {
-		v.ClosedAt = &closedAt.Time
-	}
-	if tradeID.Valid {
-		v.TradeID = tradeID.Int64
-	}
-	return &v, nil
-}
-
-func queryOrders(d QueryExecutor, query string, args ...interface{}) ([]*Order, error) {
-	rows, err := d.Query(query, args...)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Query failed. query:%s, args:% v", query, args)
-	}
-	defer rows.Close()
-	orders := []*Order{}
-	for rows.Next() {
-		order, err := scanOrder(rows)
-		if err != nil {
-			return nil, errors.Wrapf(err, "Scan failed.")
-		}
-		orders = append(orders, order)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrapf(err, "rows.Err failed.")
-	}
-	return orders, nil
-}
-
 func GetOrdersByUserID(d QueryExecutor, userID int64) ([]*Order, error) {
-	return queryOrders(d, "SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC", userID)
+	return scanOrders(d.Query("SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC", userID))
 }
 
 func GetOrdersByUserIDAndLastTradeId(d QueryExecutor, userID int64, tradeID int64) ([]*Order, error) {
-	return queryOrders(d, `SELECT * FROM orders WHERE user_id = ? AND trade_id IS NOT NULL AND trade_id > ? ORDER BY created_at ASC`, userID, tradeID)
+	return scanOrders(d.Query(`SELECT * FROM orders WHERE user_id = ? AND trade_id IS NOT NULL AND trade_id > ? ORDER BY created_at ASC`, userID, tradeID))
 }
 
 func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
@@ -87,19 +51,19 @@ func getOpenOrderByID(tx *sql.Tx, id int64) (*Order, error) {
 }
 
 func GetOrderByID(d QueryExecutor, id int64) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE id = ?", id))
+	return scanOrder(d.Query("SELECT * FROM orders WHERE id = ?", id))
 }
 
 func getOrderByIDWithLock(tx *sql.Tx, id int64) (*Order, error) {
-	return scanOrder(tx.QueryRow("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
+	return scanOrder(tx.Query("SELECT * FROM orders WHERE id = ? FOR UPDATE", id))
 }
 
 func GetLowestSellOrder(d QueryExecutor) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1", OrderTypeSell))
+	return scanOrder(d.Query("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1", OrderTypeSell))
 }
 
 func GetHighestBuyOrder(d QueryExecutor) (*Order, error) {
-	return scanOrder(d.QueryRow("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1", OrderTypeBuy))
+	return scanOrder(d.Query("SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1", OrderTypeBuy))
 }
 
 func FetchOrderRelation(d QueryExecutor, order *Order) error {
