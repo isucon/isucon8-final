@@ -2,10 +2,7 @@
   <div class="log">
     <h3 class="title">履歴</h3>
     <ul class="orders">
-      <li class="order" v-for='order in orders' :key='order.id'>
-        {{ `${getDate(order.created_at)}, 脚数: ${order.amount}, 単価: ${order.price}` }}
-        <button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button>
-      </li>
+      <li class="order" v-for='order in orders' :key='order.id' :data-type='order.type' :data-traded='false'>{{ `${getDate(order.created_at)}\n脚数: ${order.amount}, 単価: ${order.price}` }}<button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button></li>
     </ul>
   </div>  
 </template>
@@ -14,6 +11,7 @@
 import Vue from 'vue'
 import { mapActions, mapState } from 'vuex'
 import axios from 'axios'
+import { Order } from '../store'
 
 declare const moment: any
 
@@ -21,7 +19,7 @@ export default Vue.extend({
   name: 'Log',
 
   computed: {
-    ...mapState(['orders']),
+    ...mapState(['info', 'orders']),
   },
 
   methods: {
@@ -66,6 +64,29 @@ export default Vue.extend({
   align-items: center
   margin-bottom: 12px
   font-size: 12px
+  white-space: pre
+
+  &[data-type='sell']:before,
+  &[data-type='buy']:before
+    padding: 2px 4px
+    color: #fff
+
+  &[data-type='sell']:before
+    background-color: #d70035
+    content: '売り'
+
+  &[data-type='buy']:before
+    background-color: #0068b7
+    content: '買い'
+
+  &[data-traded='true']
+    animation: traded-order 1.2s linear 0s
+
+@keyframes traded-order
+  0%
+    background-color: #edde7b
+  100%
+    background-color: transparent
 
 .cancel
   appearance: none
