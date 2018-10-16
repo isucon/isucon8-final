@@ -73,6 +73,7 @@ post "/signup" => sub {
             );
         } catch {
             my $err = $_;
+            # TODO: 失敗が多いときに403を返すBanの仕様に対応
             if (Isubank::Exception::NoUser->caught($err)) {
                 $txn->rollback;
                 return $c->halt(404, "bank user not found");
@@ -105,6 +106,7 @@ post "/signin" => sub {
         $user = $model->user_login(bank_id => $bank_id, password => $password);
     } catch {
         my $err = $_;
+        # TODO: 失敗が多いときに403を返すBanの仕様に対応
         if (Isucoin::Exception::UserNotFound->caught($err)) {
             return $c->halt(404, "user not found");
         }
@@ -249,6 +251,7 @@ post "/orders" => [qw/login_required/] => sub {
         try {
             $model->run_trade;
         } catch {
+            # トレードに失敗してもエラーにはしない
             warnf "run_trade err: %s", $_;
         };
     }
@@ -282,11 +285,23 @@ router ["DELETE"] => "/order/{id}" => [qw/login_required/] => sub {
     {
         my $txn = $dbh->txn_scope;
 
-        $model->delete_order(
-            user_id  => $user->{id},
-            order_id => $order_id,
-            reason   => "canceled",
-        );
+        try {
+            $model->delete_order(
+                user_id  => $user->{id},
+                order_id => $order_id,
+                reason   => "canceled",
+            );
+        } catch {
+            my $err = $_;
+            if (
+                Isucoin::Exception::OrderNotFound->caught($err) ||
+                Isucoin::Exception::OrderAlreadyClosed->caught($err)
+            ) {
+                $txn->rollback;
+                return $self->halt(404);
+            }
+
+        };
 
         $txn->commit;
     };
