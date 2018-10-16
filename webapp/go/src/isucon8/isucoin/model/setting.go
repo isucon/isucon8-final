@@ -27,7 +27,7 @@ func SetSetting(d QueryExecutor, k, v string) error {
 }
 
 func GetSetting(d QueryExecutor, k string) (string, error) {
-	s, err := scanSetting(d.Query(`SELECT val FROM setting WHERE name = ?`, k))
+	s, err := scanSetting(d.Query(`SELECT * FROM setting WHERE name = ?`, k))
 	if err != nil {
 		return "", err
 	}
