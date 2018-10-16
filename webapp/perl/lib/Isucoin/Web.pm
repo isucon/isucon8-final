@@ -146,7 +146,7 @@ get "/info" => sub {
 
     my $model = Isucoin::Model->new(dbh => $self->dbh);
 
-    my $last_trade_id;
+    my $last_trade_id = 0;
     my $lt = Time::Moment->from_epoch(0);
     my %res;
     my $cursor = $c->req->parameters->{cursor};
@@ -171,7 +171,7 @@ get "/info" => sub {
         $res{traded_orders} = $orders;
     }
 
-    my $by_sec_time = Time::Moment->now_utc->minus_seconds(300);
+    my $by_sec_time = Time::Moment->now->minus_seconds(300);
     if ($lt->is_after($by_sec_time)) {
         $by_sec_time = $lt->with_precision(0);
     }
@@ -180,7 +180,7 @@ get "/info" => sub {
         tf => "%Y-%m-%d %H:%i:%s",
     );
 
-    my $by_min_time = Time::Moment->now_utc->minus_minutes(300);
+    my $by_min_time = Time::Moment->now->minus_minutes(300);
     if ($lt->is_after($by_min_time)) {
         $by_min_time = $lt->with_precision(-1);
     }
@@ -189,7 +189,7 @@ get "/info" => sub {
         tf => "%Y-%m-%d %H:%i:00",
     );
 
-    my $by_hour_time = Time::Moment->now_utc->minus_hours(48);
+    my $by_hour_time = Time::Moment->now->minus_hours(48);
     if ($lt->is_after($by_hour_time)) {
         $by_hour_time = $lt->with_precision(-2);
     }

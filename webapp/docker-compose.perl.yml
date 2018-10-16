@@ -1,6 +1,8 @@
 version: '2'
 services:
   isucoin:
+    environment:
+      - "TZ=Asia/Tokyo"
     build: perl
     command:
       - "sh"

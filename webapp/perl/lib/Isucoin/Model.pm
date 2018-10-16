@@ -10,6 +10,7 @@ use Digest;
 use Data::Entropy::Algorithms qw/rand_bits/;
 use Try::Tiny;
 use Guard; 
+use JSON::Types;
 
 use Isucoin::Exception;
 use Isubank;
@@ -50,7 +51,7 @@ sub _digest {
 sub init_benchmark {
     my $self = shift;
 
-    my $stop = Time::Moment->now_utc->minus_hours(10);
+    my $stop = Time::Moment->now->minus_hours(10);
     $stop = $stop->with_precision(-3)->with_hour(10);
 
     my $stop_at = $stop->strftime("%F %T");
@@ -138,7 +139,7 @@ sub user_signup {
     my $user_id = $self->dbh->last_insert_id;
     $self->send_log(signup => {
         bank_id => $bank_id,
-        user_id => $user_id,
+        user_id => number $user_id,
         name    => $name,
     });
 }
@@ -177,7 +178,7 @@ sub user_login {
     }
 
     $self->send_log(signin => {
-        user_id => $user->{id},
+        user_id => number $user->{id},
     });
 
     return $self->_to_user_hash($user);
@@ -320,9 +321,9 @@ sub add_order {
             my $err = $_;
             $self->send_log("buy.error", {
                 error   => $err->message,
-                user_id => $user->{id},
-                amount  => $amount,
-                price   => $price,
+                user_id => number $user->{id},
+                amount  => number $amount,
+                price   => number $price,
             });
             if (Isubank::Exception::CreditInsufficient->caught($err)) {
                 Isucoin::Exception::CreditInsufficiant->throw;
@@ -343,10 +344,10 @@ sub add_order {
     }, $ot, $user->{id}, $amount, $price);
     my $id = $self->dbh->last_insert_id;
     $self->send_log($ot . ".order" => {
-        order_id => $id,
-        user_id  => $user->{id},
-        amount   => $amount,
-        price    => $price,
+        order_id => number $id,
+        user_id  => number $user->{id},
+        amount   => number $amount,
+        price    => number $price,
     });
 
     return $self->get_order_by_id($id);
@@ -383,8 +384,8 @@ sub cancel_order {
     }, $order->{id});
 
     $self->send_log($order->{type} . ".delete" => {
-        order_id => $order->{id},
-        user_id  => $order->{user_id},
+        order_id => number $order->{id},
+        user_id  => number $order->{user_id},
         reason   => $reason,
     });
 }
@@ -503,9 +504,9 @@ sub reserve_order {
             $self->cancel_order(order => $order, reason => "reserve_failed");
             $self->send_log($order->{type} . ".error" => {
                 error   => $err->message,
-                user_id => $order->{user_id},
-                amount  => $order->{amount},
-                price   => $price,
+                user_id => number $order->{user_id},
+                amount  => number $order->{amount},
+                price   => number $price,
             });
             $err->rethrow;
         }
@@ -526,8 +527,8 @@ sub commit_reserved_order {
     my $trade_id = $self->dbh->last_insert_id;
     $self->send_log(trade => {
         trade_id => $trade_id,
-        price    => $order->{price},
-        amount   => $order->{amount},
+        price    => number $order->{price},
+        amount   => number $order->{amount},
     });
 
     for my $o (@$targets, $order) {
@@ -535,11 +536,11 @@ sub commit_reserved_order {
             UPDATE orders SET trade_id = ?, closed_at = NOW(6) WHERE id = ?
         }, $trade_id, $o->{id});
         $self->send_log($o->{type} . ".trade", {
-            order_id => $o->{id},
-            price    => $order->{price},
-            amount   => $o->{amount},
-            user_id  => $o->{user_id},
-            trade_id => $trade_id,
+            order_id => number $o->{id},
+            price    => number $order->{price},
+            amount   => number $o->{amount},
+            user_id  => number $o->{user_id},
+            trade_id => number $trade_id,
         });
     }
     my $bank = $self->isubank;
@@ -556,11 +557,11 @@ sub try_trade {
     my (@reserves, @targets);
     $reserves[0] = $self->reserve_order(order => $order, price => $unit_price);
 
-    my $guard = guard {
-        return scalar(@reserves) == 0;
-
-        my $bank = $self->isubank;
-        $bank->cancel(\@reserves);
+    scope_guard {
+        if (scalar(@reserves) > 0) {
+            my $bank = $self->isubank;
+            $bank->cancel(@reserves);
+        }
     };
 
     my $target_orders;
@@ -571,20 +572,17 @@ sub try_trade {
     }
     elsif ($order->{type} eq ORDER_TYPE_SELL) {
         $target_orders = $self->dbh->select_all(qq{
-            SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price <= ? ORDER BY price DESC, created_at ASC, id ASC
+            SELECT * FROM orders WHERE type = ? AND closed_at IS NULL AND price >= ? ORDER BY price DESC, created_at ASC, id ASC
         }, ORDER_TYPE_BUY, $order->{price});
     }
 
-    if (scalar(@$target_orders)) {
+    if (scalar(@$target_orders) == 0) {
         Isucoin::Exception::NoOrderForTrade->throw;
     }
 
     for my $to (@$target_orders) {
-        try {
-            $to = $self->get_open_order_by_id($to->{id});
-        }
-        catch {
-            my $err = $_;
+        eval {  $to = $self->get_open_order_by_id($to->{id}); };
+        if (my $err = $@) {
             if (Isucoin::Exception::OrderAlreadyClosed->caught($err)) {
                 next;
             }
@@ -592,12 +590,8 @@ sub try_trade {
         };
         next if $to->{amount} > $rest_amount;
 
-        my $rid;
-        try {
-            $rid = $self->reserve_order(order => $to, price => $unit_price);
-        }
-        catch {
-            my $err = $_;
+        my $rid = eval { $self->reserve_order(order => $to, price => $unit_price) };
+        if (my $err = $@) {
             if (Isubank::Exception::CreditInsufficient->caught($err)) {
                 next;
             }

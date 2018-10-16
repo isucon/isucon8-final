@@ -7,6 +7,8 @@ use utf8;
 use Furl;
 use JSON::XS qw/encode_json/;
 
+use Time::Moment;
+use JSON::Types;
 use Mouse;
 
 has endpoint => (
@@ -33,6 +35,12 @@ no Mouse;
 
 sub send {
     my ($self, $tag, $data) = @_;
+
+    return $self->request("/send", {
+            tag  => $tag,
+            time => Time::Moment->now->strftime("%FT%TZ"),
+            data => $data,
+    });
 }
 
 sub request {
