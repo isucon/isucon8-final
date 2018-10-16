@@ -271,13 +271,13 @@ func (t *PreTester) Run(ctx context.Context) error {
 				for {
 					select {
 					case <-timeout:
-						return errors.Errorf("成立すべき取引が成立しませんでした(c1)")
+						return errors.Errorf("成立すべき取引が成立しませんでした(c1) [user:%d]", c1.UserID())
 					default:
 						info, err := c1.Info(ctx, 0)
 						if err != nil {
 							return err
 						}
-						if len(info.TradedOrders) == 1 {
+						if len(info.TradedOrders) >= 1 {
 							return nil
 						}
 						time.Sleep(PollingInterval)
@@ -511,7 +511,6 @@ type PostTester struct {
 }
 
 func (t *PostTester) Run(ctx context.Context) error {
-	deadline := time.Now().Add(LogAllowedDelay)
 	users := make([]testUser, 0, len(t.users))
 	for _, tu := range t.users {
 		if tu.UserID() > 0 && !tu.Ignore() {
@@ -537,7 +536,7 @@ func (t *PostTester) Run(ctx context.Context) error {
 		}
 	}
 	if trade == nil {
-		return errors.Errorf("取引に成功したユーザーが全滅しています")
+		return errors.Errorf("取引に成功したユーザーが全滅しているか、一人もいません")
 	}
 	eg := new(errgroup.Group)
 	for _, tu := range []testUser{first, latest, random} {
@@ -569,6 +568,8 @@ func (t *PostTester) Run(ctx context.Context) error {
 	if err := eg.Wait(); err != nil {
 		return err
 	}
+
+	deadline := time.Now().Add(LogAllowedDelay)
 
 	eg = new(errgroup.Group)
 
@@ -616,6 +617,10 @@ func (t *PostTester) Run(ctx context.Context) error {
 			for credit != user.Credit() {
 				select {
 				case <-timeout:
+					if credit == 0 {
+						return errors.Errorf("処理がおそすぎてチェックの準備が整いませんでした[user:%d]", user.UserID())
+					}
+					log.Printf("[DEBUG] 銀行残高があいません [user:%d,bank:%s,bankCredit:%d,benchCredit:%d]", user.UserID(), user.BankID(), credit, user.Credit())
 					return errors.Errorf("銀行残高があいません[user:%d]", user.UserID())
 				default:
 					var err error
