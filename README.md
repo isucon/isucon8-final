@@ -69,15 +69,6 @@ cd bench
 dep ensure
 ```
 
-#### データセットの初期化
-
-1日一回下記スクリプトを実行して、初期データをISUCON初日と同じデータにします
-(もうちょっといい感じにできそうですが...)
-
-```
-go run bench/cmd/tools/initdatabase/main.go -dsn "root:root@tcp(127.0.0.1:13306)/isucoin"
-```
-
 ### 実行
 
 ベンチマークを実行するときは、webapp, blackbox の両方を起動した上で下記コマンドを実行してください
