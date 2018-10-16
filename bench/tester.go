@@ -56,16 +56,16 @@ func (t *PreTester) Run(ctx context.Context) error {
 			// 注文個数によってはあり得るのでそうならないシナリオにしたい
 			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
 		}
-		// 10時以降のデータは消えるので件数は変動する(特にsecもminも消える)
-		// if len(info.ChartBySec) < 5742 {
-		// 	return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
-		// }
-		// if len(info.ChartByMin) < 98 {
-		// 	return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
-		// }
-		// if len(info.ChartByHour) < 2 {
-		// 	return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
-		// }
+		// 初期データ件数は変動しない (TODO: 詳細もチェックするかどうか)
+		if len(info.ChartBySec) < 143 {
+			return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
+		}
+		if len(info.ChartByMin) < 300 {
+			return errors.Errorf("GET /info chart_by_min の件数が初期データよりも少なくなっています")
+		}
+		if len(info.ChartByHour) < 48 {
+			return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
+		}
 	}
 	{
 		// アカウントがない
