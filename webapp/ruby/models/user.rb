@@ -1,3 +1,6 @@
+require 'bcrypt'
+require 'mysql2'
+
 module Isucoin
   module Models
     module User

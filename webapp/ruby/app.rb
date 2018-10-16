@@ -1,8 +1,6 @@
 require 'json'
 require 'time'
 
-require 'bcrypt'
-
 require 'sinatra/base'
 
 require_relative './models.rb'
