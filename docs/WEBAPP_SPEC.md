@@ -20,6 +20,10 @@
 
 ### 登録
 
+ISUBANKのIDの存在確認をし、正しければ登録する。
+
+※ パスワードはセキュリティ要件により bcrypt でハッシュ化してデータベースに保存しなければならない
+
 #### `POST /signup`
 
 - request: application/form-url-encoded
@@ -193,7 +197,7 @@
 
 ### Log
 
-下記のログを送らなければならない
+取引処理時に下記のログを送らなければならない
 
 - tag:trade
     - trade_id: $trade_id
