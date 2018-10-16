@@ -70,6 +70,7 @@ export default Vue.extend({
   &[data-type='buy']:before
     padding: 2px 4px
     color: #fff
+    font-weight: bold
 
   &[data-type='sell']:before
     background-color: #d70035
