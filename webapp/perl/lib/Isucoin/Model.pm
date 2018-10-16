@@ -51,6 +51,8 @@ sub _digest {
 sub init_benchmark {
     my $self = shift;
 
+    # 前回の10:00:00+0900までのデータを消す
+    # 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
     my $stop = Time::Moment->now->minus_hours(10);
     $stop = $stop->with_precision(-3)->with_hour(10);
 
@@ -118,6 +120,7 @@ sub user_signup {
     my $bank = $self->isubank;
     my ($name, $bank_id, $password) = @args{qw/name bank_id password/};
 
+    # bank_idの検証
     $bank->check(bank_id => $bank_id, price => 0);
 
     my $digest = $self->_digest->add($password);

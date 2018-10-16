@@ -4,6 +4,24 @@ use strict;
 use warnings;
 use utf8;
 
+=pod
+
+=head1 Isubank
+
+Isubank はISUBANK APIクライアントです
+
+=head1 SYNOPSIS
+
+    use Isubank;
+
+    # endpoint: ISUBANK APIを利用するためのエンドポイントURI
+    # app_id:   ISUBANK APIを利用するためのアプリケーションID
+    my $bank = Isubank->new(endpoint => $endpoint, app_id => $app_id);
+
+=end
+
+=cut
+
 use Furl;
 use Try::Tiny;
 use JSON::XS qw/decode_json encode_json/;
@@ -32,12 +50,24 @@ has client => (
 
 no Mouse;
 
+=pod
+
+=head1 DESCRIPTION
+
+=head1 METHODS
+
+=head2 check
+
+check は残高確認です
+Reserve による予約済み残高は含まれません
+
+=cut
 sub check {
     my ($self, %args) = @_;
 
     my ($bank_id, $price) = @args{qw/bank_id price/};
 
-    my $res = $self->request("/check" => {
+    my $res = $self->_request("/check" => {
         bank_id => $bank_id,
         price   => $price,
     });
@@ -55,12 +85,19 @@ sub check {
     Isubank::Exception::CheckFailed->throw(error => $res->{error});
 }
 
+=pod
+
+=head2 reserve
+
+check は仮決済(残高の確保)を行います
+
+=cut
 sub reserve {
     my ($self, %args) = @_;
 
     my ($bank_id, $price) = @args{qw/bank_id price/};
 
-    my $res = $self->request("/reserve" => {
+    my $res = $self->_request("/reserve" => {
         bank_id => $bank_id,
         price   => $price,
     });
@@ -75,10 +112,18 @@ sub reserve {
     return $res->{reserve_id};
 }
 
+=pod
+
+=head2 commit
+
+commit は決済の確定を行います
+正常に仮決済処理を行っていればここでエラーになることはありません
+
+=cut
 sub commit {
     my ($self, @reserve_ids) = @_;
 
-    my $res = $self->request("/commit" => {
+    my $res = $self->_request("/commit" => {
         reserve_ids => \@reserve_ids,
     });
 
@@ -90,10 +135,17 @@ sub commit {
     }
 }
 
+=pod
+
+=head2 cancel
+
+commit は決済の取り消しを行います
+
+=cut
 sub cancel {
     my ($self, @reserve_ids) = @_;
 
-    my $res = $self->request("/cancel" => {
+    my $res = $self->_request("/cancel" => {
         reserve_ids => \@reserve_ids,
     });
 
@@ -102,7 +154,7 @@ sub cancel {
     }
 }
 
-sub request {
+sub _request {
     my ($self, $p, $v) = @_;
 
     my $body = encode_json $v;
@@ -139,11 +191,13 @@ package Isubank::Exception::FailRequest {
     }
 }
 
+# 仮決済時または残高チェック時に残高が不足している
 package Isubank::Exception::CreditInsufficient {
     use parent "Exception::Tiny";
 }
 
 
+# いすこん銀行にアカウントが存在しない
 package Isubank::Exception::NoUser {
     use parent "Exception::Tiny";
 }

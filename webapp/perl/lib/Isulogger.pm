@@ -1,5 +1,23 @@
 package Isulogger;
 
+=pod
+
+=head1 Isulogger
+
+Isulogger - The client for ISULOG
+
+=head1 SYNOPSIS
+
+    use Isulogger;
+
+    # endpoint: ISULOGを利用するためのエンドポイントURI
+    # app_id:   ISULOGを利用するためのアプリケーションID
+    my $logger = Isulogger->new(endpoint => $endpoint, app_id => $app_id);
+
+=end
+
+=cut
+
 use strict;
 use warnings;
 use utf8;
@@ -33,6 +51,17 @@ has client => (
 
 no Mouse;
 
+=pod
+
+=head1 DESCRIPTION
+
+=head1 METHODS
+
+=head2 send
+
+send はログを送信します
+
+=cut
 sub send {
     my ($self, $tag, $data) = @_;
 
