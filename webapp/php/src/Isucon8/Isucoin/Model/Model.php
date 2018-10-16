@@ -51,16 +51,13 @@ class NoOrderForTradeException extends Exception {
 }
 
 function InitBenchmark(PDOWrapperTxn $txn) {
-    // 前回の10:00:00+0900までのデータを消す
-    // 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
-    $stop = date('Y-m-d 10:00:00', strtotime('-10 hours'));
     foreach (
         [
-            'DELETE FROM orders WHERE created_at >= ?',
-            'DELETE FROM trade  WHERE created_at >= ?',
-            'DELETE FROM user   WHERE created_at >= ?',
+            "DELETE FROM orders WHERE created_at >= '2018-10-16 10:00:00'",
+            "DELETE FROM trade  WHERE created_at >= '2018-10-16 10:00:00'",
+            "DELETE FROM user   WHERE created_at >= '2018-10-16 10:00:00'",
         ] as $query
     ) {
-        $txn->execute($query, $stop);
+        $txn->execute($query);
     }
 }

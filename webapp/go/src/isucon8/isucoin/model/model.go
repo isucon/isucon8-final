@@ -2,8 +2,6 @@ package model
 
 import (
 	"database/sql"
-	"fmt"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -25,15 +23,10 @@ type QueryExecutor interface {
 }
 
 func InitBenchmark(d QueryExecutor) error {
-	// 前回の10:00:00+0900までのデータを消す
-	// 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
-	stop := time.Now().Add(-10 * time.Hour)
-	stop = time.Date(stop.Year(), stop.Month(), stop.Day(), 10, 0, 0, 0, stop.Location())
-
 	for _, q := range []string{
-		fmt.Sprintf("DELETE FROM orders WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
-		fmt.Sprintf("DELETE FROM trade WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
-		fmt.Sprintf("DELETE FROM user WHERE created_at >= '%s'", stop.Format("2006-01-02 15:00:00")),
+		"DELETE FROM orders WHERE created_at >= '2018-10-16 10:00:00'",
+		"DELETE FROM trade WHERE created_at >= '2018-10-16 10:00:00'",
+		"DELETE FROM user WHERE created_at >= '2018-10-16 10:00:00'",
 	} {
 		if _, err := d.Exec(q); err != nil {
 			return errors.Wrapf(err, "query exec failed[%d]", q)

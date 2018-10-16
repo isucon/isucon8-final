@@ -113,7 +113,7 @@ func writeBankSQL(w io.Writer, users []Bank) error {
 	return nil
 }
 
-func writeUserSQL(w io.Writer, users []User) error {
+func writeUserSQL(w io.Writer, tsv io.Writer, users []User) error {
 	if _, err := fmt.Fprint(w, "INSERT INTO user (id,bank_id,name,password,created_at) VALUES "); err != nil {
 		return err
 	}
@@ -124,6 +124,9 @@ func writeUserSQL(w io.Writer, users []User) error {
 			}
 		}
 		if _, err := fmt.Fprintf(w, "(%d,'%s','%s','%s','%s')", user.ID, user.BankID, user.Name, user.pass, user.CreatedAt.Format(DF)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(tsv, "%d\t%s\t%s\t%s\t%s\n", user.ID, user.Name, user.BankID, user.Password, user.pass); err != nil {
 			return err
 		}
 	}
@@ -185,8 +188,8 @@ func writeTradeSQL(w io.Writer, trades []Trade) error {
 func main() {
 	var (
 		dir   = flag.String("dir", "isucondata", "output dir")
-		start = flag.String("start", "2018-10-10T10:00:00+09:00", "data start time RFC3339")
-		end   = flag.String("end", "2018-10-20T10:00:00+09:00", "data end time RFC3339")
+		start = flag.String("start", "2018-10-11T10:00:00+09:00", "data start time RFC3339")
+		end   = flag.String("end", "2018-10-16T10:00:00+09:00", "data end time RFC3339")
 	)
 	flag.Parse()
 	loc, err := time.LoadLocation("Asia/Tokyo")
@@ -221,6 +224,12 @@ func run(dir, starts, ends string) error {
 	fmt.Fprintln(usersql, "use isucoin;")
 	fmt.Fprintln(usersql, "truncate user;")
 	fmt.Fprintln(usersql, "set names utf8mb4;")
+	usercsv, err := os.Create(filepath.Join(dir, "app.user.tsv"))
+	if err != nil {
+		return err
+	}
+	defer usercsv.Close()
+	fmt.Fprintln(usercsv, "id\tname\tbank\tpass\tbcript")
 
 	tradesql, err := os.Create(filepath.Join(dir, "app.trade.sql"))
 	if err != nil {
@@ -300,14 +309,9 @@ func run(dir, starts, ends string) error {
 				case <-ctx.Done():
 					return
 				default:
-					cost := 4
-					switch rand.Intn(20) {
-					case 1:
-						cost = 5
-					case 2:
-						cost = 7
-					case 10, 11, 12:
-						cost = 10
+					cost := rand.Intn(11)
+					if cost < 4 {
+						cost = 4
 					}
 					pass := r.Password()
 					ep, _ := bcrypt.GenerateFromPassword([]byte(pass), cost)
@@ -366,7 +370,7 @@ func run(dir, starts, ends string) error {
 				ulock.Lock()
 				defer ulock.Unlock()
 				log.Printf("write user %s %s", c[0].CreatedAt.Format(DF), c[len(c)-1].CreatedAt.Format(DF))
-				return writeUserSQL(usersql, c)
+				return writeUserSQL(usersql, usercsv, c)
 			})
 			return d[:0]
 		}
@@ -417,10 +421,14 @@ func run(dir, starts, ends string) error {
 		switch rand.Intn(10) {
 		case 0, 1, 2, 3:
 			price++
-		case 4:
-			price += 2
 		case 5, 6, 7:
 			price--
+		default:
+			if price > 7000 {
+				price--
+			} else if price < 4000 {
+				price++
+			}
 		}
 		tm = tm.Add(time.Millisecond * 50)
 		u1 := pickUser(tm)

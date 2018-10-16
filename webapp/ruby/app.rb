@@ -16,6 +16,9 @@ module Isucoin
     set :public_folder, ENV.fetch('ISU_PUBLIC_DIR', File.join(__dir__, '..', 'public'))
     set :sessions, key: 'isucoin_session', expire_after: 3600
     set :session_secret, 'tonymoris'
+    # ISUCON用初期データの基準時間です
+    # この時間以降のデータはinitializeで削除されます
+    set :base_time, Time.new(2018, 10, 16, 10, 0, 0)
 
     helpers do
       include Isucoin::Models
@@ -55,17 +58,12 @@ module Isucoin
     end
 
     post '/initialize' do
-      # 前回の10:00:00+0900までのデータを消す
-      # 本戦当日は2018-10-20T10:00:00+0900 固定だが、他の時間帯にデータ量を揃える必要がある
-      stop = Time.now - (10 * 3600)
-      stop = Time.local(stop.year, stop.month, stop.day, 10, 0, 0)
-
       [
-        "DELETE FROM orders WHERE created_at >= ?",
-        "DELETE FROM trade WHERE created_at >= ?",
-        "DELETE FROM user WHERE created_at >= ?",
+        "DELETE FROM orders WHERE created_at >= '2018-10-16 10:00:00'",
+        "DELETE FROM trade WHERE created_at >= '2018-10-16 10:00:00'",
+        "DELETE FROM user WHERE created_at >= '2018-10-16 10:00:00'",
       ].each do |q|
-        db.xquery(q, stop)
+        db.query(q)
       end
 
       %i(
@@ -143,19 +141,19 @@ module Isucoin
         res[:traded_orders] = orders
       end
 
-      by_sec_time = Time.now - 300
+      by_sec_time = settings.base_time - 300
       if by_sec_time < lt
         by_sec_time = Time.new(lt.year, lt.month, lt.day, lt.hour, lt.min, lt.sec)
       end
       res[:chart_by_sec] = get_candlestick_data(by_sec_time, "%Y-%m-%d %H:%i:%s")
 
-      by_min_time = Time.now - (300 * 60)
+      by_min_time = settings.base_time - (300 * 60)
       if by_min_time < lt
         by_min_time = Time.new(lt.year, lt.month, lt.day, lt.hour, lt.min, 0)
       end
       res[:chart_by_min] = get_candlestick_data(by_min_time, "%Y-%m-%d %H:%i:00")
 
-      by_hour_time = Time.now - (48 * 3600)
+      by_hour_time = settings.base_time - (48 * 3600)
       if by_hour_time < lt
         by_hour_time = Time.new(lt.year, lt.month, lt.day, lt.hour, 0, 0)
       end

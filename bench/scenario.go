@@ -69,9 +69,10 @@ type normalScenario struct {
 	actionchan chan struct{}
 	existed    bool
 	ignoretest bool
+	justprice  bool
 }
 
-func newNormalScenario(c *Client, credit, isu, unit int64) *normalScenario {
+func newNormalScenario(c *Client, credit, isu, unit int64, justprice bool) *normalScenario {
 	return &normalScenario{
 		baseScenario:  &baseScenario{c},
 		defaultCredit: credit,
@@ -81,15 +82,16 @@ func newNormalScenario(c *Client, credit, isu, unit int64) *normalScenario {
 		unitIsu:       unit,
 		orders:        make([]*Order, 0, 60),
 		actionchan:    make(chan struct{}, BenchMarkTime/PollingInterval),
+		justprice:     justprice,
 	}
 }
 
-func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
-	return newNormalScenario(c, credit, isu, unit)
+func NewNormalScenario(c *Client, credit, isu, unit int64, justprice bool) Scenario {
+	return newNormalScenario(c, credit, isu, unit, justprice)
 }
 
-func NewExistsUserScenario(c *Client, credit, isu, unit int64) Scenario {
-	s := newNormalScenario(c, credit, isu, unit)
+func NewExistsUserScenario(c *Client, credit, isu, unit int64, justprice bool) Scenario {
+	s := newNormalScenario(c, credit, isu, unit, justprice)
 	s.existed = true
 	s.ignoretest = true
 	return s
@@ -108,7 +110,7 @@ func (s *normalScenario) Ignore() bool {
 }
 
 func (s *normalScenario) FetchOrders(ctx context.Context) error {
-	_, err := s.fetchOrders(ctx)
+	_, err := s.fetchOrders(ctx, true)
 	return err
 }
 
@@ -149,7 +151,7 @@ func (s *normalScenario) Start(ctx context.Context, smchan chan ScoreMsg) error 
 		return errors.Wrap(err, "ログインできませんでした")
 	}
 
-	_, err = s.fetchOrders(ctx)
+	_, err = s.fetchOrders(ctx, false)
 	smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
 	if err != nil {
 		return errors.Wrap(err, "注文履歴の取得に失敗しました")
@@ -189,7 +191,7 @@ func (s *normalScenario) runInfoLoop(ctx context.Context, smchan chan ScoreMsg) 
 					if s.c.IsRetired() {
 						return
 					}
-					tradedOrders, err := s.fetchOrders(ctx)
+					tradedOrders, err := s.fetchOrders(ctx, false)
 					smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
 					if err == nil {
 						for range tradedOrders {
@@ -231,7 +233,7 @@ func (s *normalScenario) runAction(ctx context.Context, smchan chan ScoreMsg) {
 				}
 				continue
 			}
-			tradedOrders, err := s.fetchOrders(ctx)
+			tradedOrders, err := s.fetchOrders(ctx, false)
 			smchan <- ScoreMsg{st: ScoreTypeGetOrders, err: err}
 			if err == nil {
 				for range tradedOrders {
@@ -286,14 +288,14 @@ func (s *normalScenario) fetchInfo(ctx context.Context, cursor int64) (int64, bo
 	return info.Cursor, traded, nil
 }
 
-func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
+func (s *normalScenario) fetchOrders(ctx context.Context, skipReflectCheck bool) ([]*Order, error) {
 	s.ordersLock.Lock()
 	defer s.ordersLock.Unlock()
 	orders, err := s.c.GetOrders(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(s.orders) > 0 {
+	if len(s.orders) > 0 && !skipReflectCheck {
 		var lo *Order
 		// cancelされていない最後の注文
 		for j := len(s.orders) - 1; j >= 0; j-- {
@@ -318,7 +320,6 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 	}
 
 	tradedOrders := make([]*Order, 0, len(s.orders))
-	var reservedCredit, reservedIsu, tradedIsu, tradedCredit int64
 	for _, o := range s.orders {
 		var order *Order
 		for _, ro := range orders {
@@ -342,6 +343,10 @@ func (s *normalScenario) fetchOrders(ctx context.Context) ([]*Order, error) {
 			tradedOrders = append(tradedOrders, order)
 		}
 		*o = *order
+	}
+
+	var reservedCredit, reservedIsu, tradedIsu, tradedCredit int64
+	for _, order := range orders {
 		switch {
 		case order.Trade != nil && order.Type == TradeTypeSell:
 			// 成立済み 売り注文
@@ -402,16 +407,17 @@ func (s *normalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
 		return ScoreTypeDeleteOrders, nil
 	}
 	// 価格の決定
-
-	// 成り行き行けるかどうか
-	// 購入可能数
-	buyable := logicalCredit / s.lowestSellPrice
-
 	var (
-		ot     string
-		price  int64 = s.latestTradePrice
-		amount int64 = rand.Int63n(s.unitIsu) + 1
+		ot      string
+		price   int64 = s.latestTradePrice
+		amount  int64 = rand.Int63n(s.unitIsu) + 1
+		buyable int64
 	)
+	if s.lowestSellPrice > 0 {
+		buyable = logicalCredit / s.lowestSellPrice
+	} else {
+		buyable = logicalCredit / s.latestTradePrice
+	}
 	// 価格は成り行き以外は前回価格からランダムに前後する
 	switch rand.Intn(5) {
 	case 1, 2:
@@ -420,12 +426,12 @@ func (s *normalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
 		price--
 	}
 	switch {
-	case buyable/amount > 10:
+	case buyable/amount > 10 && s.justprice:
 		// 10回買い続けられるくらい資金が豊富
 		// 成り行き買い注文
 		ot = TradeTypeBuy
 		price = s.lowestSellPrice
-	case logicalIsu/amount > 10:
+	case logicalIsu/amount > 10 && s.justprice:
 		// 10回売り続けられるくらい椅子が豊富
 		// 成り行き売り注文
 		ot = TradeTypeSell
