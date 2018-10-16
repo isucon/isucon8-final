@@ -82,39 +82,28 @@ func (t *PreTester) Run(ctx context.Context) error {
 		}
 	}
 	{
-		defaultaccounts := []struct {
-			account, name, pass string
-			order, traded       int
-		}{
-			{"jz67jt77rpnb", "藍田 奈菜", "7g39gnwr26ze", 501, 424},
-			{"2z82n5q", "池野 歩", "2s4s829vm2bg9", 559, 459},
-			{"k2vutw", "阿部 俊介", "kgt7e2yv863d5", 557, 449},
-			{"yft3f5d5g", "古閑 麻美", "5m99r6vt8qssunb7", 543, 422},
-			{"pcsuktmvqn", "川崎 大輝", "fkpcy2amcp9pkmx", 549, 443},
-			{"qdyj7z5vj5", "桑原 楓花", "54f67y4exumtw", 523, 431},
-		}
-		gd := defaultaccounts[rand.Intn(len(defaultaccounts))]
-		gc, err := NewClient(t.appep, gd.account, gd.name, gd.pass, ClientTimeout, RetireTimeout)
+		gd := testUsers[rand.Intn(10)]
+		gc, err := NewClient(t.appep, gd.BankID, gd.Name, gd.Pass, ClientTimeout, RetireTimeout)
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
 		}
 		if err := gc.Signin(ctx); err != nil {
-			return errors.Wrapf(err, "Signin(bank:%s,name:%s)", gd.account, gd.name)
+			return errors.Wrapf(err, "Signin(bank:%s,name:%s)", gd.BankID, gd.Name)
 		}
 		info, err := gc.Info(ctx, 0)
 		if err != nil {
 			return err
 		}
 		// TODO: Fix
-		if len(info.TradedOrders) < gd.traded {
-			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.traded)
+		if len(info.TradedOrders) < gd.Traded {
+			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.Traded)
 		}
 		orders, err := gc.GetOrders(ctx)
 		if err != nil {
 			return err
 		}
-		if o := len(orders); o < gd.traded {
-			return errors.Errorf("GET /orders 件数があいません user:%d, got: %d, expected: %d", gc.UserID(), o, gd.traded)
+		if o := len(orders); o < gd.Traded {
+			return errors.Errorf("GET /orders 件数があいません user:%d, got: %d, expected: %d", gc.UserID(), o, gd.Traded)
 		}
 		count := 0
 		for _, o := range orders {
@@ -257,15 +246,12 @@ func (t *PreTester) Run(ctx context.Context) error {
 		eg := new(errgroup.Group)
 		eg.Go(func() error {
 			log.Printf("[INFO] run c1 tasks")
-			if err := t.isubank.AddCredit(account1, 29000); err != nil {
+			if err := t.isubank.AddCredit(account1, 36000); err != nil {
 				return err
 			}
 			for _, ap := range [][]int64{
-				{5, 5105}, // キャンセルされる
-				{2, 5100},
-				{1, 5099},
-				{3, 5104}, // 足りない
-				{2, 5106}, // 99とマッチング
+				{1, 6500},
+				{2, 6900},
 			} {
 				order, err := c1.AddOrder(ctx, TradeTypeBuy, ap[0], ap[1])
 				if err != nil {
@@ -307,19 +293,19 @@ func (t *PreTester) Run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if g, w := len(orders), 4; g != w {
+			if g, w := len(orders), 2; g != w {
 				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
-			if orders[3].Trade == nil {
+			if orders[1].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			bought := orders[3].Trade.Price * 2
+			bought := orders[1].Trade.Price * 2
 			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account1)
 			if err != nil {
 				return err
 			}
-			if rest+bought != 29000 {
+			if rest+bought != 36000 {
 				return errors.Errorf("銀行残高があいません [%d]", rest)
 			}
 			log.Printf("[INFO] 残高チェック OK(c1)")
@@ -352,14 +338,14 @@ func (t *PreTester) Run(ctx context.Context) error {
 								return false, nil
 							}
 							fl = filterLogs(logs, isulog.TagBuyError)
-							if len(fl) < 2 {
+							if len(fl) < 1 {
 								return false, nil
 							}
 							if fl[0].BuyError.Amount != 1 || fl[0].BuyError.Price != 2000 {
 								return false, errors.Errorf("log.buy.errorが正しくありません")
 							}
 							fl = filterLogs(logs, isulog.TagBuyOrder)
-							if len(fl) < 5 {
+							if len(fl) < 2 {
 								return false, nil
 							}
 							fl = filterLogs(logs, isulog.TagBuyTrade)
@@ -383,12 +369,9 @@ func (t *PreTester) Run(ctx context.Context) error {
 		eg.Go(func() error {
 			log.Printf("[INFO] run c2 tasks")
 			for _, ap := range [][]int64{
-				{6, 5106},
-				{2, 5110},
-				{3, 5106},
-				{7, 5104}, // 足りない
-				{1, 5104}, // - 2, 100
-				{1, 5104}, // -
+				{2, 6901},
+				{1, 6900},
+				{1, 6900},
 			} {
 				order, err := c2.AddOrder(ctx, TradeTypeSell, ap[0], ap[1])
 				if err != nil {
@@ -429,16 +412,16 @@ func (t *PreTester) Run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if g, w := len(orders), 6; g != w {
+			if g, w := len(orders), 3; g != w {
 				return errors.Errorf("GET /orders 件数があいません [got:%d, want:%d]", g, w)
 			}
-			if orders[4].Trade == nil {
+			if orders[1].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			if orders[5].Trade == nil {
+			if orders[2].Trade == nil {
 				return errors.Errorf("GET /orders 成立した注文のtradeが設定されていません")
 			}
-			bought := orders[4].Trade.Price + orders[5].Trade.Price
+			bought := orders[1].Trade.Price + orders[2].Trade.Price
 			time.Sleep(300 * time.Millisecond)
 			rest, err := t.isubank.GetCredit(account2)
 			if err != nil {
@@ -451,12 +434,15 @@ func (t *PreTester) Run(ctx context.Context) error {
 
 			return func() error {
 				timeout := time.After(LogAllowedDelay)
+				var logs []*isulog.Log
+				var err error
 				for {
 					select {
 					case <-timeout:
+						log.Printf("[DEBUG] logs % #v", logs)
 						return errors.Errorf("ログが送信されていません(c2)")
 					default:
-						logs, err := t.isulog.GetUserLogs(c2.UserID())
+						logs, err = t.isulog.GetUserLogs(c2.UserID())
 						if err != nil {
 							return errors.Wrap(err, "isulog get user logs failed")
 						}
@@ -477,7 +463,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 								return false, nil
 							}
 							fl = filterLogs(logs, isulog.TagSellOrder)
-							if len(fl) < 5 {
+							if len(fl) < 3 {
 								return false, nil
 							}
 							fl = filterLogs(logs, isulog.TagSellTrade)
@@ -490,7 +476,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 							return err
 						}
 						if ok {
-							log.Printf("[INFO] ログチェック OK(c1)")
+							log.Printf("[INFO] ログチェック OK(c2)")
 							return nil
 						}
 						time.Sleep(PollingInterval)
