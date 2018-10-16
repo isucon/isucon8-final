@@ -298,7 +298,7 @@ router ["DELETE"] => "/order/{id}" => [qw/login_required/] => sub {
                 Isucoin::Exception::OrderAlreadyClosed->caught($err)
             ) {
                 $txn->rollback;
-                return $self->halt(404);
+                return $c->halt(404);
             }
 
         };
