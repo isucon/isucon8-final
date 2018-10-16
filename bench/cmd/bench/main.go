@@ -23,6 +23,7 @@ var (
 	jobid        = flag.String("jobid", "", "portal jobid")
 	logoutput    = flag.String("log", "", "output log path (default stderr)")
 	result       = flag.String("result", "", "result json path (default stdout)")
+	teestdout    = flag.String("teestdout", "", "tee stdout")
 	logout       = os.Stderr
 	out          = os.Stdout
 )
@@ -51,7 +52,12 @@ func main() {
 }
 
 func run() error {
-	mgr, err := bench.NewManager(logout, *appep, *bankep, *logep, *internalbank, *internallog)
+	var tee *os.File
+	if *teestdout != "" {
+		tee, _ = os.Create(*teestdout)
+		defer tee.Close()
+	}
+	mgr, err := bench.NewManager(logout, *appep, *bankep, *logep, *internalbank, *internallog, tee)
 	if err != nil {
 		return err
 	}

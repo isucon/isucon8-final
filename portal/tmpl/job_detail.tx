@@ -58,7 +58,7 @@
                             </tr>
                             <tr>
                                 <th width="10%">Log</th>
-                                <td style="font-size: 0.85rem">
+                                <td style="font-size: 0.85rem" id="logs">
                                   : for $job.result_json.log -> $log {
                                   <: $log | html :><br>
                                   : }
@@ -71,4 +71,22 @@
         </div>
     </section>
 </div>
+
+: if $job.state == 'waiting' || $job.state == 'running' {
+<script>
+$(() => {
+    const c = new WebSocket('ws://<: $job.bench_hostname :>:15873/ws?job=<: $job.id :>');
+    c.onopen = () => {
+        c.onclose = () => {
+            window.setTimeout(() => {
+                location.reload();
+            }, 100);
+        };
+        c.onmessage = (ev) => {
+            $('#logs').append(ev.data).append('<br>');
+        };
+    };
+});
+</script>
+: }
 : }
