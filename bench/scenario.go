@@ -69,9 +69,10 @@ type normalScenario struct {
 	actionchan chan struct{}
 	existed    bool
 	ignoretest bool
+	justprice  bool
 }
 
-func newNormalScenario(c *Client, credit, isu, unit int64) *normalScenario {
+func newNormalScenario(c *Client, credit, isu, unit int64, justprice bool) *normalScenario {
 	return &normalScenario{
 		baseScenario:  &baseScenario{c},
 		defaultCredit: credit,
@@ -81,15 +82,16 @@ func newNormalScenario(c *Client, credit, isu, unit int64) *normalScenario {
 		unitIsu:       unit,
 		orders:        make([]*Order, 0, 60),
 		actionchan:    make(chan struct{}, BenchMarkTime/PollingInterval),
+		justprice:     justprice,
 	}
 }
 
-func NewNormalScenario(c *Client, credit, isu, unit int64) Scenario {
-	return newNormalScenario(c, credit, isu, unit)
+func NewNormalScenario(c *Client, credit, isu, unit int64, justprice bool) Scenario {
+	return newNormalScenario(c, credit, isu, unit, justprice)
 }
 
-func NewExistsUserScenario(c *Client, credit, isu, unit int64) Scenario {
-	s := newNormalScenario(c, credit, isu, unit)
+func NewExistsUserScenario(c *Client, credit, isu, unit int64, justprice bool) Scenario {
+	s := newNormalScenario(c, credit, isu, unit, justprice)
 	s.existed = true
 	s.ignoretest = true
 	return s
@@ -420,12 +422,12 @@ func (s *normalScenario) tryTrade(ctx context.Context) (ScoreType, error) {
 		price--
 	}
 	switch {
-	case buyable/amount > 10:
+	case buyable/amount > 10 && s.justprice:
 		// 10回買い続けられるくらい資金が豊富
 		// 成り行き買い注文
 		ot = TradeTypeBuy
 		price = s.lowestSellPrice
-	case logicalIsu/amount > 10:
+	case logicalIsu/amount > 10 && s.justprice:
 		// 10回売り続けられるくらい椅子が豊富
 		// 成り行き売り注文
 		ot = TradeTypeSell
