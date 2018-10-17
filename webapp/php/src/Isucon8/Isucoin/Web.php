@@ -28,6 +28,10 @@ $container['dbh'] = function (): PDOWrapper {
     ));
 };
 
+# ISUCON用初期データの基準時間です
+# この時間以降のデータはinitializeで削除されます
+$container['base_time'] = new DateTime('2018-10-16 10:00:00');
+
 $app->post('/initialize', function (Request $request, Response $response): Response {
     $tx = $this->dbh->beginTxn();
     try {
@@ -153,7 +157,7 @@ $app->get('/info', function (Request $request, Response $response): Response {
         $res['traded_orders'] = $orders;
     }
 
-    $by_sec_time = (new DateTime())->modify('-300 seconds');
+    $by_sec_time = (clone $this->base_time)->modify('-300 seconds');
     if ($by_sec_time < $lt) {
         $by_sec_time = clone $lt;
     }
@@ -163,7 +167,7 @@ $app->get('/info', function (Request $request, Response $response): Response {
         return resError($response, $throwable->getMessage().': GetCandlestickData by sec', 500);
     }
 
-    $by_min_time = (new DateTime())->modify('-300 minutes');
+    $by_min_time = (clone $this->base_time)->modify('-300 minutes');
     if ($by_min_time < $lt) {
         $by_min_time = new DateTime($lt->format('Y-m-d H:i:00'));
     }
@@ -173,7 +177,7 @@ $app->get('/info', function (Request $request, Response $response): Response {
         return resError($response, $throwable->getMessage().': GetCandlestickData by min', 500);
     }
 
-    $by_hour_time = (new DateTime())->modify('-48 hours');
+    $by_hour_time = (clone $this->base_time)->modify('-48 hours');
     if ($by_hour_time < $lt) {
         $by_hour_time = new DateTime($lt->format('Y-m-d H:00:00'));
     }

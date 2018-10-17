@@ -91,7 +91,7 @@ ISUBANKのIDの存在確認をし、正しければ登録する。
         - error: invalid params
         - error: 残高不足
     - status: 401
-        - error: unautholize
+        - error: unauthorized
     - status: 500
         - error: server error
 - log
@@ -114,7 +114,7 @@ ISUBANKのIDの存在確認をし、正しければ登録する。
     - status: 200
         - id: $order.id
     - status: 401
-        - error: unautholize
+        - error: unauthorized
     - status: 404
         - error: not found
         - error: already closed
@@ -147,7 +147,7 @@ ISUBANKのIDの存在確認をし、正しければ登録する。
                 - price      : $price (取引価格)
                 - created_at : $created_at (成立時間)
     - status: 401
-        - error: unautholize
+        - error: unauthorized
     - status: 500
         - error: server error
 

@@ -20,6 +20,12 @@ const (
 	SessionName = "isucoin_session"
 )
 
+var (
+	// ISUCON用初期データの基準時間です
+	// この時間以降のデータはInitializeで削除されます
+	BaseTime = time.Date(2018, 10, 16, 10, 0, 0, 0, time.Local)
+)
+
 type Handler struct {
 	db    *sql.DB
 	store sessions.Store
@@ -165,7 +171,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		res["traded_orders"] = orders
 	}
 
-	bySecTime := time.Now().Add(-300 * time.Second)
+	bySecTime := BaseTime.Add(-300 * time.Second)
 	if lt.After(bySecTime) {
 		bySecTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), lt.Second(), 0, lt.Location())
 	}
@@ -175,7 +181,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		return
 	}
 
-	byMinTime := time.Now().Add(-300 * time.Minute)
+	byMinTime := BaseTime.Add(-300 * time.Minute)
 	if lt.After(byMinTime) {
 		byMinTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, lt.Location())
 	}
@@ -185,7 +191,7 @@ func (h *Handler) Info(w http.ResponseWriter, r *http.Request, _ httprouter.Para
 		return
 	}
 
-	byHourTime := time.Now().Add(-48 * time.Hour)
+	byHourTime := BaseTime.Add(-48 * time.Hour)
 	if lt.After(byHourTime) {
 		byHourTime = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, lt.Location())
 	}

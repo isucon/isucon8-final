@@ -25,6 +25,9 @@ public = os.environ.get("ISU_PUBLIC_DIR", "public")
 app = flask.Flask(__name__, static_url_path="", static_folder=public)
 app.secret_key = "tonymoris"
 
+# ISUCON用初期データの基準時間です
+# この時間以降のデータはinitializeで削除されます
+base_time = datetime.datetime(2018, 10, 16, 10, 0, 0)
 
 _dbconn = None
 
@@ -209,19 +212,17 @@ def info():
 
         res["traded_orders"] = orders
 
-    now = datetime.datetime.now()
-
-    from_t = now - datetime.timedelta(seconds=300)
+    from_t = base_time - datetime.timedelta(seconds=300)
     if lt and lt > from_t:
         from_t = lt.replace(microsecond=0)
     res["chart_by_sec"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:%i:%s")
 
-    from_t = now - datetime.timedelta(minutes=300)
+    from_t = base_time - datetime.timedelta(minutes=300)
     if lt and lt > from_t:
         from_t = lt.replace(second=0, microsecond=0)
     res["chart_by_min"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:%i:00")
 
-    from_t = now - datetime.timedelta(hours=48)
+    from_t = base_time - datetime.timedelta(hours=48)
     if lt and lt > from_t:
         from_t = lt.replace(minute=0, second=0, microsecond=0)
     res["chart_by_hour"] = model.get_candlestic_data(db, from_t, "%Y-%m-%d %H:00:00")

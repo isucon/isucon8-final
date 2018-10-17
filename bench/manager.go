@@ -37,23 +37,31 @@ type Manager struct {
 
 	scounter   int32
 	scoreboard *ScoreBoard
+	tupointer  int
+	testusers  []TestUser
 }
 
 func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string, tee io.Writer) (*Manager, error) {
-	rand, err := NewRandom()
+	rnd, err := NewRandom()
 	if err != nil {
 		return nil, err
 	}
-	bank, err := isubank.NewIsubank(internalbank, rand.ID())
+	bank, err := isubank.NewIsubank(internalbank, rnd.ID())
 	if err != nil {
 		return nil, err
 	}
-	isulog, err := isulog.NewIsulog(internallog, rand.ID())
+	isulog, err := isulog.NewIsulog(internallog, rnd.ID())
 	if err != nil {
 		return nil, err
 	}
 	scoreboard := &ScoreBoard{
 		count: make(map[ScoreType]int64, 20),
+	}
+	_testusers := make([]TestUser, len(testUsers))
+	copy(_testusers, testUsers)
+	for i := range _testusers {
+		j := rand.Intn(i + 1)
+		_testusers[i], _testusers[j] = _testusers[j], _testusers[i]
 	}
 	logs := &bytes.Buffer{}
 	var writer io.Writer
@@ -67,7 +75,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		appep:      appep,
 		bankep:     bankep,
 		logep:      logep,
-		rand:       rand,
+		rand:       rnd,
 		isubank:    bank,
 		isulog:     isulog,
 		idlist:     make(chan string, 10),
@@ -75,6 +83,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		logs:       logs,
 		scenarios:  make([]Scenario, 0, 2000),
 		scoreboard: scoreboard,
+		testusers:  _testusers,
 	}, nil
 }
 
@@ -256,51 +265,53 @@ func (c *Manager) ScenarioStart(ctx context.Context) error {
 	return err
 }
 
+func (c *Manager) nextTestUser() TestUser {
+	i := c.tupointer
+	c.tupointer++
+	if c.tupointer >= len(c.testusers) {
+		c.tupointer = 0
+	}
+	return c.testusers[i]
+}
+
 func (c *Manager) newScenario() (Scenario, error) {
 	var credit, isu, unit int64
+	var justprice bool
 	n := atomic.AddInt32(&c.scounter, 1)
 	switch {
-	case n%9 == 3 && n < 31: // 3, 12, 21, 30
-		accounts := []string{"5gf4syuu", "qgar5ge8dv4g", "gv3bsxzejbb4", "jybp5gysw279"}
-		cl, err := NewClient(c.appep, accounts[int(n/9)], "わからない", "12345", ClientTimeout, RetireTimeout)
-		if err != nil {
-			return nil, err
+	case n%10 == 3:
+		for {
+			tu := c.nextTestUser()
+			if tu.Cost == 10 {
+				cl, err := NewClient(c.appep, tu.BankID, tu.Name, "12345", ClientTimeout, RetireTimeout)
+				if err != nil {
+					return nil, err
+				}
+				log.Printf("[DEBUG] add BruteForce %s", tu.BankID)
+				return NewBruteForceScenario(cl), nil
+			}
 		}
-		log.Printf("[DEBUG] add BruteForce")
-		return NewBruteForceScenario(cl), nil
-	case n == 7 || n == 25:
-		accounts := []struct {
-			account, name, pass string
-			order, traded       int
-		}{
-			{"hpnwwt", "吉田 一", "5y62vet3dcepg", 547, 447},
-			{"2q5m84je", "相田 大悟", "qme4bak7x3ng", 521, 420},
-			{"cymy39gqttm", "泉 結子", "8fnw4226kd63tv", 545, 441},
-			{"2e633gvuk8r", "谷本 楓花", "6f2fkzybgmhxynxp", 563, 447},
-		}
-		d := accounts[rand.Intn(2)]
-		if n == 25 {
-			d = accounts[2+rand.Intn(2)]
-		}
-		cl, err := NewClient(c.appep, d.account, d.name, d.pass, ClientTimeout, RetireTimeout)
+	case n%5 == 2:
+		tu := c.nextTestUser()
+		cl, err := NewClient(c.appep, tu.BankID, tu.Name, tu.Pass, ClientTimeout, RetireTimeout)
 		if err != nil {
 			return nil, err
 		}
 		// この人達を成り行きにはしたくないけどしょうがない
-		credit, err = c.isubank.GetCredit(d.account)
+		credit, err = c.isubank.GetCredit(tu.BankID)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("[DEBUG] add heavy user")
-		return NewExistsUserScenario(cl, credit, 10, 3), nil
+		log.Printf("[DEBUG] add exists user")
+		return NewExistsUserScenario(cl, credit, 10, 3, false), nil
+	case n == 10 || n == 20 || n == 30:
+		// 成り行き買い
+		credit, isu, unit, justprice = 5000000, 0, 5, true
+	case n == 11 || n == 21 || n == 31:
+		// 成り行き売り
+		credit, isu, unit, justprice = 0, 200, 5, true
 	case n < 16:
 		credit, isu, unit = 30000, 5, 1
-	case n == 20:
-		// 成り行き買い
-		credit, isu, unit = 500000, 0, 5
-	case n == 21 || n == 11 || n == 31:
-		// 成り行き売り
-		credit, isu, unit = 0, 100, 5
 	default:
 		credit, isu, unit = 35000, 7, 3
 	}
@@ -311,7 +322,7 @@ func (c *Manager) newScenario() (Scenario, error) {
 	if credit > 0 {
 		c.isubank.AddCredit(cl.bankid, credit)
 	}
-	return NewNormalScenario(cl, credit, isu, unit), nil
+	return NewNormalScenario(cl, credit, isu, unit, justprice), nil
 }
 
 func (c *Manager) startScenarios(ctx context.Context, smchan chan ScoreMsg, num int) error {
