@@ -1,70 +1,11 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 import axios from 'axios'
+import * as Model from '@/model'
 
 Vue.use(Vuex)
 
-export interface User {
-  id: number
-  name: string
-}
-
-export interface Trade {
-  id: number
-  amount: number
-  price: number
-  created_at: ''
-}
-
-export interface Order {
-  id: number
-  type: string
-  user_id: number
-  amount: number
-  price: number
-  closed_at: string | null
-  trade_id: number
-  created_at: string
-  user: User
-  trade: Trade
-}
-
-export interface ChartData {
-  close: number
-  high: number
-  low: number
-  open: number
-  time: string
-}
-
-export interface Info {
-  chart_by_hour: ChartData[]
-  chart_by_min: ChartData[]
-  chart_by_sec: ChartData[]
-  cursor: number
-  enable_share: boolean
-  highest_buy_price: number
-  lowest_sell_price: number
-  traded_orders: Order[]
-}
-
-export type ModalType = 'signup' | 'signin'
-
-export type ChartType = 'hour' | 'min' | 'sec'
-
-export interface State {
-  chartType: ChartType
-  hasSigninError: boolean
-  hasSignupError: boolean
-  info: Info | null
-  isModalOpen: boolean
-  modalType: ModalType
-  orders: []
-  user: User | null
-}
-
-
-const initialState: State = {
+const initialState: Model.State = {
   chartType: 'min',
   hasSigninError: false,
   hasSignupError: false,
@@ -75,12 +16,12 @@ const initialState: State = {
   user: null,
 }
 
-const updateChartData = (targetChart: ChartData[], receivedChart: ChartData[]) => {
-  receivedChart.forEach((data: ChartData) => {
-    const duplicatedData = targetChart.find((element: ChartData) => element.time === data.time)
+const updateChartData = (targetChart: Model.ChartData[], receivedChart: Model.ChartData[]) => {
+  receivedChart.forEach((data: Model.ChartData) => {
+    const duplicatedData = targetChart.find((element: Model.ChartData) => element.time === data.time)
 
     if (duplicatedData) {
-      targetChart.map((element: ChartData) => {
+      targetChart.map((element: Model.ChartData) => {
         return duplicatedData.time === element.time ? data : element
       })
     } else {
@@ -182,7 +123,7 @@ export default new Vuex.Store({
       try {
         const response = await axios.get('/orders')
         if (response.status === 200) {
-          commit('setOrders', response.data as Order[])
+          commit('setOrders', response.data as Model.Order[])
         }
       } catch (error) {
         throw error

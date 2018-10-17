@@ -11,7 +11,7 @@
 import Vue from 'vue'
 import { mapActions, mapState } from 'vuex'
 import axios from 'axios'
-import { Order } from '../store'
+import { Order } from '../model'
 
 declare const moment: any
 
