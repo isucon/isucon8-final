@@ -7,7 +7,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "cpm install && carton install && carton exec plackup -s Starlet --port=$${ISU_APP_PORT} --reload app.psgi"
+      - "cpm install && carton install && carton exec plackup -s Starlet --port=$${ISU_APP_PORT} --reload --max-workers=5 app.psgi"
     working_dir: /perl
     volumes:
       - ./perl:/perl
