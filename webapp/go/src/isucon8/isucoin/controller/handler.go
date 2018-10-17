@@ -38,7 +38,7 @@ func NewHandler(db *sql.DB, store sessions.Store) *Handler {
 }
 
 func (h *Handler) Initialize(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	err := h.txScorp(func(tx *sql.Tx) error {
+	err := h.txScope(func(tx *sql.Tx) error {
 		if err := model.InitBenchmark(tx); err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request, _ httprouter.Pa
 		h.handleError(w, errors.New("all parameters are required"), 400)
 		return
 	}
-	err := h.txScorp(func(tx *sql.Tx) error {
+	err := h.txScope(func(tx *sql.Tx) error {
 		return model.UserSignup(tx, name, bankID, password)
 	})
 	switch {
@@ -234,7 +234,7 @@ func (h *Handler) AddOrders(w http.ResponseWriter, r *http.Request, _ httprouter
 	amount, _ := strconv.ParseInt(r.FormValue("amount"), 10, 64)
 	price, _ := strconv.ParseInt(r.FormValue("price"), 10, 64)
 	var order *model.Order
-	err = h.txScorp(func(tx *sql.Tx) (err error) {
+	err = h.txScope(func(tx *sql.Tx) (err error) {
 		order, err = model.AddOrder(tx, r.FormValue("type"), user.ID, amount, price)
 		return
 	})
@@ -288,7 +288,7 @@ func (h *Handler) DeleteOrders(w http.ResponseWriter, r *http.Request, p httprou
 		return
 	}
 	id, _ := strconv.ParseInt(p.ByName("id"), 10, 64)
-	err = h.txScorp(func(tx *sql.Tx) error {
+	err = h.txScope(func(tx *sql.Tx) error {
 		return model.DeleteOrder(tx, user.ID, id, "canceled")
 	})
 	switch {
@@ -371,7 +371,7 @@ func (h *Handler) handleError(w http.ResponseWriter, err error, code int) {
 	}
 }
 
-func (h *Handler) txScorp(f func(*sql.Tx) error) (err error) {
+func (h *Handler) txScope(f func(*sql.Tx) error) (err error) {
 	var tx *sql.Tx
 	tx, err = h.db.Begin()
 	if err != nil {

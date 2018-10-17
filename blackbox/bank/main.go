@@ -204,7 +204,7 @@ func (s *Handler) AddCredit(w http.ResponseWriter, r *http.Request) {
 	if userID <= 0 {
 		return
 	}
-	err := s.txScorp(func(tx *sql.Tx) error {
+	err := s.txScope(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
 			return errors.Wrap(err, "select lock failed")
 		}
@@ -268,7 +268,7 @@ func (s *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Success(w)
 		return
 	}
-	err = s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScope(func(tx *sql.Tx) error {
 		var credit int64
 		if err := tx.QueryRow(`SELECT credit FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID).Scan(&credit); err != nil {
 			return errors.Wrap(err, "select credit failed")
@@ -321,7 +321,7 @@ func (s *Handler) Reserve(w http.ResponseWriter, r *http.Request) {
 	var rsvID int64
 	price := req.Price
 	memo := fmt.Sprintf("app:%s, price:%d", appid, req.Price)
-	err = s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScope(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`SELECT id FROM user WHERE id = ? LIMIT 1 FOR UPDATE`, userID); err != nil {
 			return errors.Wrap(err, "select lock failed")
 		}
@@ -385,7 +385,7 @@ func (s *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	err = s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScope(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
 		rids := make([]interface{}, l)
@@ -488,7 +488,7 @@ func (s *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		Error(w, "reserve_ids is required", http.StatusBadRequest)
 		return
 	}
-	err = s.txScorp(func(tx *sql.Tx) error {
+	err = s.txScope(func(tx *sql.Tx) error {
 		l := len(req.ReserveIDs)
 		holder := "?" + strings.Repeat(",?", l-1)
 		rids := make([]interface{}, l)
@@ -589,7 +589,7 @@ func (s *Handler) filterBankID(w http.ResponseWriter, bankID string) int64 {
 	return id
 }
 
-func (s *Handler) txScorp(f func(*sql.Tx) error) (err error) {
+func (s *Handler) txScope(f func(*sql.Tx) error) (err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return errors.Wrap(err, "begin transaction failed")
