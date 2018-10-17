@@ -20,8 +20,8 @@ type PreTester struct {
 }
 
 func (t *PreTester) Run(ctx context.Context) error {
-	// TODO: 並列化できるところをする
 	now := time.Now()
+	eg := new(errgroup.Group)
 
 	account1 := fmt.Sprintf("asuzuki%d@isucon.net", now.Unix())
 	account2 := fmt.Sprintf("tmorris%d@isucon.net", now.Unix())
@@ -36,12 +36,12 @@ func (t *PreTester) Run(ctx context.Context) error {
 		return errors.Wrap(err, "create new client failed")
 	}
 
-	// Top
-	if err := c2.Top(ctx); err != nil {
-		return err
-	}
-
-	{
+	eg.Go(func() error {
+		log.Printf("[INFO] run guest test")
+		// Top
+		if err := c2.Top(ctx); err != nil {
+			return err
+		}
 		// 非ログイン /info
 		info, err := c2.Info(ctx, 0)
 		if err != nil {
@@ -57,6 +57,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 			return errors.Errorf("GET /info highest_buy_price と lowest_sell_price の関係が取引可能状態です")
 		}
 		// 初期データ件数は変動しない (TODO: 詳細もチェックするかどうか)
+		log.Printf("[DEBUG] sec:%d, min:%d, hour:%d", len(info.ChartBySec), len(info.ChartByMin), len(info.ChartByHour))
 		if len(info.ChartBySec) < 143 {
 			return errors.Errorf("GET /info chart_by_sec の件数が初期データよりも少なくなっています")
 		}
@@ -66,9 +67,10 @@ func (t *PreTester) Run(ctx context.Context) error {
 		if len(info.ChartByHour) < 48 {
 			return errors.Errorf("GET /info chart_by_hour の件数が初期データよりも少なくなっています")
 		}
-	}
-	{
-		// アカウントがない
+		return nil
+	})
+	eg.Go(func() error {
+		log.Printf("[INFO] run no acount test")
 		err := c1.Signin(ctx)
 		if err == nil {
 			return errors.New("POST /signin 存在しないアカウントでログインに成功しました")
@@ -80,8 +82,10 @@ func (t *PreTester) Run(ctx context.Context) error {
 		} else {
 			return errors.Wrap(err, "POST /signin に失敗しました")
 		}
-	}
-	{
+		return nil
+	})
+	eg.Go(func() error {
+		log.Printf("[INFO] run exists user test")
 		gd := testUsers[rand.Intn(10)]
 		gc, err := NewClient(t.appep, gd.BankID, gd.Name, gd.Pass, ClientTimeout, RetireTimeout)
 		if err != nil {
@@ -94,7 +98,6 @@ func (t *PreTester) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// TODO: Fix
 		if len(info.TradedOrders) < gd.Traded {
 			return errors.Errorf("GET /info traded_ordersの件数が少ないです user:%d, got: %d, expected: %d", gc.UserID(), len(info.TradedOrders), gd.Traded)
 		}
@@ -114,9 +117,11 @@ func (t *PreTester) Run(ctx context.Context) error {
 		if count != len(info.TradedOrders) {
 			return errors.Errorf("GET /orders trade が正しく設定されていない可能性があります")
 		}
-	}
+		return nil
+	})
 
-	{
+	eg.Go(func() error {
+		log.Printf("[INFO] run bunk id not exist test")
 		// BANK IDが存在しない
 		err := c1.Signup(ctx)
 		if err == nil {
@@ -129,6 +134,11 @@ func (t *PreTester) Run(ctx context.Context) error {
 		} else {
 			return errors.Wrap(err, "POST /signup に失敗しました")
 		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
 	for _, id := range []string{account1, account2} {
@@ -138,6 +148,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 	}
 
 	{
+		log.Printf("[INFO] run signup and signin")
 		eg := new(errgroup.Group)
 		for _, c0 := range []*Client{c1, c2} {
 			c := c0
@@ -163,11 +174,10 @@ func (t *PreTester) Run(ctx context.Context) error {
 		if err := eg.Wait(); err != nil {
 			return err
 		}
-		log.Printf("[INFO] signup and signin OK")
 	}
 
 	{
-		// conflict
+		log.Printf("[INFO] run conflict test")
 		c1x, err := NewClient(t.appep, account1, "鈴木 昭夫", "13467890abc", ClientTimeout, RetireTimeout)
 		if err != nil {
 			return errors.Wrap(err, "create new client failed")
@@ -183,11 +193,10 @@ func (t *PreTester) Run(ctx context.Context) error {
 		} else {
 			return errors.Wrap(err, "POST /signup に失敗しました")
 		}
-		log.Printf("[INFO] conflict check OK")
 	}
 
 	{
-		// お金がない状態でのorder
+		log.Printf("[INFO] run buy order no money")
 		order, err := c1.AddOrder(ctx, TradeTypeBuy, 1, 2000)
 		if err == nil {
 			return errors.Errorf("POST /orders 銀行に残高が足りない買い注文に成功しました [order_id:%d]", order.ID)
@@ -199,11 +208,11 @@ func (t *PreTester) Run(ctx context.Context) error {
 		} else {
 			return errors.Wrap(err, "POST /orders に失敗しました")
 		}
-		log.Printf("[INFO] order no money OK")
 	}
 
 	// 売り注文は成功する
 	{
+		log.Printf("[INFO] run sell order")
 		o, err := c1.AddOrder(ctx, TradeTypeSell, 1, 1000)
 		if err != nil {
 			return err
@@ -228,6 +237,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 			return errors.Errorf("GET /orders Typeが正しくありません[got:%s, want:%s]", g, w)
 		}
 
+		log.Printf("[INFO] run delete order")
 		if err = c1.DeleteOrders(ctx, o.ID); err != nil {
 			return err
 		}
@@ -238,34 +248,49 @@ func (t *PreTester) Run(ctx context.Context) error {
 		if g, w := len(orders), 0; g != w {
 			return errors.Errorf("GET /orders 件数が正しくありません[got:%d, want:%d]", g, w)
 		}
-		log.Printf("[INFO] sell order test OK")
 	}
 
 	{
+		log.Printf("[INFO] run trade matching")
 		// 注文をして成立させる
-		eg := new(errgroup.Group)
-		eg.Go(func() error {
-			log.Printf("[INFO] run c1 tasks")
-			if err := t.isubank.AddCredit(account1, 36000); err != nil {
+		// 注文(敢えて並列にしない)
+		if err := t.isubank.AddCredit(account1, 36000); err != nil {
+			return err
+		}
+		for _, ap := range []struct {
+			t     string
+			c     *Client
+			amont int64
+			price int64
+		}{
+			{TradeTypeSell, c2, 2, 6901},
+			{TradeTypeBuy, c1, 1, 6500},
+			{TradeTypeSell, c2, 1, 6900},
+			{TradeTypeBuy, c1, 2, 6900},
+			{TradeTypeSell, c2, 1, 6900},
+		} {
+			var typeName string
+			if ap.t == TradeTypeBuy {
+				typeName = "買い注文"
+			} else {
+				typeName = "売り注文"
+			}
+			order, err := ap.c.AddOrder(ctx, ap.t, ap.amont, ap.price)
+			if err != nil {
+				return errors.Wrapf(err, "POST /orders %sに失敗しました [amount:%d, price:%d]", typeName, ap.amont, ap.price)
+			}
+			orders, err := ap.c.GetOrders(ctx)
+			if err != nil {
 				return err
 			}
-			for _, ap := range [][]int64{
-				{1, 6500},
-				{2, 6900},
-			} {
-				order, err := c1.AddOrder(ctx, TradeTypeBuy, ap[0], ap[1])
-				if err != nil {
-					return errors.Wrapf(err, "POST /orders 買い注文に失敗しました [amount:%d, price:%d]", ap[0], ap[1])
-				}
-				orders, err := c1.GetOrders(ctx)
-				if err != nil {
-					return err
-				}
-				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 買い注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
-				}
+			if len(orders) == 0 || orders[len(orders)-1].ID != order.ID {
+				return errors.Errorf("GET /orders %sが反映されていません got: %d, want: %d", typeName, orders[len(orders)-1].ID, order.ID)
 			}
-			log.Printf("[INFO] send order finish")
+		}
+		log.Printf("[INFO] end order")
+		eg := new(errgroup.Group)
+		eg.Go(func() error {
+			log.Printf("[INFO] run c1 checker")
 			err := func() error {
 				timeout := time.After(TestTradeTimeout)
 				for {
@@ -367,24 +392,7 @@ func (t *PreTester) Run(ctx context.Context) error {
 			}()
 		})
 		eg.Go(func() error {
-			log.Printf("[INFO] run c2 tasks")
-			for _, ap := range [][]int64{
-				{2, 6901},
-				{1, 6900},
-				{1, 6900},
-			} {
-				order, err := c2.AddOrder(ctx, TradeTypeSell, ap[0], ap[1])
-				if err != nil {
-					return errors.Wrap(err, "POST /orders 売り注文に失敗しました")
-				}
-				orders, err := c2.GetOrders(ctx)
-				if err != nil {
-					return err
-				}
-				if orders[len(orders)-1].ID != order.ID {
-					return errors.Errorf("GET /orders 売り注文が反映されていません got: %d, want: %d", orders[len(orders)-1].ID, order.ID)
-				}
-			}
+			log.Printf("[INFO] run c2 checker")
 			err := func() error {
 				timeout := time.After(TestTradeTimeout)
 				for {
