@@ -1,45 +1,38 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 import axios from 'axios'
+import * as Model from '@/model'
 
 Vue.use(Vuex)
 
-export interface User {
-  id: number
-  name: string
+const initialState: Model.State = {
+  chartType: 'min',
+  hasSigninError: false,
+  hasSignupError: false,
+  info: null,
+  isModalOpen: false,
+  modalType: 'signup',
+  orders: [],
+  user: null,
 }
 
-export interface Trade {
-  id: number
-  amount: number
-  price: number
-  created_at: ''
-}
+const updateChartData = (targetChart: Model.ChartData[], receivedChart: Model.ChartData[]) => {
+  receivedChart.forEach((data: Model.ChartData) => {
+    const duplicatedData = targetChart.find((element: Model.ChartData) => element.time === data.time)
 
-export interface Order {
-  id: number
-  type: string
-  user_id: number
-  amount: number
-  price: number
-  closed_at: string | null
-  trade_id: number
-  created_at: string
-  user: User
-  trade: Trade
+    if (duplicatedData) {
+      targetChart.map((element: Model.ChartData) => {
+        return duplicatedData.time === element.time ? data : element
+      })
+    } else {
+      targetChart.push(data)
+      targetChart.shift()
+    }
+  })
 }
 
 export default new Vuex.Store({
-  state: {
-    chartType: 'min',
-    hasSigninError: false,
-    hasSignupError: false,
-    info: null,
-    isModalOpen: false,
-    modalType: 'signup',
-    orders: [],
-    user: null,
-  },
+  state: initialState,
   mutations: {
     openModal(state) {
       state.isModalOpen = true
@@ -51,7 +44,21 @@ export default new Vuex.Store({
       state.modalType = type
     },
     setInfo(state, info) {
-      state.info = info
+      if (state.info === null) {
+        state.info = info
+        return
+      }
+
+      updateChartData(state.info.chart_by_hour, info.chart_by_hour)
+      updateChartData(state.info.chart_by_min, info.chart_by_min)
+      updateChartData(state.info.chart_by_sec, info.chart_by_sec)
+
+      state.info = {
+        ...info,
+        chart_by_hour: state.info.chart_by_hour,
+        chart_by_min: state.info.chart_by_min,
+        chart_by_sec: state.info.chart_by_sec,
+      }
     },
     setChartType(state, type) {
       state.chartType = type
@@ -116,7 +123,7 @@ export default new Vuex.Store({
       try {
         const response = await axios.get('/orders')
         if (response.status === 200) {
-          commit('setOrders', response.data as Order[])
+          commit('setOrders', response.data as Model.Order[])
         }
       } catch (error) {
         throw error

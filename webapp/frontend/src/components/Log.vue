@@ -2,7 +2,7 @@
   <div class="log">
     <h3 class="title">履歴</h3>
     <ul class="orders">
-      <li class="order" v-for='order in orders' :key='order.id' :data-type='order.type' :data-traded='isTradedOrder(order) ? "true" : "false"'>{{ `${getDate(order.created_at)}\n脚数: ${order.amount}, 単価: ${order.price}` }}<button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button></li>
+      <li class="order" v-for='order in orders' :key='order.id' :data-type='order.type' :data-traded='isTradedOrder(order) ? "true" : "false"' :data-closed='order.closed_at ? "true" : "false"'>{{ `${getDate(order.created_at)}\n脚数: ${order.amount}, 単価: ${order.price}` }}<button class="cancel" @click.prevent='deleteOrders(order.id)'>×</button></li>
     </ul>
   </div>  
 </template>
@@ -11,7 +11,7 @@
 import Vue from 'vue'
 import { mapActions, mapState } from 'vuex'
 import axios from 'axios'
-import { Order } from '../store'
+import { Order } from '../model'
 
 declare const moment: any
 
@@ -103,6 +103,10 @@ export default Vue.extend({
 
   &[data-traded='true']
     animation: traded-order 3s linear 0s
+  
+  &[data-closed='true']
+    opacity: 0.4
+    font-style: italic
 
 @keyframes traded-order
   0%
@@ -131,5 +135,8 @@ export default Vue.extend({
 
   &:active
     background-color: rgba(0,0,0,0.24)
+  
+  [data-closed='true'] &
+    visibility: hidden
 
 </style>

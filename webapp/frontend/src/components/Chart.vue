@@ -12,17 +12,10 @@
 <script lang="ts">
 import Vue from 'vue'
 import { mapState, mapMutations } from 'vuex'
+import { ChartData } from '../model'
 
 declare const moment: any
 declare const Chart: any
-
-interface ChartData {
-  close: number
-  high: number
-  low: number
-  open: number
-  time: string
-}
 
 interface ConvertedData {
   c: number
@@ -34,6 +27,22 @@ interface ConvertedData {
 
 interface Data {
   ctx: CanvasRenderingContext2D | null
+}
+
+const convertDataStructure = (data: ChartData[]): ConvertedData[] => {
+  return data.map((d) => {
+    return {
+      c: d.close,
+      h: d.high,
+      l: d.low,
+      o: d.open,
+      t: moment(d.time).valueOf() as number,
+    }
+  })
+}
+
+const reduceChartData = (chart: ChartData[]) => {
+  return chart.filter((data, index) => index < 60 * 3)
 }
 
 export default Vue.extend({
@@ -51,26 +60,12 @@ export default Vue.extend({
 
   methods: {
     ...mapMutations(['setChartType']),
-    convertDataStructure(data: ChartData[]): ConvertedData[] {
-      return data.map((d) => {
-        return {
-          c: d.close,
-          h: d.high,
-          l: d.low,
-          o: d.open,
-          t: moment(d.time).valueOf() as number,
-        }
-      })
-    },
     getChartData() {
       if (!this.info) { return }
       return this.chartType === 'hour' ? this.info.chart_by_hour
         : this.chartType === 'min' ? this.info.chart_by_min
-        : this.chartType === 'sec' ? this.reduceChartData(this.info.chart_by_sec)
+        : this.chartType === 'sec' ? reduceChartData(this.info.chart_by_sec)
         : null
-    },
-    reduceChartData(chart: ChartData[]) {
-      return chart.filter((data, index) => index < 60 * 3)
     },
     setupContext2d() {
       const canvas = this.$refs.canvas as HTMLCanvasElement
@@ -90,7 +85,7 @@ export default Vue.extend({
           data: {
             datasets: [{
               label: 'ISUCOIN Chart',
-              data: this.convertDataStructure(this.getChartData()),
+              data: convertDataStructure(this.getChartData()),
             }],
           },
         },
