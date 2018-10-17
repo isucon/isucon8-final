@@ -54,17 +54,17 @@ func main() {
 
 func run() error {
 	var (
-		out io.Writer
-		tee *os.File
+		writer io.Writer
+		tee    *os.File
 	)
 	if *teestdout != "" {
 		tee, _ = os.Create(*teestdout)
-		out = io.MultiWriter(logout, tee)
+		writer = io.MultiWriter(logout, tee)
 		defer tee.Close()
 	} else {
-		out = logout
+		writer = logout
 	}
-	mgr, err := bench.NewManager(out, *appep, *bankep, *logep, *internalbank, *internallog)
+	mgr, err := bench.NewManager(writer, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}

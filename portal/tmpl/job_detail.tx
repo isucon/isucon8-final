@@ -72,7 +72,7 @@
     </section>
 </div>
 
-: if $job.state == 'waiting' || $job.state == 'running' {
+: if $job.state == 'running' {
 <script>
 $(() => {
     const c = new WebSocket('ws://<: $job.bench_hostname :>:15873/ws?job=<: $job.id :>');
