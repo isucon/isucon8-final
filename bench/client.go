@@ -413,9 +413,10 @@ func (c *Client) Top(ctx context.Context) error {
 				return errors.Wrapf(err, "GET %s body read failed", sf.Path)
 			}
 			if res.StatusCode == 200 {
-				if res.ContentLength != sf.Size {
-					return errors.Wrapf(err, "GET %s content length is not match. got:%d, want:%d", sf.Path, res.ContentLength, sf.Size)
-				}
+				// HashさえチェックすればSizeチェックはいらないはず?
+				// if res.ContentLength != sf.Size {
+				// 	return errors.Wrapf(err, "GET %s content length is not match. got:%d, want:%d", sf.Path, res.ContentLength, sf.Size)
+				// }
 				if res.Hash != sf.Hash {
 					return errors.Wrapf(err, "GET %s content is modified.", sf.Path)
 				}
