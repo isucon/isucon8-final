@@ -41,7 +41,7 @@ type Manager struct {
 	testusers  []TestUser
 }
 
-func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string, tee io.Writer) (*Manager, error) {
+func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
 	rnd, err := NewRandom()
 	if err != nil {
 		return nil, err
@@ -64,14 +64,8 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		_testusers[i], _testusers[j] = _testusers[j], _testusers[i]
 	}
 	logs := &bytes.Buffer{}
-	var writer io.Writer
-	if tee != nil {
-		writer = io.MultiWriter(out, logs, tee)
-	} else {
-		writer = io.MultiWriter(out, logs)
-	}
 	return &Manager{
-		logger:     NewLogger(writer),
+		logger:     NewLogger(io.MultiWriter(out, logs)),
 		appep:      appep,
 		bankep:     bankep,
 		logep:      logep,

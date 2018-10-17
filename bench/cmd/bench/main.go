@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -52,12 +53,18 @@ func main() {
 }
 
 func run() error {
-	var tee *os.File
+	var (
+		out io.Writer
+		tee *os.File
+	)
 	if *teestdout != "" {
 		tee, _ = os.Create(*teestdout)
+		out = io.MultiWriter(logout, tee)
 		defer tee.Close()
+	} else {
+		out = logout
 	}
-	mgr, err := bench.NewManager(logout, *appep, *bankep, *logep, *internalbank, *internallog, tee)
+	mgr, err := bench.NewManager(out, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}
