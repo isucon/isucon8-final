@@ -400,6 +400,12 @@ func (c *Client) Top(ctx context.Context) error {
 		"/",
 		"/favicon.ico",
 		"/js/moment.min.js",
+		"/js/Chart.min.js",
+		"/js/Chart.Financial.js",
+		//"/css/app.afc1317c.css",
+		//"/js/app.a6721fee.js",
+		//"/js/chunk-vendors.3f054da5.js",
+		"/img/isucoin_logo.png",
 		// TODO static files
 		// "/css/bootstrap-grid.min.css",
 		// "/css/bootstrap-reboot.min.css",
