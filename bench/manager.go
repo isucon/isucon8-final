@@ -37,7 +37,6 @@ type Manager struct {
 
 	scounter   int32
 	scoreboard *ScoreBoard
-	tupointer  int
 	testusers  []TestUser
 }
 
@@ -259,13 +258,17 @@ func (c *Manager) ScenarioStart(ctx context.Context) error {
 	return err
 }
 
-func (c *Manager) nextTestUser() TestUser {
-	i := c.tupointer
-	c.tupointer++
-	if c.tupointer >= len(c.testusers) {
-		c.tupointer = 0
+func (c *Manager) nextTestUser(cost int) TestUser {
+	if len(c.testusers) == 0 {
+		return TestUser{}
 	}
-	return c.testusers[i]
+	for i, tu := range c.testusers {
+		if tu.Cost >= cost {
+			c.testusers = append(c.testusers[:i], c.testusers[i+1:]...)
+			return tu
+		}
+	}
+	return c.nextTestUser(cost - 1)
 }
 
 func (c *Manager) newScenario() (Scenario, error) {
@@ -274,30 +277,30 @@ func (c *Manager) newScenario() (Scenario, error) {
 	n := atomic.AddInt32(&c.scounter, 1)
 	switch {
 	case n%10 == 3:
-		for {
-			tu := c.nextTestUser()
-			if tu.Cost == 10 {
-				cl, err := NewClient(c.appep, tu.BankID, tu.Name, "12345", ClientTimeout, RetireTimeout)
-				if err != nil {
-					return nil, err
-				}
-				log.Printf("[DEBUG] add BruteForce %s", tu.BankID)
-				return NewBruteForceScenario(cl), nil
+		if tu := c.nextTestUser(10); tu.BankID != "" {
+			cl, err := NewClient(c.appep, tu.BankID, tu.Name, "12345", ClientTimeout, RetireTimeout)
+			if err != nil {
+				return nil, err
 			}
+			log.Printf("[DEBUG] add BruteForce %s cost:%d, orders:%d", tu.BankID, tu.Cost, tu.Orders)
+			return NewBruteForceScenario(cl), nil
 		}
+		fallthrough
 	case n%5 == 2:
-		tu := c.nextTestUser()
-		cl, err := NewClient(c.appep, tu.BankID, tu.Name, tu.Pass, ClientTimeout, RetireTimeout)
-		if err != nil {
-			return nil, err
+		if tu := c.nextTestUser(6); tu.BankID != "" {
+			cl, err := NewClient(c.appep, tu.BankID, tu.Name, tu.Pass, ClientTimeout, RetireTimeout)
+			if err != nil {
+				return nil, err
+			}
+			// この人達を成り行きにはしたくないけどしょうがない
+			credit, err = c.isubank.GetCredit(tu.BankID)
+			if err != nil {
+				return nil, err
+			}
+			log.Printf("[DEBUG] add exists user %s cost:%d, orders:%d", tu.BankID, tu.Cost, tu.Orders)
+			return NewExistsUserScenario(cl, credit, 10, 3, false), nil
 		}
-		// この人達を成り行きにはしたくないけどしょうがない
-		credit, err = c.isubank.GetCredit(tu.BankID)
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("[DEBUG] add exists user")
-		return NewExistsUserScenario(cl, credit, 10, 3, false), nil
+		fallthrough
 	case n == 10 || n == 20 || n == 30:
 		// 成り行き買い
 		credit, isu, unit, justprice = 5000000, 0, 5, true
