@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ken39arg/isucon2018-final/bench/urlcache"
@@ -34,6 +35,7 @@ var (
 type ResponseWithElapsedTime struct {
 	*http.Response
 	ElapsedTime time.Duration
+	Hash        string
 }
 
 type ErrElapsedTimeOverRetire struct {
@@ -122,15 +124,16 @@ type OrderActionResponse struct {
 }
 
 type Client struct {
-	base     *url.URL
-	hc       *http.Client
-	userID   int64
-	bankid   string
-	pass     string
-	name     string
-	cache    *urlcache.CacheStore
-	retired  bool
-	retireto time.Duration
+	base      *url.URL
+	hc        *http.Client
+	userID    int64
+	bankid    string
+	pass      string
+	name      string
+	cache     *urlcache.CacheStore
+	retired   bool
+	retireto  time.Duration
+	topLoaded int32
 }
 
 func NewClient(base, bankid, name, password string, timeout, retire time.Duration) (*Client, error) {
@@ -223,7 +226,7 @@ func (c *Client) doRequest(ctx context.Context, req *http.Request) (*ResponseWit
 			}
 		}
 		if res.StatusCode < 500 {
-			return &ResponseWithElapsedTime{res, elapsedTime}, nil
+			return &ResponseWithElapsedTime{res, elapsedTime, ""}, nil
 		}
 		body, err := ioutil.ReadAll(res.Body)
 		if err != nil {
@@ -271,8 +274,9 @@ func (c *Client) get(ctx context.Context, path string, val url.Values) (*Respons
 		if _, err = io.Copy(body, res.Body); err != nil {
 			return nil, err
 		}
-		if cache, _ := urlcache.NewURLCache(res.Response, body); cache != nil {
+		if cache, hash := urlcache.NewURLCache(res.Response, body); cache != nil {
 			c.cache.Set(us, cache)
+			res.Hash = hash
 		}
 		res.Body = ioutil.NopCloser(body)
 	}
@@ -396,41 +400,31 @@ func (c *Client) Signout(ctx context.Context) error {
 }
 
 func (c *Client) Top(ctx context.Context) error {
-	for _, path := range []string{
-		"/",
-		"/favicon.ico",
-		"/js/moment.min.js",
-		"/js/Chart.min.js",
-		"/js/Chart.Financial.js",
-		//"/css/app.afc1317c.css",
-		//"/js/app.a6721fee.js",
-		//"/js/chunk-vendors.3f054da5.js",
-		"/img/isucoin_logo.png",
-		// TODO static files
-		// "/css/bootstrap-grid.min.css",
-		// "/css/bootstrap-reboot.min.css",
-		// "/css/bootstrap.min.css",
-		// "/js/bootstrap.bundle.min.js",
-		// "/js/bootstrap.min.js",
-		// "/js/jquery-3.3.1.slim.min.js",
-		// "/js/popper.min.js",
-	} {
-		err := func(path string) error {
-			res, err := c.get(ctx, path, url.Values{})
+	loaded := atomic.AddInt32(&c.topLoaded, 1)
+	for _, sf := range StaticFiles {
+		err := func(sf *StaticFile) error {
+			res, err := c.get(ctx, sf.Path, url.Values{})
 			if err != nil {
-				return errors.Wrapf(err, "GET %s request failed", path)
+				return errors.Wrapf(err, "GET %s request failed", sf.Path)
 			}
 			defer res.Body.Close()
 			b, err := ioutil.ReadAll(res.Body)
 			if err != nil {
-				return errors.Wrapf(err, "GET %s body read failed", path)
+				return errors.Wrapf(err, "GET %s body read failed", sf.Path)
 			}
-			if res.StatusCode >= 400 {
-				return errorWithStatus(errors.Errorf("GET %s failed.", path), res.StatusCode, string(b))
+			if res.StatusCode == 200 {
+				if res.ContentLength != sf.Size {
+					return errors.Wrapf(err, "GET %s content length is not match. got:%d, want:%d", sf.Path, res.ContentLength, sf.Size)
+				}
+				if res.Hash != sf.Hash {
+					return errors.Wrapf(err, "GET %s content is modified.", sf.Path)
+				}
+				return nil
+			} else if loaded > 2 && res.StatusCode == http.StatusNotModified {
+				return nil
 			}
-			// TODO MD5のチェック
-			return nil
-		}(path)
+			return errorWithStatus(errors.Errorf("GET %s failed.", sf.Path), res.StatusCode, string(b))
+		}(sf)
 		if err != nil {
 			return err
 		}
