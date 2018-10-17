@@ -29,17 +29,69 @@ export interface Order {
   trade: Trade
 }
 
+export interface ChartData {
+  close: number
+  high: number
+  low: number
+  open: number
+  time: string
+}
+
+export interface Info {
+  chart_by_hour: ChartData[]
+  chart_by_min: ChartData[]
+  chart_by_sec: ChartData[]
+  cursor: number
+  enable_share: boolean
+  highest_buy_price: number
+  lowest_sell_price: number
+  traded_orders: Order[]
+}
+
+export type ModalType = 'signup' | 'signin'
+
+export type ChartType = 'hour' | 'min' | 'sec'
+
+export interface State {
+  chartType: ChartType
+  hasSigninError: boolean
+  hasSignupError: boolean
+  info: Info | null
+  isModalOpen: boolean
+  modalType: ModalType
+  orders: []
+  user: User | null
+}
+
+
+const initialState: State = {
+  chartType: 'min',
+  hasSigninError: false,
+  hasSignupError: false,
+  info: null,
+  isModalOpen: false,
+  modalType: 'signup',
+  orders: [],
+  user: null,
+}
+
+const updateChartData = (targetChart: ChartData[], receivedChart: ChartData[]) => {
+  receivedChart.forEach((data: ChartData) => {
+    const duplicatedData = targetChart.find((element: ChartData) => element.time === data.time)
+
+    if (duplicatedData) {
+      targetChart.map((element: ChartData) => {
+        return duplicatedData.time === element.time ? data : element
+      })
+    } else {
+      targetChart.push(data)
+      targetChart.shift()
+    }
+  })
+}
+
 export default new Vuex.Store({
-  state: {
-    chartType: 'min',
-    hasSigninError: false,
-    hasSignupError: false,
-    info: null,
-    isModalOpen: false,
-    modalType: 'signup',
-    orders: [],
-    user: null,
-  },
+  state: initialState,
   mutations: {
     openModal(state) {
       state.isModalOpen = true
@@ -51,7 +103,21 @@ export default new Vuex.Store({
       state.modalType = type
     },
     setInfo(state, info) {
-      state.info = info
+      if (state.info === null) {
+        state.info = info
+        return
+      }
+
+      updateChartData(state.info.chart_by_hour, info.chart_by_hour)
+      updateChartData(state.info.chart_by_min, info.chart_by_min)
+      updateChartData(state.info.chart_by_sec, info.chart_by_sec)
+
+      state.info = {
+        ...info,
+        chart_by_hour: state.info.chart_by_hour,
+        chart_by_min: state.info.chart_by_min,
+        chart_by_sec: state.info.chart_by_sec,
+      }
     },
     setChartType(state, type) {
       state.chartType = type

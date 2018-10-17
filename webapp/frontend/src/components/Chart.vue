@@ -12,17 +12,10 @@
 <script lang="ts">
 import Vue from 'vue'
 import { mapState, mapMutations } from 'vuex'
+import { ChartData } from '../store'
 
 declare const moment: any
 declare const Chart: any
-
-interface ChartData {
-  close: number
-  high: number
-  low: number
-  open: number
-  time: string
-}
 
 interface ConvertedData {
   c: number
