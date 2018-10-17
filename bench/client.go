@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ken39arg/isucon2018-final/bench/urlcache"
 
@@ -53,9 +54,17 @@ type ErrorWithStatus struct {
 }
 
 func errorWithStatus(err error, code int, body string) *ErrorWithStatus {
+	body = strings.TrimSpace(body)
+	if utf8.RuneCountInString(body) > 200 {
+		if strings.Index(strings.ToLower(body), "<html") > -1 {
+			body = "(html)"
+		} else {
+			body = string([]rune(body)[:200]) + "..."
+		}
+	}
 	return &ErrorWithStatus{
 		StatusCode: code,
-		Body:       strings.TrimSpace(body),
+		Body:       body,
 		err:        err,
 	}
 }
@@ -413,9 +422,10 @@ func (c *Client) Top(ctx context.Context) error {
 				return errors.Wrapf(err, "GET %s body read failed", sf.Path)
 			}
 			if res.StatusCode == 200 {
-				if res.ContentLength != sf.Size {
-					return errors.Wrapf(err, "GET %s content length is not match. got:%d, want:%d", sf.Path, res.ContentLength, sf.Size)
-				}
+				// HashさえチェックすればSizeチェックはいらないはず?
+				// if res.ContentLength != sf.Size {
+				// 	return errors.Wrapf(err, "GET %s content length is not match. got:%d, want:%d", sf.Path, res.ContentLength, sf.Size)
+				// }
 				if res.Hash != sf.Hash {
 					return errors.Wrapf(err, "GET %s content is modified.", sf.Path)
 				}
