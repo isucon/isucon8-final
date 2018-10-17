@@ -263,11 +263,11 @@ func (t *PreTester) Run(ctx context.Context) error {
 			amont int64
 			price int64
 		}{
-			{TradeTypeSell, c2, 2, 6901},
-			{TradeTypeBuy, c1, 1, 6500},
-			{TradeTypeSell, c2, 1, 6900},
-			{TradeTypeBuy, c1, 2, 6900},
-			{TradeTypeSell, c2, 1, 6900},
+			{TradeTypeSell, c2, 2, 7001},
+			{TradeTypeBuy, c1, 1, 6998},
+			{TradeTypeSell, c2, 1, 6999},
+			{TradeTypeBuy, c1, 2, 6999},
+			{TradeTypeSell, c2, 1, 6999},
 		} {
 			var typeName string
 			if ap.t == TradeTypeBuy {

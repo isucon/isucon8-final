@@ -45,6 +45,8 @@ export default new Vuex.Store({
     },
     setInfo(state, info) {
       if (state.info === null) {
+        info.chart_by_min = info.chart_by_min.splice(-60)
+        info.chart_by_sec = info.chart_by_sec.splice(-60)
         state.info = info
         return
       }

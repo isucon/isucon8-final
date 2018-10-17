@@ -1,6 +1,6 @@
 <template>
   <header class='header'>
-    <h1 class='title'>ISUCOIN</h1>
+    <h1 class='title'><img src="/img/isucoin_logo.png" alt="ISUCOIN" height="40px"></h1>
     <ul class="list" v-if='user'>
       <li class="item" >{{ user.name }}</li>
     </ul>
@@ -46,6 +46,7 @@ export default Vue.extend({
 .title
   margin: 0
   font-size: 20px
+  height: 40px 
 
 .list
   display: flex
