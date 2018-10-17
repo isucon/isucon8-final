@@ -20,11 +20,7 @@ const (
 	SessionName = "isucoin_session"
 )
 
-var (
-	// ISUCON用初期データの基準時間です
-	// この時間以降のデータはInitializeで削除されます
-	BaseTime = time.Date(2018, 10, 16, 10, 0, 0, 0, time.Local)
-)
+var BaseTime time.Time
 
 type Handler struct {
 	db    *sql.DB
@@ -32,6 +28,9 @@ type Handler struct {
 }
 
 func NewHandler(db *sql.DB, store sessions.Store) *Handler {
+	// ISUCON用初期データの基準時間です
+	// この時間以降のデータはInitializeで削除されます
+	BaseTime = time.Date(2018, 10, 16, 10, 0, 0, 0, time.Local)
 	return &Handler{
 		db:    db,
 		store: store,
