@@ -36,6 +36,7 @@ var (
 	tempDir   = flag.String("tempdir", "", "path to temp dir")
 	benchcmd  = flag.String("bench", "bench", "path to benchmark command")
 	wsPort    = flag.Int("wsPort", 15873, "port of websocket server")
+	domain    = flag.String("domain", ".isucon8.flying-chair.net", "domain name")
 )
 
 func main() {
@@ -48,7 +49,7 @@ func main() {
 func updateHostname() {
 	name, err := os.Hostname()
 	if err == nil {
-		hostname = name
+		hostname = name + domain
 	}
 }
 
