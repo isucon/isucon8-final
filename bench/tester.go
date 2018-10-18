@@ -516,6 +516,7 @@ type PostTester struct {
 	isulog  *isulog.Isulog
 	isubank *isubank.Isubank
 	users   []testUser
+	tested  []testUser
 }
 
 func (t *PostTester) Run(ctx context.Context) error {
@@ -528,26 +529,29 @@ func (t *PostTester) Run(ctx context.Context) error {
 	if len(users) == 0 {
 		return errors.Errorf("ユーザーが全滅しています")
 	}
-	first, latest, random := users[0], users[len(users)-1], users[rand.Intn(len(users))]
-	for len(users) >= 3 && (first.UserID() == random.UserID() || latest.UserID() == random.UserID()) {
-		random = users[rand.Intn(len(users)-2)+1]
-	}
 	var trade *Trade
-	for _, user := range users {
-		for _, order := range user.Orders() {
-			if order.Trade != nil {
-				if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
-					trade = order.Trade
-					latest = user
+	{
+		first, latest, random := users[0], users[len(users)-1], users[rand.Intn(len(users))]
+		for len(users) >= 3 && (first.UserID() == random.UserID() || latest.UserID() == random.UserID()) {
+			random = users[rand.Intn(len(users)-2)+1]
+		}
+		for _, user := range users {
+			for _, order := range user.Orders() {
+				if order.Trade != nil {
+					if trade == nil || trade.CreatedAt.Before(order.Trade.CreatedAt) {
+						trade = order.Trade
+						latest = user
+					}
 				}
 			}
 		}
-	}
-	if trade == nil {
-		return errors.Errorf("取引に成功したユーザーが全滅しているか、一人もいません")
+		if trade == nil {
+			return errors.Errorf("取引に成功したユーザーが全滅しているか、一人もいません")
+		}
+		t.tested = []testUser{first, latest, random}
 	}
 	eg := new(errgroup.Group)
-	for _, tu := range []testUser{first, latest, random} {
+	for _, tu := range t.tested {
 		user := tu
 		eg.Go(func() error {
 			if err := user.FetchOrders(ctx); err != nil {
@@ -616,7 +620,7 @@ func (t *PostTester) Run(ctx context.Context) error {
 			time.Sleep(PollingInterval)
 		}
 	})
-	for _, tu := range []testUser{first, latest, random} {
+	for _, tu := range t.tested {
 
 		user := tu
 		eg.Go(func() error {

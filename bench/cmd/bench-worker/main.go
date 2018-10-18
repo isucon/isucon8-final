@@ -176,6 +176,7 @@ func run(tempDir, portalUrl string) {
 		result := path.Join(tempDir, rname)
 		logpath := path.Join(tempDir, lname)
 		teepath := path.Join(tempDir, tname)
+		statepath := path.Join(tempDir, "laststate.json") // 最終的な試験のとき指定すればよいが面倒なので毎回更新する
 		aborted := false
 
 		var args []string
@@ -188,6 +189,7 @@ func run(tempDir, portalUrl string) {
 		args = append(args, fmt.Sprintf("-result=%s", result))
 		args = append(args, fmt.Sprintf("-log=%s", logpath))
 		args = append(args, fmt.Sprintf("-teestdout=%s", teepath))
+		args = append(args, fmt.Sprintf("-stateout=%s", statepath))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
