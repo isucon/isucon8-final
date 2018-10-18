@@ -19,8 +19,8 @@ sub enqueue_job {
     my $team_id  = $params->{team_id};
     my $group_id = $params->{group_id};
 
-    my $is_success = 0;
-    my $err        = undef;
+    my $job_id = 0;
+    my $err    = undef;
     eval {
         $self->db->txn(sub {
             my $dbh = shift;
@@ -72,8 +72,7 @@ sub enqueue_job {
                 },
             );
             $dbh->do($stmt, undef, @bind);
-
-            $is_success = 1;
+            $job_id = $dbh->{mysql_insertid};
         });
     };
     if (my $e = $@) {
@@ -85,7 +84,7 @@ sub enqueue_job {
         );
     }
 
-    return $is_success, $err;
+    return $job_id, $err;
 }
 
 sub dequeue_job {
