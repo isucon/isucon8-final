@@ -44,7 +44,7 @@
                             </tr>
                             <tr id="state-line">
                                 <th width="10%">State</th>
-                                <td><: $job.state :></td>
+                                <td id="job-state"><: $job.state :></td>
                             </tr>
                             <tr>
                                 <th width="10%">UpdatedAt</th>
@@ -87,6 +87,7 @@ $(() => {
             }, 100);
         };
         c.onmessage = (ev) => {
+            $('#job-state').text('running')
             const logs = $('#logs')
             logs.text(logs.text() + ev.data + "\n")
         };
