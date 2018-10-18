@@ -8,8 +8,12 @@ services:
     command:
       - "sh"
       - "-c"
-      - "bundle install && bundle exec puma -p 5000 -t 1:1"
+      - "bundle install && bundle exec puma -p 5000 -t 5:5"
     working_dir: /app
     volumes:
+      - bundle:/bundle
       - ./ruby:/app
       - ./public:/public
+
+volumes:
+  bundle:
