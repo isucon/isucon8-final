@@ -8,15 +8,16 @@ import (
 )
 
 type FinalState struct {
-	BankID string
-	Name   string
-	Pass   string
-	Orders []Order
-	Info   *InfoResponse
+	BaseURL string
+	BankID  string
+	Name    string
+	Pass    string
+	Orders  []Order
+	Info    *InfoResponse
 }
 
-func (s *FinalState) Check(ctx context.Context, base string) error {
-	client, err := NewClient(base, s.BankID, s.Name, s.Pass, ClientTimeout, RetireTimeout)
+func (s *FinalState) Check(ctx context.Context) error {
+	client, err := NewClient(s.BaseURL, s.BankID, s.Name, s.Pass, ClientTimeout, RetireTimeout)
 	if err != nil {
 		return errors.Wrap(err, "NewClient failed")
 	}

@@ -11,16 +11,16 @@ import (
 )
 
 var (
-	appep    = flag.String("appep", "https://localhost.isucon8.flying-chair.net", "app endpoint")
 	stateout = flag.String("stateout", "", "save state filename")
 )
 
 func main() {
 	flag.Parse()
+	host, _ := os.Hostname()
 	if err := run(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("%s is failed. err: %s", host, err)
 	}
-	log.Printf("OK!")
+	log.Printf("%s is OK\n", host)
 }
 
 func run() error {
@@ -34,5 +34,5 @@ func run() error {
 	if err = json.NewDecoder(r).Decode(state); err != nil {
 		return err
 	}
-	return state.Check(ctx, *appep)
+	return state.Check(ctx)
 }

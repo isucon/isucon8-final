@@ -247,9 +247,10 @@ func (c *Manager) PostTest(ctx context.Context) error {
 	if c.statefile != "" {
 		u := t.tested[0]
 		state := FinalState{
-			BankID: u.BankID(),
-			Name:   u.Client().name,
-			Pass:   u.Client().pass,
+			BaseURL: c.appep,
+			BankID:  u.BankID(),
+			Name:    u.Client().name,
+			Pass:    u.Client().pass,
 		}
 		var err error
 		// ここまで通って入ればOKなのでここでのエラーはゆるくする
