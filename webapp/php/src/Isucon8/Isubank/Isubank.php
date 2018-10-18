@@ -48,7 +48,7 @@ class Isubank
         if ($res['error'] === 'credit is insufficient') {
             throw new CreditInsufficientException();
         }
-        throw new Exception(sprintf('reserve failed. err: %s', $res['error']));
+        throw new Exception(sprintf('check failed. err: %s', $res['error']));
     }
 
     // reserve は仮決済(残高の確保)を行います
@@ -59,7 +59,7 @@ class Isubank
             if ($res['error'] === 'credit is insufficient') {
                 throw new CreditInsufficientException();
             }
-            throw new Exception(sprintf('cancel failed. err: %s', $res['error']));
+            throw new Exception(sprintf('reserve failed. err: %s', $res['error']));
         }
 
         return $res['reserve_id'];
@@ -74,7 +74,7 @@ class Isubank
             if ($res['error'] === 'credit is insufficient') {
                 throw new CreditInsufficientException();
             }
-            throw new Exception(sprintf('cancel failed. err: %s', $res['error']));
+            throw new Exception(sprintf('commit failed. err: %s', $res['error']));
         }
     }
 
