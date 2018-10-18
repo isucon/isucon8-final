@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hpcloud/tail"
 	"github.com/ken39arg/isucon2018-final/bench/portal"
 	"github.com/pkg/errors"
 )
@@ -34,6 +35,8 @@ var (
 	portalUrl = flag.String("portal", "https://portal."+portal.Domain, "portal host")
 	tempDir   = flag.String("tempdir", "", "path to temp dir")
 	benchcmd  = flag.String("bench", "bench", "path to benchmark command")
+	wsPort    = flag.Int("wsPort", 15873, "port of websocket server")
+	domain    = flag.String("domain", ".isucon8.flying-chair.net", "domain name")
 )
 
 func main() {
@@ -46,7 +49,7 @@ func main() {
 func updateHostname() {
 	name, err := os.Hostname()
 	if err == nil {
-		hostname = name
+		hostname = name + *domain
 	}
 }
 
@@ -163,13 +166,16 @@ func run(tempDir, portalUrl string) {
 		return nil
 	}
 
+	messageCh := startWS(*wsPort)
 	for {
 		job := getJobLoop()
 		now := time.Now()
 		rname := fmt.Sprintf("isucon8f-benchresult-%d-%d.json", now.Unix(), job.ID)
 		lname := fmt.Sprintf("isucon8f-benchlog-%d-%d.log", now.Unix(), job.ID)
+		tname := fmt.Sprintf("isucon8f-stdout-%d-%d.log", now.Unix(), job.ID)
 		result := path.Join(tempDir, rname)
 		logpath := path.Join(tempDir, lname)
+		teepath := path.Join(tempDir, tname)
 		aborted := false
 
 		var args []string
@@ -181,15 +187,45 @@ func run(tempDir, portalUrl string) {
 		args = append(args, fmt.Sprintf("-internallog=%s", job.InternalLogURL))
 		args = append(args, fmt.Sprintf("-result=%s", result))
 		args = append(args, fmt.Sprintf("-log=%s", logpath))
+		args = append(args, fmt.Sprintf("-teestdout=%s", teepath))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, *benchcmd, args...)
 
+		tailCh := make(chan struct{})
+		go func() {
+			t, err := tail.TailFile(teepath, tail.Config{Follow: true})
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			for {
+				select {
+				case line := <-t.Lines:
+					if line.Err != nil {
+						log.Println(line.Err.Error())
+						return
+					}
+					messageCh <- logMessage{
+						jobID: job.ID,
+						text:  line.Text,
+					}
+				case <-tailCh:
+					messageCh <- logMessage{
+						jobID:    job.ID,
+						finished: true,
+					}
+					return
+				}
+			}
+		}()
+
 		log.Println("Start benchmark args:", cmd.Args)
 		err := cmd.Start()
 		if err != nil {
 			log.Println(err)
+			close(tailCh)
 			continue
 		}
 
@@ -198,6 +234,7 @@ func run(tempDir, portalUrl string) {
 			aborted = true
 			log.Println(err)
 		}
+		close(tailCh)
 
 		err = postResult(job, result, logpath, aborted)
 		if err != nil {

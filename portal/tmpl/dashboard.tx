@@ -37,7 +37,6 @@
                     </div>
                     <button class="modal-close is-large" aria-label="close"></button>
                 </div>
-                <p>※ベンチマークが開始されるまでに1〜2分ほどかかる場合があります。</p>
             </div>
         </article>
     </section>
@@ -168,6 +167,9 @@
             if (data.success) {
                 $(modalId).find(".notification").addClass("is-success");
                 $(modalId).find(".notification").text("Enqueue successfully!!");
+                window.setTimeout(() => {
+                    location.href = "/jobs/"+data.job_id;
+                }, 1000);
             } else {
                 $(modalId).find(".notification").addClass("is-danger");
                 $(modalId).find(".notification").text(data.error || 'Error!!!');

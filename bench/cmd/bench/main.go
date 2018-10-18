@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -23,6 +24,7 @@ var (
 	jobid        = flag.String("jobid", "", "portal jobid")
 	logoutput    = flag.String("log", "", "output log path (default stderr)")
 	result       = flag.String("result", "", "result json path (default stdout)")
+	teestdout    = flag.String("teestdout", "", "tee stdout")
 	logout       = os.Stderr
 	out          = os.Stdout
 )
@@ -51,7 +53,18 @@ func main() {
 }
 
 func run() error {
-	mgr, err := bench.NewManager(logout, *appep, *bankep, *logep, *internalbank, *internallog)
+	var (
+		writer io.Writer
+		tee    *os.File
+	)
+	if *teestdout != "" {
+		tee, _ = os.Create(*teestdout)
+		writer = io.MultiWriter(logout, tee)
+		defer tee.Close()
+	} else {
+		writer = logout
+	}
+	mgr, err := bench.NewManager(writer, *appep, *bankep, *logep, *internalbank, *internallog)
 	if err != nil {
 		return err
 	}
