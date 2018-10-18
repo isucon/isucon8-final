@@ -16,14 +16,16 @@ type logMessage struct {
 	finished bool
 }
 
-var connections = map[int][]*websocket.Conn{}
+var connections = make(map[int][]*websocket.Conn)
+var bufMesssages = make(map[int][]string)
+var mu sync.Mutex
 
 func startWS(port int) chan logMessage {
-	mu := sync.Mutex{}
-	messageCh := make(chan logMessage)
+	messageCh := make(chan logMessage, 1000)
 
 	go func() {
 		for message := range messageCh {
+			mu.Lock()
 			// if job is finished
 			if message.finished {
 				// close all connections
@@ -33,27 +35,25 @@ func startWS(port int) chan logMessage {
 					}
 				}
 				delete(connections, message.jobID)
+				mu.Unlock()
 				continue
 			}
-
+			bufMesssages[message.jobID] = append(bufMesssages[message.jobID], message.text)
 			connected := []*websocket.Conn{}
 			// check if still connected
 			for _, conn := range connections[message.jobID] {
-				mu.Lock()
 				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err == nil {
 					connected = append(connected, conn)
 				}
-				mu.Unlock()
 			}
 			connections[message.jobID] = connected
 			// send message to living connections
 			for _, conn := range connected {
-				mu.Lock()
 				if err := conn.WriteMessage(websocket.TextMessage, []byte(message.text)); err != nil {
 					log.Println(err.Error())
 				}
-				mu.Unlock()
 			}
+			mu.Unlock()
 		}
 	}()
 	go func() {
@@ -73,8 +73,15 @@ func startWS(port int) chan logMessage {
 				log.Println(err.Error())
 				return
 			}
+			mu.Lock()
+			defer mu.Unlock()
 			// add to connections
 			connections[jobID] = append(connections[jobID], conn)
+
+			// send buffered messages
+			for _, text := range bufMesssages[jobID] {
+				_ = conn.WriteMessage(websocket.TextMessage, []byte(text))
+			}
 		})
 		http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	}()
