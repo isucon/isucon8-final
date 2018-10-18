@@ -45,6 +45,14 @@
   branch = "master"
   name = "golang.org/x/sync"
 
+[[constraint]]
+  version = "v1.4.0"
+  name = "github.com/gorilla/websocket"
+
+[[constraint]]
+  branch = "master"
+  name =  "github.com/hpcloud/tail"
+
 [prune]
   go-tests = true
   unused-packages = true
