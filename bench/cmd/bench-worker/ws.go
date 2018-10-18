@@ -33,7 +33,7 @@ func startWS(port int) chan logMessage {
 					}
 				}
 				delete(connections, message.jobID)
-				return
+				continue
 			}
 
 			connected := []*websocket.Conn{}
