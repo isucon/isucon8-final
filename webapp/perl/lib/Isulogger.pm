@@ -77,7 +77,7 @@ sub request {
 
     my $body = encode_json $v;
     my $res = $self->client->post(
-        $self->endpoint . "/" . $p,
+        $self->endpoint . $p,
         [
             "Content-Type"  => "application/json",
             "Authorization" => "Bearer " . $self->app_id,
