@@ -168,7 +168,7 @@
                 $(modalId).find(".notification").addClass("is-success");
                 $(modalId).find(".notification").text("Enqueue successfully!!");
                 window.setTimeout(() => {
-                    location.href("/jobs/"+data.job_id);
+                    location.href = "/jobs/"+data.job_id;
                 }, 1000);
             } else {
                 $(modalId).find(".notification").addClass("is-danger");

@@ -59,9 +59,11 @@
                             <tr>
                                 <th width="10%">Log</th>
                                 <td style="font-size: 0.85rem">
-                                  <pre id="logs">: for $job.result_json.log -> $log {
+                                  <pre id="logs">
+: for $job.result_json.log -> $log {
 <: $log | html :>
-: }</pre>
+: }
+</pre>
                                 </td>
                             </tr>
                         </tbody>
