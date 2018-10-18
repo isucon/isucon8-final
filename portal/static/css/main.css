@@ -20,7 +20,7 @@ nav.navbar {
     font-weight: 300;
 }
 
-section {
+section, :not(body > section) {
     margin: 1rem 0;
 }
 
