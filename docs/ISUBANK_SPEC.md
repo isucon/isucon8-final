@@ -18,7 +18,7 @@ Authorization: Bearer <APP_ID>
 
 ### `POST /check`
 
-指定した金額の残高を指定したユーザーが保持しているかを確認します
+指定した金額の残高を指定したユーザーが保持しているかを確認します  
 ※ ただし予約分を含みません
 
 また、このAPIのpriceに0を指定することでユーザーの存在チェックに利用することもできます
@@ -40,7 +40,7 @@ Authorization: Bearer <APP_ID>
 
 口座から資金を確保し決済予約を行います
 
-reserveの有効期限は5分間で期限内の `POST /commit` は保証されます
+予約した決済の有効期限は5分間で期限内で未使用の予約は必ず確定( `POST /commit` )できます
 
 - request: application/json
     - bank_id
@@ -60,9 +60,9 @@ reserveの有効期限は5分間で期限内の `POST /commit` は保証され�
 
 ### `POST /commit`
 
-`POST /reserve` 予約した決済idを確定します
+決済予約をしたreserve_idを確定します
 
-※ 期限内のreserve_idの成功は保証されているため、50xなどのエラーが発生したときは適宜リトライすることを推奨します
+※ 上述の通り、期限内のreserve_idの成功は保証されているため、50xなどのエラーが発生したときは適宜リトライすることを推奨します
 
 - request: application/json
     - reserve_ids
