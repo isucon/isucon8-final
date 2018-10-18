@@ -32,7 +32,7 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank, *internallog)
+	mgr, err := bench.NewManager(os.Stderr, *appep, *bankep, *logep, *internalbank, *internallog, "")
 	if err != nil {
 		return err
 	}

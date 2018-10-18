@@ -25,6 +25,7 @@ var (
 	logoutput    = flag.String("log", "", "output log path (default stderr)")
 	result       = flag.String("result", "", "result json path (default stdout)")
 	teestdout    = flag.String("teestdout", "", "tee stdout")
+	stateout     = flag.String("stateout", "", "save state filename")
 	logout       = os.Stderr
 	out          = os.Stdout
 )
@@ -64,7 +65,7 @@ func run() error {
 	} else {
 		writer = logout
 	}
-	mgr, err := bench.NewManager(writer, *appep, *bankep, *logep, *internalbank, *internallog)
+	mgr, err := bench.NewManager(writer, *appep, *bankep, *logep, *internalbank, *internallog, *stateout)
 	if err != nil {
 		return err
 	}

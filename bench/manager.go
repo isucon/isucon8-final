@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,9 +40,10 @@ type Manager struct {
 	scounter   int32
 	scoreboard *ScoreBoard
 	testusers  []TestUser
+	statefile  string
 }
 
-func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string) (*Manager, error) {
+func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog string, statefile string) (*Manager, error) {
 	rnd, err := NewRandom()
 	if err != nil {
 		return nil, err
@@ -77,6 +80,7 @@ func NewManager(out io.Writer, appep, bankep, logep, internalbank, internallog s
 		scenarios:  make([]Scenario, 0, 2000),
 		scoreboard: scoreboard,
 		testusers:  _testusers,
+		statefile:  statefile,
 	}, nil
 }
 
@@ -236,7 +240,42 @@ func (c *Manager) PostTest(ctx context.Context) error {
 		isulog:  c.isulog,
 		users:   testUsers,
 	}
-	return t.Run(ctx)
+	if err := t.Run(ctx); err != nil {
+		return err
+	}
+	// 最後のテスト状態の保存
+	if c.statefile != "" {
+		u := t.tested[0]
+		state := FinalState{
+			BankID: u.BankID(),
+			Name:   u.Client().name,
+			Pass:   u.Client().pass,
+		}
+		var err error
+		// ここまで通って入ればOKなのでここでのエラーはゆるくする
+		for i := 0; i < 5; i++ {
+			if state.Orders, err = u.Client().GetOrders(ctx); err != nil {
+				continue
+			}
+			if state.Info, err = u.Client().Info(ctx, 0); err != nil {
+				continue
+			}
+			break
+		}
+		if err != nil {
+			return errors.Wrap(err, "事後テスト後のデータ取得に失敗しました")
+		}
+		w, err := os.Create(c.statefile)
+		if err != nil {
+			return errors.Wrap(err, "事後テスト後のセーブデータ作成に失敗しました")
+		}
+		defer w.Close()
+		if err = json.NewEncoder(w).Encode(state); err != nil {
+			return errors.Wrap(err, "事後テスト後のセーブデータ保存に失敗しました")
+		}
+	}
+
+	return nil
 }
 
 func (c *Manager) ScenarioStart(ctx context.Context) error {
