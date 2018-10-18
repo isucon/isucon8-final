@@ -175,6 +175,7 @@
                                 <span>ISUCON Site</span>
                             </a>
                         </li>
+                        <!--
                         <li>
                             <a target="_blank" href="<: $config.url.regulation :>">
                                 <span class="icon">
@@ -183,6 +184,7 @@
                                 <span>Regulation</span>
                             </a>
                         </li>
+                        -->
                         <li>
                             <a target="_blank" href="<: $config.url.twitter :>">
                                 <span class="icon">
