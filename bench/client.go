@@ -430,7 +430,7 @@ func (c *Client) Top(ctx context.Context) error {
 					return errors.Wrapf(err, "GET %s content is modified.", sf.Path)
 				}
 				return nil
-			} else if loaded > 2 && res.StatusCode == http.StatusNotModified {
+			} else if loaded > 1 && res.StatusCode == http.StatusNotModified {
 				return nil
 			}
 			return errorWithStatus(errors.Errorf("GET %s failed.", sf.Path), res.StatusCode, string(b))
