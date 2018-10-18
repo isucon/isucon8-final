@@ -5,17 +5,6 @@ import * as Model from '@/model'
 
 Vue.use(Vuex)
 
-const initialState: Model.State = {
-  chartType: 'min',
-  hasSigninError: false,
-  hasSignupError: false,
-  info: null,
-  isModalOpen: false,
-  modalType: 'signup',
-  orders: [],
-  user: null,
-}
-
 const updateChartData = (targetChart: Model.ChartData[], receivedChart: Model.ChartData[]) => {
   receivedChart.forEach((data: Model.ChartData) => {
     const duplicatedData = targetChart.find((element: Model.ChartData) => element.time === data.time)
@@ -31,6 +20,17 @@ const updateChartData = (targetChart: Model.ChartData[], receivedChart: Model.Ch
   })
 }
 
+const initialState: Model.State = {
+  chartType: 'min',
+  hasSigninError: false,
+  hasSignupError: false,
+  info: null,
+  isModalOpen: false,
+  modalType: 'signup',
+  orders: [],
+  user: null,
+}
+
 export default new Vuex.Store({
   state: initialState,
   mutations: {
@@ -44,23 +44,7 @@ export default new Vuex.Store({
       state.modalType = type
     },
     setInfo(state, info) {
-      if (state.info === null) {
-        info.chart_by_min = info.chart_by_min.splice(-60)
-        info.chart_by_sec = info.chart_by_sec.splice(-60)
-        state.info = info
-        return
-      }
-
-      updateChartData(state.info.chart_by_hour, info.chart_by_hour)
-      updateChartData(state.info.chart_by_min, info.chart_by_min)
-      updateChartData(state.info.chart_by_sec, info.chart_by_sec)
-
-      state.info = {
-        ...info,
-        chart_by_hour: state.info.chart_by_hour,
-        chart_by_min: state.info.chart_by_min,
-        chart_by_sec: state.info.chart_by_sec,
-      }
+      state.info = info
     },
     setChartType(state, type) {
       state.chartType = type
@@ -93,12 +77,32 @@ export default new Vuex.Store({
       commit('setModalType', 'signin')
       commit('openModal')
     },
-    async getInfo({ commit }, cursor?) {
+    async getInfo({ commit, state }, cursor?) {
       const config = cursor ? { params: { cursor } } : undefined
 
       try {
         const response = await axios.get('/info', config)
-        commit('setInfo', response.data)
+        const info = response.data
+
+        if (state.info === null) {
+          commit('setInfo', {
+            ...info,
+            chart_by_min: info.chart_by_min.splice(-60),
+            chart_by_sec: info.chart_by_sec.splice(-60),
+          })
+          return
+        }
+
+        updateChartData(state.info.chart_by_hour, info.chart_by_hour)
+        updateChartData(state.info.chart_by_min, info.chart_by_min)
+        updateChartData(state.info.chart_by_sec, info.chart_by_sec)
+
+        commit('setInfo', {
+          ...info,
+          chart_by_hour: state.info.chart_by_hour,
+          chart_by_min: state.info.chart_by_min,
+          chart_by_sec: state.info.chart_by_sec,
+        })
       } catch (error) {
         // tslint:disable
         console.error('failed to fetch /info')

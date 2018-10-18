@@ -41,10 +41,6 @@ const convertDataStructure = (data: ChartData[]): ConvertedData[] => {
   })
 }
 
-const reduceChartData = (chart: ChartData[]) => {
-  return chart.filter((data, index) => index < 60 * 3)
-}
-
 export default Vue.extend({
   name: 'Chart',
 
@@ -64,7 +60,7 @@ export default Vue.extend({
       if (!this.info) { return }
       return this.chartType === 'hour' ? this.info.chart_by_hour
         : this.chartType === 'min' ? this.info.chart_by_min
-        : this.chartType === 'sec' ? reduceChartData(this.info.chart_by_sec)
+        : this.chartType === 'sec' ? this.info.chart_by_sec
         : null
     },
     setupContext2d() {
