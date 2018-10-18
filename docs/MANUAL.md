@@ -88,21 +88,43 @@ isucon-{001..100}
 
 ## 参照実装の切り替え方法
 
-TODO: 事前解答ではgolangのみです
+`/etc/systemd/system/isucoin.service` の中の以下の行の、 `go` の部分を各言語 (`perl,ruby,python,php`) に修正します。
 
 ```
-sudo systemctl (start|stop) isucoin
+ExecStartPre = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml build
+ExecStart = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml up
+ExecStop = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml down
+```
+
+例) Perl に変更する場合。
+
+```
+ExecStartPre = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.perl.yml build
+ExecStart = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.perl.yml up
+ExecStop = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.perl.yml down
+```
+
+その後、再起動を行います。
+
+```console
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart isucoin
 ```
 
 ## リカバリ方法
 
-TODO
+参照実装で起動している MySQL のデータは Docker の local volume (webapp_mysql) に保存されています。Docker の外に出すなどの場合は mysqldump 等でデータを dump して、それを使用するのがよいでしょう。
+
+```console
+$ mysqldump -uroot -proot --host 127.0.0.1 --port 13306 isucoin > isucoin.dump
+```
+
+配布される4台のサーバすべてに同じデータは存在しますが、競技開始時に mysqldump 実行してバックアップしておくことを強くお勧めします。
+競技中にデータをロストしても、運営からの救済は基本的に行いません。
 
 # アプリケーションについて
 
 ## ストーリー
-
-TODO: 動画等に置き換え
 
 - いすこん銀行は、いすこん銀行の口座とAPIで連携した「仮想椅子取引所ISUCOIN」を開設
 - 世界的に椅子ブームを追い風に取引も順調
