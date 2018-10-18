@@ -42,7 +42,7 @@
                                 <th width="10%">Status</th>
                                 <td><: $job.result_status :></td>
                             </tr>
-                            <tr>
+                            <tr id="state-line">
                                 <th width="10%">State</th>
                                 <td><: $job.state :></td>
                             </tr>
@@ -58,10 +58,10 @@
                             </tr>
                             <tr>
                                 <th width="10%">Log</th>
-                                <td style="font-size: 0.85rem" id="logs">
-                                  : for $job.result_json.log -> $log {
-                                  <: $log | html :><br>
-                                  : }
+                                <td style="font-size: 0.85rem">
+                                  <pre id="logs">: for $job.result_json.log -> $log {
+<: $log | html :>
+: }</pre>
                                 </td>
                             </tr>
                         </tbody>
@@ -72,18 +72,21 @@
     </section>
 </div>
 
-: if $job.state == 'running' {
+: if $job.state == 'running' || $job.state == 'waiting' {
 <script>
 $(() => {
-    const c = new WebSocket('ws://<: $job.bench_hostname :>:15873/ws?job=<: $job.id :>');
+    $('#state-line').addClass('state-running');
+    const c = new WebSocket('wss://<: $job.bench_hostname :>/ws?job=<: $job.id :>');
     c.onopen = () => {
         c.onclose = () => {
+            $('#state-line').removeClass('state-running');
             window.setTimeout(() => {
                 location.reload();
             }, 100);
         };
         c.onmessage = (ev) => {
-            $('#logs').append(ev.data).append('<br>');
+            const logs = $('#logs')
+            logs.text(logs.text() + ev.data + "\n")
         };
     };
 });
