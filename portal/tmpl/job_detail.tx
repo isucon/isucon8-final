@@ -59,7 +59,7 @@
                             <tr>
                                 <th width="10%">Log</th>
                                 <td style="font-size: 0.85rem">
-                                  <pre id="logs">
+                                  <pre id="logs" style="white-space: pre-wrap;">
 : for $job.result_json.log -> $log {
 <: $log | html :>
 : }
