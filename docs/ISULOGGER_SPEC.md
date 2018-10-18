@@ -1,11 +1,12 @@
-# ISUロガー
+# ISULOGGER
 
-海外の超イケてる分析ができるという新興データ分析基盤
+海外の超イケてるリアルタイム分析基盤
 
 ## 制限事項
 
 - bodyサイズは 1MB まで
-- データの都合上遅延は10秒まで
+- 同時に発行できるリクエストは10並列まで
+- 1秒あたりのリクエスト数は20リクエストまで
 
 ## End Points
 
@@ -15,7 +16,8 @@ baseurlは各アプリケーションごとにユニークなURLを払い出す
 
 #### Authorization
 
-アプリケーションへの認証は Authorization にユニークなappidを指定する
+Authorization ヘッダのBearerトークンに、予め払い出されているユニークなappidを使用して認証を行う
+
 ```
 Authorization: Bearer <APP_ID>
 ```
@@ -29,12 +31,12 @@ Authorization: Bearer <APP_ID>
 
 - response:
     - status: 200
-    - status: 401
-        - error: app_id not found
     - status: 400
         - error: invalid data
-    - status: 503
-        - rate limit exceeded
+    - status: 401
+        - error: app_id not found
+    - status: 429
+        - Too Many Requests
 
 ### `POST /send_bulk`
 
@@ -45,11 +47,11 @@ Authorization: Bearer <APP_ID>
         - data
 - response:
     - status: 200
-    - status: 401
-        - error: app_id not found
     - status: 400
         - error: invalid data
+    - status: 401
+        - error: app_id not found
     - status: 413
         - error: request body too large
     - status: 429
-        - rate limit exceeded
+        - Too Many Requests
