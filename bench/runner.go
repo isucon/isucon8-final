@@ -24,14 +24,18 @@ func NewRunner(mgr *Manager) *Runner {
 }
 
 func (r *Runner) Result() portal.BenchResult {
-	score := r.mgr.TotalScore()
+	score := r.mgr.FinalScore()
 	if r.fail {
 		// failしていたらmanagerによらずスコアは0とする
 		score = 0
 	}
 	level := r.mgr.GetLevel()
 	errors := r.mgr.GetErrorsString()
-	r.mgr.Logger().Printf("Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveUsers(), r.mgr.AllUsers())
+	if score > 0 {
+		r.mgr.Logger().Printf("Pass => Score: %d, (level: %d, errors: %d, users: %d/%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveUsers(), r.mgr.AllUsers())
+	} else {
+		r.mgr.Logger().Printf("Fail => Score: %d, (level: %d, errors: %d, users: %d/%d, score:%d)", score, level, r.mgr.ErrorCount(), r.mgr.ActiveUsers(), r.mgr.AllUsers(), r.mgr.TotalScore())
+	}
 
 	logs, _ := r.mgr.GetLogs()
 	return portal.BenchResult{

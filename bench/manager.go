@@ -160,10 +160,14 @@ func (c *Manager) GetLogs() ([]string, error) {
 	return r, nil
 }
 
-func (c *Manager) TotalScore() int64 {
+func (c *Manager) FinalScore() int64 {
 	if c.overError {
 		return 0
 	}
+	return c.TotalScore()
+}
+
+func (c *Manager) TotalScore() int64 {
 	score := c.GetScore()
 	demerit := score / (AllowErrorMax * 2)
 
