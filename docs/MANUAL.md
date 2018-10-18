@@ -140,6 +140,27 @@ TODO: 動画等に置き換え
 - 詳細仕様: [docs/ISULOGGER_SPEC.md](ISULOGGER_SPEC.md)
 
 
+### [開発用] isubankとisulogger のモックアプリケーション
+
+アプリケーションをローカルで開発する際に、利用可能なモックアプリケーションを用意しておりますので、必要に応じてご利用いただくことができます。  
+※ ただし、モックアプリケーションは実際の外部サービスと異なりエラーを返すことはありませんのでご注意ください
+
+#### 利用方法
+
+1. 下記の方法でdocker-composeでアプリケーションと一緒にmockserviceを起動する(go言語の場合)
+2. 手動で`POST initialize` を叩いて設定を反映する
+
+```
+cd webapp
+docker-compose -f docker-compose.yml -f docker-compose.mockservice.yml -f docker-compose.go.yml up [-d]
+
+curl https://127.0.0.1/initialize -k \
+    -d bank_endpoint=http://mockservice:14809 \
+    -d bank_appid=mockbank \
+    -d log_endpoint=http://mockservice:14690 \
+    -d log_appid=mocklog
+```
+
 # ルール詳細
 
 指定された競技用サーバー上のアプリケーションのチューニングを行い、それに対するベンチマーク走行のスコアで競技を行います。 
