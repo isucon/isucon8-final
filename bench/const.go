@@ -36,6 +36,6 @@ const (
 	GetTopScore       = 1
 
 	// error
-	AllowErrorMin = 10 // levelによらずここまでは許容範囲というエラー数
+	AllowErrorMin = 20 // levelによらずここまでは許容範囲というエラー数
 	AllowErrorMax = 50 // levelによらずこれ以上は許さないというエラー数
 )

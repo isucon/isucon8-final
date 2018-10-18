@@ -125,7 +125,7 @@ func (c *Manager) AppendError(e error) error {
 	c.errors = append(c.errors, e)
 	ec := len(c.errors)
 
-	errorLimit := c.GetScore() / 20
+	errorLimit := c.GetScore() / 50
 	if errorLimit < AllowErrorMin {
 		errorLimit = AllowErrorMin
 	} else if errorLimit > AllowErrorMax {
@@ -408,7 +408,6 @@ func (c *Manager) tickScenario(ctx context.Context, smchan chan ScoreMsg) {
 					break
 				}
 				if AllowErrorMin < c.ErrorCount() {
-					// エラー回数がscoreの5%以上あったらワーカーレベルは上がらない
 					break
 				}
 				c.level++
