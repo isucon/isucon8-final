@@ -49,7 +49,7 @@ func main() {
 func updateHostname() {
 	name, err := os.Hostname()
 	if err == nil {
-		hostname = name + domain
+		hostname = name + *domain
 	}
 }
 
