@@ -35,6 +35,7 @@ func startWS(port int) chan logMessage {
 					}
 				}
 				delete(connections, message.jobID)
+				delete(bufMesssages, message.jobID)
 				mu.Unlock()
 				continue
 			}
