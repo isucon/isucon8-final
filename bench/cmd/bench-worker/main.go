@@ -249,6 +249,7 @@ func run(tempDir, portalUrl string) {
 			}
 			logpath = ""
 			log.Printf("failed post result. err: %s, try: %d", err, try)
+			time.Sleep(10 * time.Second)
 		}
 		if err != nil {
 			log.Println(err)
