@@ -123,11 +123,12 @@ func run(tempDir, portalUrl string) {
 			io.Copy(part, file)
 			file.Close()
 		}
-
-		if file, err := os.Open(logPath); err == nil {
-			part, _ := writer.CreateFormFile("log", filepath.Base(logPath))
-			io.Copy(part, file)
-			file.Close()
+		if logPath != "" {
+			if file, err := os.Open(logPath); err == nil {
+				part, _ := writer.CreateFormFile("log", filepath.Base(logPath))
+				io.Copy(part, file)
+				file.Close()
+			}
 		}
 
 		writer.Close()
@@ -144,22 +145,26 @@ func run(tempDir, portalUrl string) {
 		}
 		u.RawQuery = q.Encode()
 
+		log.Printf("[INFO] send result %s", u.String())
 		req, err := http.NewRequest("POST", u.String(), body)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "http.NewRequest failed")
 		}
 
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "request failed")
 		}
 
 		defer res.Body.Close()
 		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "ioutil.ReadAll")
+		}
+		if res.StatusCode >= 400 {
+			return errors.Errorf("status code is not success. code: %d, body: %s", res.StatusCode, string(b))
 		}
 
 		log.Println(string(b))
@@ -238,7 +243,13 @@ func run(tempDir, portalUrl string) {
 		}
 		close(tailCh)
 
-		err = postResult(job, result, logpath, aborted)
+		for try := 0; try < 3; try++ {
+			if err = postResult(job, result, logpath, aborted); err == nil {
+				break
+			}
+			logpath = ""
+			log.Printf("failed post result. err: %s, try: %d", err, try)
+		}
 		if err != nil {
 			log.Println(err)
 		}
