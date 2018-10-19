@@ -16,7 +16,7 @@ my $finish_at = $ENV{ISUCON8_FINISH_AT} || '2018-09-15T18:00:00+09:00';
 
 # 10/20
 
-my $manual_url  = 'https://gist.github.com/fujiwara/8f9160a219244ca00daa9377dbb900ac';
+my $manual_url  = 'https://gist.github.com/ken39arg/55eb4e9e04503282988e61ce4d1965a4';
 my $discord_url = 'https://discordapp.com/channels/484185655014850590/484185655014850592';
 
 +{
