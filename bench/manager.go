@@ -125,7 +125,7 @@ func (c *Manager) AppendError(e error) error {
 	c.errors = append(c.errors, e)
 	ec := len(c.errors)
 
-	errorLimit := c.GetScore() / 50
+	errorLimit := c.GetScore() / 500
 	if errorLimit < AllowErrorMin {
 		errorLimit = AllowErrorMin
 	} else if errorLimit > AllowErrorMax {
