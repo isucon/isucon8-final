@@ -66,4 +66,4 @@ make build
     -log=/path/to/stderr.log
 ```
 
-※ localhost.isucon8.flying-chair.net 等のドメインの維持は保証しません
+※ *.flying-chair.net 等のドメインの維持は保証しません
