@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/ken39arg/isucon2018-final/bench/isubank"
-	"github.com/ken39arg/isucon2018-final/bench/isulog"
+	"bench/isubank"
+	"bench/isulog"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )

@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/ken39arg/isucon2018-final/bench"
+	"bench"
 	"github.com/pkg/errors"
 )
 
