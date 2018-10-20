@@ -66,7 +66,7 @@ SPA(シングルページアプリケーション)のHTMLを返す
     - status: 400
         - error: parameters failed
     - status: 403
-        - error: too many failures # for brute force. 5回連続失敗したときに返して良い
+        - error: too many failures # for brute force. 同じbank_idに対して5回連続失敗したときに返して良い
     - status: 404
         - error: bank user not found
     - status: 409
@@ -94,7 +94,7 @@ SPA(シングルページアプリケーション)のHTMLを返す
     - status: 400
         - error: invalid parameters
     - status: 403
-        - error: too many failures # for brute force. 5回連続失敗したときに返して良い
+        - error: too many failures # for brute force. 同じbank_idに対して5回連続失敗したときに返して良い
     - status: 404
         - error: bank_id or password is not match
     - status: 500
