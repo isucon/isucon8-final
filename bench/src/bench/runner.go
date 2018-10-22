@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/ken39arg/isucon2018-final/bench/portal"
+	"bench/portal"
 	"github.com/pkg/errors"
 )
 

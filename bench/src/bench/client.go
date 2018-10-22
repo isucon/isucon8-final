@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ken39arg/isucon2018-final/bench/urlcache"
+	"bench/urlcache"
 
 	"github.com/pkg/errors"
 	"golang.org/x/net/publicsuffix"

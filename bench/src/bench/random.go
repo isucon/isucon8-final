@@ -2,7 +2,7 @@ package bench
 
 import (
 	"github.com/Songmu/strrand"
-	"github.com/ken39arg/isucon2018-final/bench/randnameja"
+	"bench/randnameja"
 )
 
 type Random struct {

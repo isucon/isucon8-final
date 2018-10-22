@@ -2,16 +2,88 @@
 
 - [MANUAL](docs/MANUAL.md) はこちら
 
-## 動作環境
+## 本番当日の動作環境
+
+### マシンスペック
+
+チームごとに1物理マシンを割り当てており、それぞれのチームごとのVMは下記のようになっていました。
+
+- 各チーム毎に配布したVM x 4
+    - vCPU 2コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 1GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+- ベンチマーカー x 1
+    - vCPU 3コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 2GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+- 外部API x 1
+    - vCPU 3コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 2GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+
+
+### ネットワーク
+
+[マニュアル](docs/MANUAL.md) に記載があるように、グローバルIPとプライベートIPとベンチマーカーIPの3つのNICが存在し、それぞれネットワークは別れておりました。
+
+
+### 初期状態
+
+2018/10/30(土)の本戦当日は、isuconユーザーのhomeディレクトリは下記のようになっておりました。
+※ このリポジトリのwebappのみを配置しかつ `webapp/sql` ディレクトリはrmしておりました。
+
+```
+isucon2018-final
+  ├── docs
+  └── webapp
+      ├── mockservice
+      ├── mysql
+      ├── nginx
+      ├── public
+      ├── go
+      ├── perl
+      ├── php
+      ├── python
+      └── ruby
+```
+
+※ サービスは、下記の`/etc/systemd/system/isucoin.service`によってsystemdで起動しておりました
+```
+[Unit]
+Description = isucoin application
+
+[Service]
+LimitNOFILE=102400
+LimitNPROC=102400
+
+WorkingDirectory=/home/isucon/isucon2018-final/webapp
+
+ExecStartPre = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml build
+ExecStart = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml up
+ExecStop = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml down
+
+Restart   = always
+Type      = simple
+User      = isucon
+Group     = isucon
+
+[Install]
+WantedBy = multi-user.target
+```
+
+## ローカルでのアプリケーションの起動
+
+### 動作環境
 
 - [Docker](https://www.docker.com/)
 - [docker-compose](https://docs.docker.com/compose/)
 - [Golang](https://golang.org/)
 - [dep](https://golang.github.io/dep/docs/installation.html)
 
-## webapp
-
-### 起動方法
+### webappの起動方法
 
 アプリケーションは `docker-compose` で動かします
 
@@ -36,51 +108,27 @@ docker-compose -f blackbox/docker-compose.local.yml up [-d]
 ```
 
 
-### mockserviceの利用
-
-blackbox APIを利用せずにmockを利用する場合の起動方法
-
-1. mockservice をdocker-composeの起動時に含めます
-2. `/initialize` を手動で叩いてmockserviceを使うようにします
-
-```
-docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.mockservice.yml -f webapp/docker-compose.go.yml up
-
-curl https://localhost.isucon8.flying-chair.net/initialize \
-    -d bank_endpoint=http://mockservice:14809 \
-    -d bank_appid=mockbank \
-    -d log_endpoint=http://mockservice:14690 \
-    -d log_appid=mocklog
-```
-
-※ ただし、[docs/MANUAL.md](docs/MANUAL.md) にあるように `isucon-{001..100}` のbankidを利用できるためblackbox を起動している場合は原則必要ありません。(blackboxの存在を知らない競技中に手元でdocker-composeを利用するためのものです)
-
-
 ## bench
 
 ### 準備
 
-#### ベンチマーカー
-
-[Golang](https://golang.org/) 及び [dep](https://golang.github.io/dep/docs/installation.html) は予めinstallしておいてください
-
 ```
 cd bench
-dep ensure
+make init
+make deps
+make build
 ```
+
 
 ### 実行
 
 ベンチマークを実行するときは、webapp, blackbox の両方を起動した上で下記コマンドを実行してください
 
 ```
-go run ./bench/cmd/bench/main.go
-
-# defaultのresultはstdout, logはstderrなのでjqを使うと結果が見やすいです
-go run ./bench/cmd/bench/main.go | jq .
+./bench/bin/bench
 
 # 細かいオプションを指定する場合(手元では無いと思います)
-go run ./bench/cmd/bench/main.go \
+./bench/bin/bench \
     -appep=https://localhost.isucon8.flying-chair.net \
     -bankep=https://compose.isucon8.flying-chair.net:5515 \
     -logep=https://compose.isucon8.flying-chair.net:5516 \
@@ -88,32 +136,6 @@ go run ./bench/cmd/bench/main.go \
     -internallog=https://localhost.isucon8.flying-chair.net:5516 \
     -result=/path/to/result.json \
     -log=/path/to/stderr.log
-
-# ビルドしておくと少し早いかもしれません
-mkdir bin
-go build -o bin/bench ./bench/cmd/bench/main.go
-./bin/bench
 ```
 
-### 負荷試験前のテストのみを行う
-
-負荷実行は60秒間継続するため、負荷走行前のテストのみを行うツールも用意しています。  
-言語移植などに取り組む場合は、主にこちらで互換性を確認すると待ち時間を減少できます
-
-
-```
-go run ./bench/cmd/isucointest/main.go
-
-# 細かいオプションを指定する場合(手元では無いと思います)
-go run ./bench/cmd/isucointest/main.go \
-    -appep=https://localhost.isucon8.flying-chair.net \
-    -bankep=https://compose.isucon8.flying-chair.net:5515 \
-    -logep=https://compose.isucon8.flying-chair.net:5516 \
-    -internalbank=https://localhost.isucon8.flying-chair.net:5515 \
-    -internallog=https://localhost.isucon8.flying-chair.net:5516
-
-# ビルドしておくと少し早いかもしれません
-mkdir bin
-go build -o bin/test ./bench/cmd/isucointest/main.go
-./bin/test
-```
+※ *.flying-chair.net 等のドメインの維持は保証しません
