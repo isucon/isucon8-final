@@ -57,7 +57,7 @@ class Isubank
       when 'credit is insufficient'
         raise CreditInsufficientError, response[:error]
       else
-        raise Error, "check failed: #{response[:error]}"
+        raise Error, "reserve failed: #{response[:error]}"
       end
     end
     response.fetch(:reserve_id)
@@ -76,7 +76,7 @@ class Isubank
       when 'credit is insufficient'
         raise CreditInsufficientError, response[:error]
       else
-        raise Error, "check failed: #{response[:error]}"
+        raise Error, "commit failed: #{response[:error]}"
       end
     end
     nil
@@ -89,7 +89,7 @@ class Isubank
   def cancel(reserve_ids)
     response, ok = request('/cancel', reserve_ids: reserve_ids)
     unless ok
-      raise Error, "check failed: #{response[:error]}"
+      raise Error, "cancel failed: #{response[:error]}"
     end
     nil
   end
