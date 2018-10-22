@@ -108,6 +108,17 @@ docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.python.yml 
 docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.php.yml up [-d]
 ```
 
+### webappの言語実装を切り替える場合
+
+一度downしてからbuildしてupし直します 
+
+例: go→perl
+```
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.go.yml down
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.perl.yml build
+docker-compose -f webapp/docker-compose.yml -f webapp/docker-compose.perl.yml up [-d]
+```
+
 
 ### blackboxの起動
 
