@@ -50,17 +50,40 @@ isucon2018-final
       └── ruby
 ```
 
+※ サービスは、下記の`/etc/systemd/system/isucoin.service`によってsystemdで起動しておりました
+```
+[Unit]
+Description = isucoin application
 
-## 動作環境
+[Service]
+LimitNOFILE=102400
+LimitNPROC=102400
+
+WorkingDirectory=/home/isucon/isucon2018-final/webapp
+
+ExecStartPre = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml build
+ExecStart = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml up
+ExecStop = /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.go.yml down
+
+Restart   = always
+Type      = simple
+User      = isucon
+Group     = isucon
+
+[Install]
+WantedBy = multi-user.target
+```
+
+## ローカルでのアプリケーションの起動
+
+### 動作環境
 
 - [Docker](https://www.docker.com/)
 - [docker-compose](https://docs.docker.com/compose/)
 - [Golang](https://golang.org/)
 - [dep](https://golang.github.io/dep/docs/installation.html)
 
-## webapp
-
-### 起動方法
+### webappの起動方法
 
 アプリケーションは `docker-compose` で動かします
 
