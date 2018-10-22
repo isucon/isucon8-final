@@ -2,6 +2,55 @@
 
 - [MANUAL](docs/MANUAL.md) はこちら
 
+## 本番当日の動作環境
+
+### マシンスペック
+
+チームごとに1物理マシンを割り当てており、それぞれのチームごとのVMは下記のようになっていました。
+
+- 各チーム毎に配布したVM x 4
+    - vCPU 2コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 1GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+- ベンチマーカー x 1
+    - vCPU 3コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 2GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+- 外部API x 1
+    - vCPU 3コア : Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz
+    - メモリ 2GB
+    - ネットワーク帯域 1Gbps
+    - ディスク SSD
+
+
+### ネットワーク
+
+[マニュアル](docs/MANUAL.md) に記載があるように、グローバルIPとプライベートIPとベンチマーカーIPの3つのNICが存在し、それぞれネットワークは別れておりました。
+
+
+### 初期状態
+
+2018/10/30(土)の本戦当日は、isuconユーザーのhomeディレクトリは下記のようになっておりました。
+※ このリポジトリのwebappのみを配置しかつ `webapp/sql` ディレクトリはrmしておりました。
+
+```
+isucon2018-final
+  ├── docs
+  └── webapp
+      ├── mockservice
+      ├── mysql
+      ├── nginx
+      ├── public
+      ├── go
+      ├── perl
+      ├── php
+      ├── python
+      └── ruby
+```
+
+
 ## 動作環境
 
 - [Docker](https://www.docker.com/)
