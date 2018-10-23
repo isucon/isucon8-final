@@ -94,7 +94,6 @@ WantedBy = multi-user.target
 - [Docker](https://www.docker.com/)
 - [docker-compose](https://docs.docker.com/compose/)
 - [Golang](https://golang.org/)
-- [dep](https://golang.github.io/dep/docs/installation.html)
 
 ### webappの起動方法
 
