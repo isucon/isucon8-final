@@ -20,7 +20,7 @@ def set_setting(db, k: str, v: str):
 
 def get_setting(db, k: str) -> str:
     cur = db.cursor()
-    cur.execute("SELECT val FROM setting WHERE name = %s", (k,))
+    cur.execute("SELECT val FROM setting WHERE name = %s LIMIT 1", (k,))
     return cur.fetchone()[0]
 
 

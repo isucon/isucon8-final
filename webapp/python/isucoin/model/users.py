@@ -47,7 +47,7 @@ class User:
 
 def get_user_by_id(db, id: int) -> User:
     cur = db.cursor()
-    cur.execute("SELECT * FROM user WHERE id = %s", (id,))
+    cur.execute("SELECT * FROM user WHERE id = %s LIMIT 1", (id,))
     r = cur.fetchone()
     if r is not None:
         r = User(*r)
@@ -56,7 +56,7 @@ def get_user_by_id(db, id: int) -> User:
 
 def get_user_by_id_with_lock(db, id: int) -> User:
     cur = db.cursor()
-    cur.execute("SELECT * FROM user WHERE id = %s FOR UPDATE", (id,))
+    cur.execute("SELECT * FROM user WHERE id = %s LIMIT 1 FOR UPDATE", (id,))
     r = cur.fetchone()
     if r is not None:
         r = User(*r)
@@ -93,7 +93,7 @@ def signup(db, name: str, bank_id: str, password: str):
 
 def login(db, bank_id: str, password: str) -> User:
     cur = db.cursor()
-    cur.execute("SELECT * FROM user WHERE bank_id = %s", (bank_id,))
+    cur.execute("SELECT * FROM user WHERE bank_id = %s LIMIT 1", (bank_id,))
     row = cur.fetchone()
     if not row:
         raise UserNotFound
