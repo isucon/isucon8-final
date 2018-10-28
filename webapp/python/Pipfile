@@ -9,6 +9,7 @@ mysqlclient = "*"
 requests = "*"
 bcrypt = "*"
 gunicorn = "*"
+python-rapidjson = "*"
 
 [dev-packages]
 black = "*"

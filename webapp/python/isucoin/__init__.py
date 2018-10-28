@@ -10,6 +10,7 @@ import json
 import time
 import flask
 import MySQLdb
+import rapidjson
 
 from . import model
 
@@ -62,7 +63,7 @@ def _json_default(v):
 
 
 def json_dumps(data, **kwargs):
-    return json.dumps(data, default=_json_default, **kwargs)
+    return rapidjson.dumps(data, default=_json_default, **kwargs)
 
 
 def jsonify(*args, **kwargs):
@@ -74,7 +75,7 @@ def jsonify(*args, **kwargs):
         data = args or kwargs
 
     return app.response_class(
-        json_dumps(data, indent=None, separators=(",", ":")).encode(),
+        json_dumps(data).encode(),
         mimetype="application/json; charset=utf-8",
     )
 
