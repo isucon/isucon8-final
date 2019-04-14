@@ -412,7 +412,7 @@ sub get_latest_trade {
     my $self = shift;
 
     my $trade = $self->dbh->select_row(qq{
-        SELECT * FROM trade ORDER BY id DESC
+        SELECT * FROM trade ORDER BY id DESC LIMIT 1
     });
 
     return $self->_to_trade_hash($trade);
