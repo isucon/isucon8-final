@@ -18,10 +18,21 @@ services:
       ISU_DB_PASSWORD: 'isucon'
       ISU_DB_NAME:     'isucoin'
       ISU_PUBLIC_DIR:  '/public'
+      AWS_XRAY_DAEMON_ADDRESS: 'xray:2000'
     links:
       - mysql
+      - xray
     volumes:
       - ./public:/public
+
+  xray:
+    image: amazon/aws-xray-daemon:latest
+    environment:
+      AWS_REGION: ap-northeast-1
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+    command:
+      - --local-mode
 
   mysql:
     image: mysql:8
