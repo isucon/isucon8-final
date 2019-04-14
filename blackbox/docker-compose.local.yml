@@ -15,23 +15,39 @@ services:
       - "-c"
       - "/etc/nginx/nginx.local.conf"
 
+  xray:
+    image: amazon/aws-xray-daemon:latest
+    environment:
+      AWS_REGION: ap-northeast-1
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+    command:
+      - --local-mode
+
   isubank:
     image: golang:1.11
     command: bash -c "go get ./... && go run main.go -port=5515 -dbhost=mysql -dbuser=root -dbpass=root"
     links:
       - mysql
+      - xray
     working_dir: /go/src/bank
     volumes:
       - isubankgopath:/go
       - ./bank:/go/src/bank
+    environment:
+      AWS_XRAY_DAEMON_ADDRESS: 'xray:2000'
 
   logger:
     image: golang:1.11
     command: bash -c "go get ./... && go run main.go -port=5516"
     working_dir: /go/src/logger
+    links:
+      - xray
     volumes:
       - loggergopath:/go
       - ./logger:/go/src/logger
+    environment:
+      AWS_XRAY_DAEMON_ADDRESS: 'xray:2000'
 
   mysql:
     image: mysql:8

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 )
@@ -55,7 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("mysql connect failed. err: %s", err)
 	}
-	server := NewServer(db)
+	server := xray.Handler(xray.NewFixedSegmentNamer("isubank"), NewServer(db))
 
 	log.Printf("[INFO] start server %s", addr)
 	if AxLog {

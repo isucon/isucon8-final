@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/pkg/errors"
 )
 
@@ -36,7 +37,7 @@ func main() {
 	flag.Parse()
 
 	addr := fmt.Sprintf(":%d", *port)
-	server := NewServer()
+	server := xray.Handler(xray.NewFixedSegmentNamer("isulogger"), NewServer())
 
 	log.Printf("[INFO] start server %s", addr)
 	if AxLog {
