@@ -3,6 +3,7 @@ package Isubank;
 use strict;
 use warnings;
 use utf8;
+use AWS::XRay qw/capture/;
 
 =pod
 
@@ -159,18 +160,22 @@ sub _request {
 
     my $body = encode_json $v;
     my $res;
-    try {
-        $res = $self->client->post(
-            $self->endpoint . $p,
-            [
-                "Content-Type"  => "application/json",
-                "Authorization" => "Bearer " . $self->app_id,
-            ],
-            $body,
-        );
-    } catch {
-        my $err = $_;
-        Isubank::Exception::FailRequest->throw(error => $err);
+    capture "Isubank::_request", sub {
+        my $seg = shift;
+        try {
+            $res = $self->client->post(
+                $self->endpoint . $p,
+                [
+                    "Content-Type"    => "application/json",
+                    "Authorization"   => "Bearer " . $self->app_id,
+                    "X-Amzn-Trace-Id" => $seg->trace_header,
+                ],
+                $body,
+            );
+        } catch {
+            my $err = $_;
+            Isubank::Exception::FailRequest->throw(error => $err);
+        };
     };
 
     my $json = decode_json $res->body;

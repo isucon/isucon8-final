@@ -24,6 +24,7 @@ use utf8;
 
 use Furl;
 use JSON::XS qw/encode_json/;
+use AWS::XRay qw/capture/;
 
 use Time::Moment;
 use JSON::Types;
@@ -76,14 +77,18 @@ sub request {
     my ($self, $p, $v) = @_;
 
     my $body = encode_json $v;
-    my $res = $self->client->post(
-        $self->endpoint . $p,
-        [
-            "Content-Type"  => "application/json",
-            "Authorization" => "Bearer " . $self->app_id,
-        ],
-        $body,
-    );
+    my $res = capture "Isulogger::_request", sub {
+        my $seg = shift;
+        $self->client->post(
+            $self->endpoint . $p,
+            [
+                "Content-Type"    => "application/json",
+                "Authorization"   => "Bearer " . $self->app_id,
+                "X-Amzn-Trace-Id" => $seg->trace_header,
+            ],
+            $body,
+        );
+    };
     return if $res->is_success;
 
     Isulogger::Exception->throw(
