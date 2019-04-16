@@ -61,6 +61,13 @@ DISTRIBUTIONS
       Class::Data::Inheritable 0.08
     requirements:
       ExtUtils::MakeMaker 0
+  Class-Data-Lite-0.0010
+    pathname: S/SO/SONGMU/Class-Data-Lite-0.0010.tar.gz
+    provides:
+      Class::Data::Lite 0.0010
+    requirements:
+      Module::Build::Tiny 0.035
+      perl 5.008001
   Class-Inspector-1.32
     pathname: P/PL/PLICEASE/Class-Inspector-1.32.tar.gz
     provides:
@@ -156,6 +163,26 @@ DISTRIBUTIONS
       ExtUtils::MakeMaker 0
       FileHandle 0
       Test::More 0
+  DBD-SQLite-1.62
+    pathname: I/IS/ISHIGAKI/DBD-SQLite-1.62.tar.gz
+    provides:
+      DBD::SQLite 1.62
+      DBD::SQLite::Constants undef
+      DBD::SQLite::GetInfo undef
+      DBD::SQLite::VirtualTable 1.62
+      DBD::SQLite::VirtualTable::Cursor 1.62
+      DBD::SQLite::VirtualTable::FileContent undef
+      DBD::SQLite::VirtualTable::FileContent::Cursor undef
+      DBD::SQLite::VirtualTable::PerlData undef
+      DBD::SQLite::VirtualTable::PerlData::Cursor undef
+    requirements:
+      DBI 1.57
+      ExtUtils::MakeMaker 0
+      File::Spec 0.82
+      Test::Builder 0.86
+      Test::More 0.47
+      Tie::Hash 0
+      perl 5.006
   DBD-mysql-4.048
     pathname: M/MI/MICHIELB/DBD-mysql-4.048.tar.gz
     provides:
@@ -293,6 +320,16 @@ DISTRIBUTIONS
       Scalar::Util 0
       parent 0
       perl 5.008005
+  DBIx-Tracer-0.03
+    pathname: T/TO/TOKUHIROM/DBIx-Tracer-0.03.tar.gz
+    provides:
+      DBIx::Tracer 0.03
+    requirements:
+      DBD::SQLite 1.48
+      DBI 0
+      Module::Build::Tiny 0.035
+      parent 0
+      perl 5.008008
   DBIx-TransactionManager-1.13
     pathname: N/NE/NEKOKAK/DBIx-TransactionManager-1.13.tar.gz
     provides:
@@ -863,18 +900,24 @@ DISTRIBUTIONS
       File::Spec 0
       File::Temp 0.16
       perl 5.00405
-  Devel-KYTProf-0.05
-    pathname: O/ON/ONISHI/Devel-KYTProf-0.05.tar.gz
+  Devel-KYTProf-0.9991
+    pathname: S/SO/SONGMU/Devel-KYTProf-0.9991.tar.gz
     provides:
-      Devel::KYTProf 0.05
+      Devel::KYTProf 0.9991
       Devel::KYTProf::Logger::LTSV undef
+      Devel::KYTProf::Profiler::Cache::Memcached::Fast undef
+      Devel::KYTProf::Profiler::DBI undef
+      Devel::KYTProf::Profiler::Furl::HTTP undef
+      Devel::KYTProf::Profiler::LWP::UserAgent undef
+      Devel::KYTProf::Profiler::MogileFS::Client undef
     requirements:
-      Class::Data::Inheritable 0
-      ExtUtils::MakeMaker 6.36
+      Class::Data::Lite 0
+      Class::Inspector 0
+      DBIx::Tracer 0
+      Module::Build::Tiny 0.035
+      Module::Load 0
       Term::ANSIColor 0
-      Test::More 0.94
-      Time::HiRes 0
-      UNIVERSAL::require 0
+      perl 5.008_001
   Devel-KYTProf-Logger-XRay-0.03
     pathname: F/FU/FUJIWARA/Devel-KYTProf-Logger-XRay-0.03.tar.gz
     provides:
