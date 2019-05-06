@@ -17,9 +17,9 @@ requires 'Data::Entropy::Algorithms';
 requires 'IO::Socket::SSL';
 requires 'Log::Minimal';
 requires 'Devel::KYTProf', '0.9';
-requires 'AWS::XRay';
-requires 'Plack::Middleware::XRay';
-requires 'Devel::KYTProf::Logger::XRay';
+requires 'AWS::XRay', '0.08';
+requires 'Plack::Middleware::XRay', '0.06';
+requires 'Devel::KYTProf::Logger::XRay', '0.03';
 
 on configure => sub {
     requires 'ExtUtils::MakeMaker';
