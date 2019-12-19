@@ -28,7 +28,7 @@ GEM
     mysql2-cs-bind (0.0.7)
       mysql2
     puma (3.12.0)
-    rack (2.0.5)
+    rack (2.0.8)
     rack-protection (2.0.4)
       rack
     sinatra (2.0.4)
