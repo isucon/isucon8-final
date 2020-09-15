@@ -1,0 +1,13 @@
+version: '2'
+services:
+    isucoin:
+        build: nodejs
+        environment:
+            - 'TZ=Asia/Tokyo'
+        command:
+            - 'sh'
+            - '-c'
+            - 'rm -rf node_modules && npm i && npm start'
+        working_dir: /app
+        volumes:
+            - ./nodejs:/app
