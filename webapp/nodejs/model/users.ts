@@ -7,56 +7,61 @@ const logger = log4js.getLogger();
 export class BankUserNotFound extends Error {
     constructor() {
         super('bank user not found');
+        Object.setPrototypeOf(this, BankUserNotFound.prototype);
     }
 }
 
 export class BankUserConflict extends Error {
     constructor() {
         super('bank user conflict');
+        Object.setPrototypeOf(this, BankUserConflict.prototype);
     }
 }
 
 export class UserNotFound extends Error {
     constructor() {
         super('user not found');
+        Object.setPrototypeOf(this, UserNotFound.prototype);
     }
 }
 
 export class User {
     constructor(
         public id: number,
-        public bankId: string,
+        public bank_id: string,
         public name: string,
         public password: string,
-        public createdAt: string
-    ) {}
+        public created_at: Date
+    ) {
+        this.bank_id = bank_id.toString();
+        this.name = name.toString();
+        this.password = password.toString();
+    }
 }
 
 export async function getUserById(id: number): Promise<User> {
     const [r] = await dbQuery('SELECT * FROM user WHERE id = ?', [id]);
-    const [_id, bankId, name, password, createdAt] = r;
-    return new User(_id, bankId, name, password, createdAt);
+    const { id: _id, bank_id, name, password, created_at } = r;
+    return new User(_id, bank_id, name, password, created_at);
 }
 
 export async function getUserByIdWithLock(id: number) {
     const [r] = await dbQuery('SELECT * FROM user WHERE id = ? FOR UPDATE', [
         id,
     ]);
-    const [_id, bankId, name, password, createdAt] = r;
-    return new User(_id, bankId, name, password, createdAt);
+    const { id: _id, bank_id, name, password, created_at } = r;
+    return new User(_id, bank_id, name, password, created_at);
 }
 
 export async function signup(name: string, bankId: string, password: string) {
     const bank = await getIsubank();
-
     // bank_idの検証
     try {
         await bank.check(bankId, 0);
     } catch (e) {
         logger.error(`failed to check bank_id (${bankId})`);
-        throw e;
+        throw new BankUserNotFound();
     }
-
     const hpass = await bcrypt.hash(password, await bcrypt.genSalt());
     let userId: number;
     try {
@@ -69,8 +74,8 @@ export async function signup(name: string, bankId: string, password: string) {
         throw new BankUserConflict();
     }
     sendLog('signup', {
-        bankId,
-        userId,
+        bank_id: bankId,
+        user_id: userId,
         name,
     });
 }
@@ -82,13 +87,13 @@ export async function login(bankId: string, password: string) {
     if (!row) {
         throw new UserNotFound();
     }
-    const [_id, _bankId, name, _password, createdAt] = row;
-    const user = new User(_id, _bankId, name, _password, createdAt);
 
+    const { id: _id, bank_id, name, password: _password, created_at } = row;
+    const user = new User(_id, bank_id, name, _password, created_at);
     if (!(await bcrypt.compare(password, user.password))) {
         throw new UserNotFound();
     }
 
-    sendLog('signin', { userId: user.id });
+    sendLog('signin', { user_id: user.id });
     return user;
 }

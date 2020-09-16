@@ -14,20 +14,20 @@ export async function setSetting(k: string, v: string) {
     );
 }
 
-export async function getSetting(k: string) {
-    const [result] = await dbQuery('SELECT val FROM setting WHERE name = ?', [
+export async function getSetting(k: string): Promise<string> {
+    const [{ val }] = await dbQuery('SELECT val FROM setting WHERE name = ?', [
         k,
     ]);
-    return result;
+    return val;
 }
 
-export async function getIsubank() {
+export async function getIsubank(): Promise<IsuBank> {
     const endpoint = await getSetting(BANK_ENDPOINT);
     const appid = await getSetting(BANK_APPID);
     return new IsuBank(endpoint, appid);
 }
 
-async function getLogger() {
+async function getLogger(): Promise<IsuLogger> {
     const endpoint = await getSetting(LOG_ENDPOINT);
     const appid = await getSetting(LOG_APPID);
     return new IsuLogger(endpoint, appid);
@@ -39,14 +39,14 @@ export async function sendLog(
         error?: string;
         amount?: number;
         price?: number;
-        orderId?: number;
-        userId?: number;
-        tradeId?: number;
+        order_id?: number;
+        user_id?: number;
+        trade_id?: number;
         reason?: string;
-        bankId?: string;
+        bank_id?: string;
         name?: string;
     }
-) {
+): Promise<void> {
     const logger = await getLogger();
     await logger.send(tag, v);
 }

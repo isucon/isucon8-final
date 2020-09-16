@@ -4,6 +4,7 @@ import session from 'express-session';
 import { promisify } from 'util';
 import path from 'path';
 import bodyParser from 'body-parser';
+import morgan from 'morgan';
 import { initBenchmark } from './model';
 import { setSetting } from './model/settings';
 import {
@@ -38,10 +39,10 @@ declare global {
         export interface Request {
             currentUser?: {
                 id: number;
-                bankId: string;
+                bank_id: string;
                 name: string;
                 password: string;
-                createdAt: string;
+                created_at: Date;
             };
         }
     }
@@ -50,6 +51,7 @@ declare global {
 const logger = log4js.getLogger();
 
 const app = express();
+app.use(morgan('tiny'));
 
 const PUBLIC_DIR = process.env.ISU_PUBLIC_DIR || 'public';
 
@@ -57,7 +59,7 @@ const PUBLIC_DIR = process.env.ISU_PUBLIC_DIR || 'public';
  * ISUCON用初期データの基準時間です
  * この時間以降のデータはinitializeで削除されます
  */
-const BASE_TIME = new Date(2018, 10, 16, 10, 0, 0);
+const BASE_TIME = new Date(2018, 10 - 1, 16, 10, 0, 0);
 
 function sendError(res: express.Response, code: number, msg: string) {
     res.set('X-Content-Type-Options', 'nosniff');
@@ -69,17 +71,19 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(session({ secret: 'tonymoris' }));
 
 app.use(async function beforeRequest(req, res, next) {
-    const userId = req.session.userId;
+    const userId = req.session?.userId;
     if (!userId) {
-        req.currentUser = null;
+        req.currentUser = undefined;
+        next();
         return;
     }
     const user = await getUserById(userId);
     if (!user) {
-        await promisify(req.session.destroy)();
+        await promisify(req.session!.destroy)();
         return sendError(res, 404, 'セッションが切断されました');
     }
     req.currentUser = user;
+    next();
 });
 
 app.get('/', (req, res) => {
@@ -104,7 +108,7 @@ app.post('/initialize', async (req, res) => {
     res.json({});
 });
 
-app.post('/signup', async (req, res) => {
+app.post('/signup', async (req, res, next) => {
     const { name, bank_id, password } = req.body;
     if (!(name && bank_id && password)) {
         sendError(res, 400, 'all parameters are required');
@@ -124,6 +128,8 @@ app.post('/signup', async (req, res) => {
             sendError(res, 409, e.message);
             return;
         }
+        next(e);
+        return;
     }
     res.json({});
 });
@@ -142,12 +148,12 @@ app.post('/signin', async (req, res) => {
         return sendError(res, 404, e.message);
     }
 
-    req.session.userId = user.id;
+    req.session!.userId = user.id;
     res.json({ id: user.id, name: user.name });
 });
 
 app.post('/signout', async (req, res) => {
-    await promisify(req.session.destroy)();
+    await promisify(req.session!.destroy)();
     res.json({});
 });
 
@@ -165,13 +171,13 @@ app.get('/info', async (req, res) => {
         if (lastTradeId > 0) {
             const trade = await getTradeById(lastTradeId);
             if (trade) {
-                lt = new Date(trade.createdAt);
+                lt = trade.created_at;
             }
         }
     }
 
     const latestTrade = await getLatestTrade();
-    info.cursor = latestTrade.id;
+    info.cursor = latestTrade!.id;
     const user = req.currentUser;
     if (user) {
         const orders = await getOrdersByUserIdAndLasttradeid(
@@ -207,7 +213,6 @@ app.get('/info', async (req, res) => {
     }
 
     info.enable_share = false;
-
     res.json(info);
 });
 
@@ -235,7 +240,7 @@ app.post('/orders', async (req, res) => {
     const price = parseInt(req.body.price);
     const type = req.body.type;
 
-    let order: Order;
+    let order: Order | undefined;
     try {
         await transaction(async () => {
             order = await addOrder(type, user.id, amount, price);
@@ -244,7 +249,11 @@ app.post('/orders', async (req, res) => {
         return sendError(res, 400, e.message);
     }
 
+    if (!order) {
+        return sendError(res, 400, 'hogehoge');
+    }
     const tradeChance = await hasTradeChanceByOrder(order.id);
+
     if (tradeChance) {
         try {
             await runTrade();
@@ -254,11 +263,12 @@ app.post('/orders', async (req, res) => {
         }
     }
 
-    res.json({ id: order.id });
+    res.json({ id: order!.id });
 });
 
 app.delete('/order/:id', async (req, res) => {
-    const { orderId } = req.params;
+    const { id } = req.params;
+    const orderId = parseInt(id);
     const user = req.currentUser;
     if (!user) {
         return sendError(res, 401, 'Not authenticated');
@@ -266,7 +276,7 @@ app.delete('/order/:id', async (req, res) => {
 
     try {
         await transaction(async () => {
-            await deleteOrder(user.id, parseInt(orderId), 'canceled');
+            await deleteOrder(user.id, orderId, 'canceled');
         });
     } catch (e) {
         return sendError(res, 404, e.message);

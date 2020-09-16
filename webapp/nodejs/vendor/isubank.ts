@@ -4,18 +4,21 @@ import fetch, { Response } from 'node-fetch';
 class IsubankError extends Error {
     constructor(message?: string) {
         super(message || 'Isubank Error');
+        Object.setPrototypeOf(this, IsubankError.prototype);
     }
 }
 
 class NoUserError extends Error {
     constructor() {
         super('no bank user');
+        Object.setPrototypeOf(this, NoUserError.prototype);
     }
 }
 
 class CreditInsufficient extends Error {
     constructor() {
         super('credit is insufficient');
+        Object.setPrototypeOf(this, CreditInsufficient.prototype);
     }
 }
 
@@ -38,7 +41,7 @@ export class IsuBank {
     /**
      * 仮決済(残高の確保)を行います
      */
-    async reserve(bankID: string, price: number) {
+    async reserve(bankID: string, price: number): Promise<number> {
         const res = await this.request('/reserve', {
             bank_id: bankID,
             price: price,
@@ -50,11 +53,11 @@ export class IsuBank {
      * Commit は決済の確定を行います
      * 正常に仮決済処理を行っていればここでエラーになることはありません
      */
-    async commit(reserveIDs: number[]) {
+    async commit(reserveIDs: number[]): Promise<void> {
         await this.request('/commit', { reserve_ids: reserveIDs });
     }
 
-    async cancel(reserveIDs: number[]) {
+    async cancel(reserveIDs: number[]): Promise<void> {
         await this.request('/cancel', { reserve_ids: reserveIDs });
     }
 

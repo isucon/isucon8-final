@@ -1,4 +1,5 @@
 import mysql from 'mysql';
+import { promisify } from 'util';
 
 const DB_HOST = process.env.ISU_DB_HOST || '127.0.0.1';
 const DB_PORT = process.env.ISU_DB_PORT || '3306';
@@ -27,12 +28,13 @@ export async function dbQuery(query: string, args: any[] = []): Promise<any> {
 }
 
 export async function transaction(callback: () => Promise<void>) {
-    db.beginTransaction();
+    await promisify(db.beginTransaction.bind(db))();
     try {
         await callback();
-        db.commit();
+        await promisify(db.commit.bind(db))();
     } catch (e) {
-        db.rollback();
+        await promisify(db.rollback.bind(db))();
+        throw e;
     }
 }
 

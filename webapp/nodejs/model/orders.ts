@@ -6,101 +6,142 @@ import { getUserById, getUserByIdWithLock, User } from './users';
 export class OrderAlreadyClosed extends Error {
     constructor() {
         super('order is already closed');
+        Object.setPrototypeOf(this, OrderAlreadyClosed.prototype);
     }
 }
 
 class OrderNotFound extends Error {
     constructor() {
         super('order not found');
+        Object.setPrototypeOf(this, OrderNotFound.prototype);
     }
 }
 
 export class CreditInsufficient extends Error {
     constructor() {
         super('銀行の残高が足りません');
+        Object.setPrototypeOf(this, CreditInsufficient.prototype);
     }
 }
 
 export class Order {
-    public user?: User;
-    public trade?: Trade;
+    public user?: User | null;
+    public trade?: Trade | null;
     constructor(
         public id: number,
         public type: string,
-        public userId: number,
+        public user_id: number,
         public amount: number,
         public price: number,
-        public closedAt: string,
-        public tradeId: number,
-        public createdAt: string
-    ) {}
+        public closed_at: Date,
+        public trade_id: number,
+        public created_at: Date
+    ) {
+        this.type = type.toString();
+    }
 }
 
-export async function getOrdersByUserId(userId: number) {
+export async function getOrdersByUserId(userId: number): Promise<Order[]> {
     const result = await dbQuery(
         `SELECT * FROM orders WHERE user_id = ? AND (closed_at IS NULL OR trade_id IS NOT NULL) ORDER BY created_at ASC`,
         [userId]
     );
-    //@ts-ignore
-    return result.map((row) => new Order(...row));
+    return result.map(
+        (row: any) =>
+            new Order(
+                row.id,
+                row.type,
+                row.user_id,
+                row.amount,
+                row.price,
+                row.closed_at,
+                row.trade_id,
+                row.created_at
+            )
+    );
 }
 
 export async function getOrdersByUserIdAndLasttradeid(
     userId: number,
     tradeId: number
-) {
+): Promise<Order[]> {
     const result = await dbQuery(
         'SELECT * FROM orders WHERE user_id = ? AND trade_id IS NOT NULL AND trade_id > ? ORDER BY created_at ASC',
         [userId, tradeId]
     );
-    //@ts-ignore
-    return result.map((row) => new Order(...row));
+    return result.map(
+        (row: any) =>
+            new Order(
+                row.id,
+                row.type,
+                row.user_id,
+                row.amount,
+                row.price,
+                row.closed_at,
+                row.trade_id,
+                row.created_at
+            )
+    );
 }
 
-async function getOneOrder(query: string, ...args: any[]): Promise<Order> {
+async function getOneOrder(
+    query: string,
+    ...args: any[]
+): Promise<Order | null> {
     const [result] = await dbQuery(query, args);
-    return result;
+    if (!result) return null;
+    return new Order(
+        result.id,
+        result.type,
+        result.user_id,
+        result.amount,
+        result.price,
+        result.closed_at,
+        result.trade_id,
+        result.created_at
+    );
 }
 
-export async function getOrderById(id: number) {
+export async function getOrderById(id: number): Promise<Order | null> {
     return getOneOrder('SELECT * FROM orders WHERE id = ?', id);
 }
 
-async function getOrderByIdWithLock(id: number) {
+async function getOrderByIdWithLock(id: number): Promise<Order | null> {
     const order = await getOneOrder(
         'SELECT * FROM orders WHERE id = ? FOR UPDATE',
         id
     );
-    order.user = await getUserByIdWithLock(order.userId);
+    if (!order) return null;
+    order.user = await getUserByIdWithLock(order.user_id);
     return order;
 }
 
-export async function getOpenOrderById(id: number) {
+export async function getOpenOrderById(id: number): Promise<Order | null> {
     const order = await getOrderByIdWithLock(id);
-    if (order.closedAt) {
+    if (order?.closed_at) {
         throw new OrderAlreadyClosed();
     }
     return order;
 }
 
-export async function getLowestSellOrder() {
+export async function getLowestSellOrder(): Promise<Order | null> {
     return getOneOrder(
         'SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price ASC, created_at ASC LIMIT 1',
         'sell'
     );
 }
 
-export async function getHighestBuyOrder() {
+export async function getHighestBuyOrder(): Promise<Order | null> {
     return getOneOrder(
         'SELECT * FROM orders WHERE type = ? AND closed_at IS NULL ORDER BY price DESC, created_at ASC LIMIT 1',
         'buy'
     );
 }
 
-export async function fetchOrderRelation(order: Order) {
-    order.user = await getUserById(order.userId);
-    if (order.tradeId) {
-        order.trade = await getTradeById(order.tradeId);
+export async function fetchOrderRelation(order: Order): Promise<void> {
+    order.user = await getUserById(order.user_id);
+    if (order.trade_id) {
+        order.trade = await getTradeById(order.trade_id);
     }
 }
 
@@ -109,7 +150,7 @@ export async function addOrder(
     userId: number,
     amount: number,
     price: number
-) {
+): Promise<Order> {
     if (amount <= 0 || price <= 0) {
         throw new Error('value error');
     }
@@ -118,11 +159,11 @@ export async function addOrder(
     if (ot === 'buy') {
         const total = price * amount;
         try {
-            await bank.check(user.bankId, total);
+            await bank.check(user.bank_id, total);
         } catch (e) {
             await sendLog('buy.error', {
                 error: e.message,
-                userId: userId,
+                user_id: userId,
                 amount: amount,
                 price: price,
             });
@@ -139,42 +180,41 @@ export async function addOrder(
         [ot, userId, amount, price]
     );
     await sendLog(ot + '.order', {
-        orderId: insertId,
-        userId: userId,
+        order_id: insertId,
+        user_id: userId,
         amount: amount,
         price: price,
     });
-
-    return getOrderById(insertId);
+    return (await getOrderById(insertId)) as Order;
 }
 
 export async function deleteOrder(
     userId: number,
     orderId: number,
     reason: string
-) {
+): Promise<void> {
     const user = await getUserByIdWithLock(userId);
     const order = await getOrderByIdWithLock(orderId);
     if (!order) {
         throw new OrderNotFound();
     }
-    if (order.userId !== user.id) {
+    if (order.user_id !== user.id) {
         throw new OrderNotFound();
     }
-    if (order.closedAt) {
+    if (order.closed_at) {
         throw new OrderAlreadyClosed();
     }
 
     return cancelOrder(order, reason);
 }
 
-export async function cancelOrder(order: Order, reason: string) {
+export async function cancelOrder(order: Order, reason: string): Promise<void> {
     await dbQuery('UPDATE orders SET closed_at = NOW(6) WHERE id = ?', [
         order.id,
     ]);
     await sendLog(order.type + '.delete', {
-        orderId: order.id,
-        userId: order.userId,
+        order_id: order.id,
+        user_id: order.user_id,
         reason: reason,
     });
 }

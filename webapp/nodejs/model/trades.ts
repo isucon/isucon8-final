@@ -10,10 +10,12 @@ import {
     OrderAlreadyClosed,
 } from './orders';
 import { getIsubank, sendLog } from './settings';
+import { promisify } from 'util';
 
 class NoOrderForTrade extends Error {
     constructor() {
         super('no order for trade');
+        Object.setPrototypeOf(this, NoOrderForTrade.prototype);
     }
 }
 
@@ -22,13 +24,13 @@ export class Trade {
         public id: number,
         public amount: number,
         public price: number,
-        public createdAt: string
+        public created_at: Date
     ) {}
 }
 
 class CandlestickData {
     constructor(
-        public time: string,
+        public time: Date,
         public open: number,
         public close: number,
         public high: number,
@@ -36,10 +38,10 @@ class CandlestickData {
     ) {}
 }
 
-async function getTrade(query: string, ...args: any[]): Promise<Trade> {
+async function getTrade(query: string, ...args: any[]): Promise<Trade | null> {
     const [row] = await dbQuery(query, args);
-    //@ts-ignore
-    return new Trade(...row);
+    if (!row) return null;
+    return new Trade(row.id, row.amount, row.price, row.created_at);
 }
 
 export async function getTradeById(id: number) {
@@ -52,7 +54,7 @@ export async function getLatestTrade() {
 
 export async function getCandlesticData(mt: Date, tf: string) {
     const query = `
-        SELECT m.t, a.price, b.price, m.h, m.l
+        SELECT m.t, a.price as open, b.price as close, m.h, m.l
         FROM (
             SELECT
                 STR_TO_DATE(DATE_FORMAT(created_at, ?), ?) AS t,
@@ -69,9 +71,10 @@ export async function getCandlesticData(mt: Date, tf: string) {
         ORDER BY m.t
     `;
     const result = await dbQuery(query, [tf, '%Y-%m-%d %H:%i:%s', mt]);
-
-    //@ts-ignore
-    return result.map((row) => new CandlestickData(...row));
+    return result.map(
+        (row: any) =>
+            new CandlestickData(row.t, row.open, row.close, row.h, row.l)
+    );
 }
 
 export async function hasTradeChanceByOrder(orderId: number) {
@@ -85,32 +88,33 @@ export async function hasTradeChanceByOrder(orderId: number) {
         return false;
     }
 
-    if (order.type === 'buy' && lowest.price <= order.price) {
+    if (order?.type === 'buy' && lowest.price <= order.price) {
         return true;
     }
-    if (order.type === 'sell' && order.price <= highest.price) {
+    if (order?.type === 'sell' && order.price <= highest.price) {
         return true;
     }
 
     return false;
 }
 
-async function reserveOrder(order: Order, price: number) {
+async function reserveOrder(order: Order, price: number): Promise<number> {
     const bank = await getIsubank();
     let p = order.amount * price;
     if (order.type === 'buy') {
         p = -p;
     }
     try {
-        return bank.reserve(order.user.bankId, p);
+        return bank.reserve(order.user!.bank_id, p);
     } catch (e) {
-        cancelOrder(order, 'reserve_failed');
-        sendLog(order.type + '.error', {
+        await cancelOrder(order, 'reserve_failed');
+        await sendLog(order.type + '.error', {
             error: e.message,
-            userId: order.userId,
+            user_id: order.user_id,
             amount: order.amount,
             price: price,
         });
+        throw e;
     }
 }
 
@@ -128,7 +132,7 @@ async function commitReservedOrder(
 
     const tradeId = insertId;
     sendLog('trade', {
-        tradeId,
+        trade_id: tradeId,
         price: order.price,
         amount: order.amount,
     });
@@ -139,11 +143,11 @@ async function commitReservedOrder(
             [tradeId, o.id]
         );
         sendLog(o.type + '.trade', {
-            orderId: o.id,
+            order_id: o.id,
             price: order.price,
             amount: o.amount,
-            userId: o.userId,
-            tradeId,
+            user_id: o.user_id,
+            trade_id: tradeId,
         });
     }
 
@@ -153,6 +157,9 @@ async function commitReservedOrder(
 
 async function tryTrade(orderId: number) {
     const order = await getOpenOrderById(orderId);
+    if (!order) {
+        throw new Error('try trade error');
+    }
     let restAmount = order.amount;
     const unitPrice = order.price;
     let reserves = [await reserveOrder(order, unitPrice)];
@@ -170,12 +177,24 @@ async function tryTrade(orderId: number) {
                 ['buy', order.price]
             );
         }
-        //@ts-ignore
-        const targetOrders = result.map((row) => new Order(...row));
+        const targetOrders = result.map(
+            (row: any) =>
+                new Order(
+                    row.id,
+                    row.type,
+                    row.user_id,
+                    row.amount,
+                    row.price,
+                    row.closed_at,
+                    row.trade_id,
+                    row.created_at
+                )
+        );
         const targets: Order[] = [];
         for (let to of targetOrders) {
             try {
-                to = await getOpenOrderById(to.id);
+                to = (await getOpenOrderById(to.id)) as Order;
+                if (!to) continue;
             } catch (e) {
                 continue;
             }
@@ -183,7 +202,7 @@ async function tryTrade(orderId: number) {
                 continue;
             }
             try {
-                const rid = reserveOrder(to, unitPrice);
+                const rid = await reserveOrder(to, unitPrice);
                 reserves.push(rid);
             } catch (e) {
                 continue;
@@ -231,11 +250,11 @@ export async function runTrade() {
     }
 
     for (const orderId of candidates) {
-        db.beginTransaction();
+        await promisify(db.beginTransaction.bind(db))();
         try {
             await tryTrade(orderId);
             // トレード成立したため次の取引を行う
-            db.commit();
+            await promisify(db.commit.bind(db))();
             await runTrade();
         } catch (e) {
             if (
@@ -243,13 +262,13 @@ export async function runTrade() {
                 e instanceof OrderAlreadyClosed
             ) {
                 // 注文個数の多い方で成立しなかったので少ない方で試す
-                db.commit();
+                await promisify(db.commit.bind(db))();
                 continue;
             } else if (e instanceof CreditInsufficient) {
-                db.commit();
+                await promisify(db.commit.bind(db))();
                 throw e;
             } else {
-                db.rollback();
+                await promisify(db.rollback.bind(db))();
                 throw e;
             }
         }
