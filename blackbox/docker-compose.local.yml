@@ -42,6 +42,8 @@ services:
       - mysql:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
       - ./conf.d:/etc/mysql/conf.d
+    ports:
+      - "23306:3306"
 
 volumes:
   isubankgopath:
